@@ -1,0 +1,397 @@
+# JavaScript Code Ontology - RETER AI Variant
+# Natural English syntax for semantic code analysis
+#
+# This ontology extends the OO meta-ontology (oo_ontology.reol) with
+# JavaScript-specific concepts. All js:* types are subclasses of oo:* types,
+# enabling language-independent queries using the oo: prefix.
+
+# ============================================================================
+# Class Hierarchy (JavaScript-specific)
+# ============================================================================
+
+js:CodeEntity is_subclass_of owl:Thing
+
+js:Module is_subclass_of js:CodeEntity
+
+js:Class is_subclass_of js:CodeEntity
+
+js:Function is_subclass_of js:CodeEntity
+
+js:Method is_subclass_of js:Function
+
+js:Constructor is_subclass_of js:Method
+
+js:ArrowFunction is_subclass_of js:Function
+
+js:Parameter is_subclass_of js:CodeEntity
+
+js:Variable is_subclass_of js:CodeEntity
+
+js:Field is_subclass_of js:CodeEntity
+
+js:Import is_subclass_of js:CodeEntity
+
+js:Export is_subclass_of js:CodeEntity
+
+# Error handling entities
+js:TryBlock is_subclass_of js:CodeEntity
+
+js:CatchClause is_subclass_of js:CodeEntity
+
+js:FinallyClause is_subclass_of js:CodeEntity
+
+js:ThrowStatement is_subclass_of js:CodeEntity
+
+# Control flow entities
+js:ReturnStatement is_subclass_of js:CodeEntity
+
+js:Call is_subclass_of js:CodeEntity
+
+js:Assignment is_subclass_of js:CodeEntity
+
+# TypeScript-specific entities
+js:Interface is_subclass_of js:CodeEntity
+
+js:Enum is_subclass_of js:CodeEntity
+
+js:EnumMember is_subclass_of js:CodeEntity
+
+js:TypeAlias is_subclass_of js:CodeEntity
+
+js:Namespace is_subclass_of js:CodeEntity
+
+# ============================================================================
+# Meta-Ontology Integration (extends oo_ontology.reol)
+# ============================================================================
+
+js:CodeEntity is_subclass_of oo:CodeEntity
+
+js:Module is_subclass_of oo:Module
+
+js:Class is_subclass_of oo:Class
+
+js:Function is_subclass_of oo:Function
+
+js:Method is_subclass_of oo:Method
+
+js:Constructor is_subclass_of oo:Constructor
+
+js:ArrowFunction is_subclass_of oo:Function
+
+js:Parameter is_subclass_of oo:Parameter
+
+js:Field is_subclass_of oo:Field
+
+js:Import is_subclass_of oo:Import
+
+js:Export is_subclass_of oo:Export
+
+js:Assignment is_subclass_of oo:Assignment
+
+js:TryBlock is_subclass_of oo:TryBlock
+
+js:CatchClause is_subclass_of oo:CatchClause
+
+js:ThrowStatement is_subclass_of oo:ThrowStatement
+
+js:ReturnStatement is_subclass_of oo:ReturnStatement
+
+js:Call is_subclass_of oo:Call
+
+# TypeScript-specific meta-ontology integration
+js:Interface is_subclass_of oo:Interface
+
+js:Enum is_subclass_of oo:Enum
+
+js:EnumMember is_subclass_of oo:EnumMember
+
+js:TypeAlias is_subclass_of oo:TypeAlias
+
+js:Namespace is_subclass_of oo:Namespace
+
+# ============================================================================
+# Transitive Relationships (use unprefixed properties - shared across languages)
+# ============================================================================
+
+# Inheritance transitivity (extends)
+if inheritsFrom(object x, object y) also inheritsFrom(object y, object z) then inheritsFrom(object x, object z)
+
+# Call graph transitivity
+if calls(object x, object y) also calls(object y, object z) then callsTransitive(object x, object z)
+if calls(object x, object y) then callsTransitive(object x, object y)
+
+# Import transitivity
+if imports(object x, object y) also imports(object y, object z) then importsTransitive(object x, object z)
+if imports(object x, object y) then importsTransitive(object x, object y)
+
+# ============================================================================
+# Structural Relationships
+# ============================================================================
+
+# Method-Class relationship
+if js:Method(object m) also definedIn(object m, object c) then hasMethod(object c, object m)
+
+# Inherited methods
+if hasMethod(object super, object m) also inheritsFrom(object sub, object super) then inheritsMethod(object sub, object m)
+
+# Function-Parameter relationship
+if js:Parameter(object p) also ofFunction(object p, object f) then hasParameter(object f, object p)
+
+# Field-Class relationship
+if js:Field(object f) also definedIn(object f, object c) then hasField(object c, object f)
+
+# ============================================================================
+# Async/Generator Recognition
+# ============================================================================
+
+# Async functions
+if js:Function(object f) also isAsync(object f, "true") then asyncFunction(object f, true)
+
+# Async methods
+if js:Method(object m) also isAsync(object m, "true") then asyncMethod(object m, true)
+
+# Generator functions
+if js:Function(object f) also isGenerator(object f, "true") then generatorFunction(object f, true)
+
+# ============================================================================
+# Method Type Recognition
+# ============================================================================
+
+# Static methods
+if js:Method(object m) also isStatic(object m, "true") then staticMethod(object m, true)
+
+# Getter methods
+if js:Method(object m) also isGetter(object m, "true") then getterMethod(object m, true)
+
+# Setter methods
+if js:Method(object m) also isSetter(object m, "true") then setterMethod(object m, true)
+
+# Private methods (# prefix)
+if js:Method(object m) also isPrivate(object m, "true") then privateMethod(object m, true)
+
+# Private fields
+if js:Field(object f) also isPrivate(object f, "true") then privateField(object f, true)
+
+# ============================================================================
+# Documentation Checks
+# ============================================================================
+
+# Undocumented classes
+if js:Class(object c) also not hasDocstring(object c, object d) then undocumented(object c, true)
+
+# Undocumented functions
+if js:Function(object f) also not hasDocstring(object f, object d) then undocumented(object f, true)
+
+# Undocumented methods
+if js:Method(object m) also not hasDocstring(object m, object d) then undocumented(object m, true)
+
+# ============================================================================
+# Code Quality Heuristics
+# ============================================================================
+
+# Potentially unused functions (not called)
+if js:Function(object f) also not calls(object caller, object f) then potentiallyUnused(object f, true)
+
+# Circular dependencies
+if imports(object m1, object m2) also imports(object m2, object m1) then circularDependency(object m1, object m2)
+
+# Empty catch blocks (swallowed exceptions)
+if js:CatchClause(object c) also bodyIsEmpty(object c, "true") then swallowedException(object c, true)
+
+# Classes without constructors
+if js:Class(object c) also noConstructor(object c, "true") then missingConstructor(object c, true)
+
+# ============================================================================
+# Error Handling Patterns
+# ============================================================================
+
+# Try block with catch
+if js:TryBlock(object t) also hasCatch(object t, "true") then handleErrors(object t, true)
+
+# Try block with finally
+if js:TryBlock(object t) also hasFinally(object t, "true") then hasCleanup(object t, true)
+
+# Throw statements inside functions
+if js:ThrowStatement(object th) also inFunction(object th, object f) then throws(object f, object th)
+
+# Error type throwing
+if js:ThrowStatement(object th) also throwsErrorType(object th, "true") then throwsError(object th, true)
+
+# ============================================================================
+# Return Pattern Recognition
+# ============================================================================
+
+# Functions that return this (fluent interface)
+if js:ReturnStatement(object r) also returnsThis(object r, "true") also inFunction(object r, object f) then fluentMethod(object f, true)
+
+# Functions with empty returns
+if js:ReturnStatement(object r) also hasValue(object r, "false") also inFunction(object r, object f) then voidReturn(object f, true)
+
+# ============================================================================
+# Call Pattern Recognition
+# ============================================================================
+
+# Super calls (calling parent constructor)
+if js:Call(object c) also isSuperCall(object c, "true") then callsSuper(object c, true)
+
+# This calls (calling own methods)
+if js:Call(object c) also isThisCall(object c, "true") then callsSelf(object c, true)
+
+# Method calls (obj.method())
+if js:Call(object c) also isMethodCall(object c, "true") then methodInvocation(object c, true)
+
+# ============================================================================
+# Variable Declaration Types
+# ============================================================================
+
+# Const declarations (immutable)
+if js:Variable(object v) also declarationType(object v, "const") then constVariable(object v, true)
+
+# Let declarations (block-scoped)
+if js:Variable(object v) also declarationType(object v, "let") then letVariable(object v, true)
+
+# Var declarations (function-scoped, legacy)
+if js:Variable(object v) also declarationType(object v, "var") then varVariable(object v, true)
+
+# ============================================================================
+# Export Pattern Recognition
+# ============================================================================
+
+# Default exports
+if js:Export(object e) also isDefault(object e, "true") then defaultExport(object e, true)
+
+# Named exports
+if js:Export(object e) also not isDefault(object e, "true") then namedExport(object e, true)
+
+# ============================================================================
+# Class Pattern Recognition
+# ============================================================================
+
+# Classes with inheritance
+if js:Class(object c) also inheritsFrom(object c, object parent) then derivedClass(object c, true)
+
+# Classes with private fields
+if js:Class(object c) also hasPrivateFields(object c, "true") then usesPrivateFields(object c, true)
+
+# Abstract-like classes (only base for others, never instantiated)
+if js:Class(object c) also inheritsFrom(object sub, object c) also not js:Call(object call) also not callee(object call, object c) then potentiallyAbstract(object c, true)
+
+# ============================================================================
+# Arrow Function Recognition
+# ============================================================================
+
+# Arrow functions are always expressions
+if js:ArrowFunction(object f) then functionExpression(object f, true)
+
+# Async arrow functions
+if js:ArrowFunction(object f) also isAsync(object f, "true") then asyncArrow(object f, true)
+
+# ============================================================================
+# Assignment Patterns
+# ============================================================================
+
+# Augmented assignments (+=, -=, etc.)
+if js:Assignment(object a) also isAugmented(object a, "true") then augmentedAssignment(object a, true)
+
+# Attribute assignments (this.x = ...)
+if js:Assignment(object a) also isAttributeAssignment(object a, "true") then attributeAssignment(object a, true)
+
+# ============================================================================
+# Large Entity Detection (Code Smells)
+# ============================================================================
+
+# Large classes (> 200 lines)
+if js:Class(object c) also lineCount(object c, object lines) also greaterThan(object lines, 200) then largeClass(object c, true)
+
+# Large functions (> 50 lines)
+if js:Function(object f) also lineCount(object f, object lines) also greaterThan(object lines, 50) then largeFunction(object f, true)
+
+# Large methods (> 50 lines)
+if js:Method(object m) also lineCount(object m, object lines) also greaterThan(object lines, 50) then largeMethod(object m, true)
+
+# ============================================================================
+# Constructor Patterns
+# ============================================================================
+
+# Constructor with many parameters (> 5)
+if js:Constructor(object c) also parameterCount(object c, object count) also greaterThan(object count, 5) then manyConstructorParams(object c, true)
+
+# ============================================================================
+# Module Relationships
+# ============================================================================
+
+# Module contains class
+if js:Class(object c) also inModule(object c, object m) then containsClass(object m, object c)
+
+# Module contains function
+if js:Function(object f) also inModule(object f, object m) then containsFunction(object m, object f)
+
+# Module has exports
+if js:Module(object m) also exports(object m, object e) then exportsEntity(object m, object e)
+
+# Module has imports
+if js:Module(object m) also imports(object m, object i) then importsModule(object m, object i)
+
+# ============================================================================
+# TypeScript: Interface Patterns
+# ============================================================================
+
+# Interface with extends
+if js:Interface(object i) also extends(object i, object parent) then extendedInterface(object i, true)
+
+# Undocumented interfaces
+if js:Interface(object i) also not hasDocstring(object i, object d) then undocumented(object i, true)
+
+# Large interfaces (> 100 lines)
+if js:Interface(object i) also lineCount(object i, object lines) also greaterThan(object lines, 100) then largeInterface(object i, true)
+
+# Module contains interface
+if js:Interface(object i) also inModule(object i, object m) then containsInterface(object m, object i)
+
+# ============================================================================
+# TypeScript: Enum Patterns
+# ============================================================================
+
+# Const enums
+if js:Enum(object e) also isConst(object e, "true") then constEnum(object e, true)
+
+# Undocumented enums
+if js:Enum(object e) also not hasDocstring(object e, object d) then undocumented(object e, true)
+
+# Module contains enum
+if js:Enum(object e) also inModule(object e, object m) then containsEnum(object m, object e)
+
+# Enum-Member relationship
+if js:EnumMember(object em) also memberOf(object em, object e) then hasMember(object e, object em)
+
+# ============================================================================
+# TypeScript: Type Alias Patterns
+# ============================================================================
+
+# Exported type alias
+if js:TypeAlias(object t) also isExported(object t, "true") then exportedTypeAlias(object t, true)
+
+# Type alias with type parameters (generic)
+if js:TypeAlias(object t) also hasTypeParameters(object t, "true") then genericTypeAlias(object t, true)
+
+# Module contains type alias
+if js:TypeAlias(object t) also inModule(object t, object m) then containsTypeAlias(object m, object t)
+
+# ============================================================================
+# TypeScript: Namespace Patterns
+# ============================================================================
+
+# Declared namespace (ambient)
+if js:Namespace(object n) also isDeclare(object n, "true") then ambientNamespace(object n, true)
+
+# Module contains namespace
+if js:Namespace(object n) also inModule(object n, object m) then containsNamespace(object m, object n)
+
+# Namespace contains class
+if js:Class(object c) also inNamespace(object c, object n) then nsContainsClass(object n, object c)
+
+# Namespace contains interface
+if js:Interface(object i) also inNamespace(object i, object n) then nsContainsInterface(object n, object i)
+
+# Namespace contains function
+if js:Function(object f) also inNamespace(object f, object n) then nsContainsFunction(object n, object f)

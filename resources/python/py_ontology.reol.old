@@ -1,0 +1,192 @@
+# Python Code Ontology - RETER AI Variant
+# Natural English syntax for semantic code analysis
+#
+# This ontology extends the OO meta-ontology (oo_ontology.reol) with
+# Python-specific concepts. All py:* types are subclasses of oo:* types,
+# enabling language-independent queries using the oo: prefix.
+
+# ============================================================================
+# Class Hierarchy (Python-specific)
+# ============================================================================
+
+py:CodeEntity is_subclass_of owl:Thing
+
+py:Module is_subclass_of py:CodeEntity
+
+py:Class is_subclass_of py:CodeEntity
+
+py:Function is_subclass_of py:CodeEntity
+
+py:Method is_subclass_of py:Function
+
+py:Parameter is_subclass_of py:CodeEntity
+
+py:Import is_subclass_of py:CodeEntity
+
+py:Assignment is_subclass_of py:CodeEntity
+
+# ============================================================================
+# Meta-Ontology Integration (extends oo_ontology.reol)
+# ============================================================================
+
+py:CodeEntity is_subclass_of oo:CodeEntity
+
+py:Module is_subclass_of oo:Module
+
+py:Class is_subclass_of oo:Class
+
+py:Function is_subclass_of oo:Function
+
+py:Method is_subclass_of oo:Method
+
+py:Parameter is_subclass_of oo:Parameter
+
+py:Import is_subclass_of oo:Import
+
+py:Assignment is_subclass_of oo:Assignment
+
+py:Attribute is_subclass_of oo:Field
+
+# ============================================================================
+# Transitive Relationships (use unprefixed properties - shared across languages)
+# ============================================================================
+
+# Inheritance transitivity
+if inheritsFrom(object x, object y) also inheritsFrom(object y, object z) then inheritsFrom(object x, object z)
+
+# Call graph transitivity
+if calls(object x, object y) also calls(object y, object z) then callsTransitive(object x, object z)
+if calls(object x, object y) then callsTransitive(object x, object y)
+
+# Import transitivity
+if imports(object x, object y) also imports(object y, object z) then importsTransitive(object x, object z)
+if imports(object x, object y) then importsTransitive(object x, object y)
+
+# ============================================================================
+# Structural Relationships
+# ============================================================================
+
+# Method-Class relationship
+if py:Method(object m) also definedIn(object m, object c) then hasMethod(object c, object m)
+
+# Inherited methods
+if hasMethod(object super, object m) also inheritsFrom(object sub, object super) then inheritsMethod(object sub, object m)
+
+# Function-Parameter relationship
+if py:Parameter(object p) also ofFunction(object p, object f) then hasParameter(object f, object p)
+
+# ============================================================================
+# Decorator-based Inference
+# ============================================================================
+
+# Property decorator
+if py:Function(object f) also hasDecorator(object f, "property") then isProperty(object f, true)
+
+# Class method decorator
+if py:Method(object f) also hasDecorator(object f, "classmethod") then isClassMethod(object f, true)
+
+# Static method decorator
+if py:Method(object f) also hasDecorator(object f, "staticmethod") then isStaticMethod(object f, true)
+
+# Abstract method decorator
+if py:Function(object f) also hasDecorator(object f, "abstractmethod") then isAbstract(object f, true)
+
+# Dataclass decorator
+if py:Class(object c) also hasDecorator(object c, "dataclass") then isDataClass(object c, true)
+
+# ============================================================================
+# Documentation Checks
+# ============================================================================
+
+# Undocumented classes
+if py:Class(object c) also not hasDocstring(object c, object d) then undocumented(object c, true)
+
+# Undocumented functions
+if py:Function(object f) also not hasDocstring(object f, object d) then undocumented(object f, true)
+
+# ============================================================================
+# Code Quality Heuristics
+# ============================================================================
+
+# Potentially unused functions (not called and no decorators)
+if py:Function(object f) also not calls(object caller, object f) also not hasDecorator(object f, object d) then potentiallyUnused(object f, true)
+
+# Circular dependencies
+if imports(object m1, object m2) also imports(object m2, object m1) then circularDependency(object m1, object m2)
+
+# ============================================================================
+# Type Hierarchy
+# ============================================================================
+
+py:int is_subclass_of py:Type
+py:str is_subclass_of py:Type
+py:bool is_subclass_of py:Type
+py:float is_subclass_of py:Type
+py:list is_subclass_of py:Type
+py:dict is_subclass_of py:Type
+py:set is_subclass_of py:Type
+py:tuple is_subclass_of py:Type
+py:None is_subclass_of py:Type
+
+# ============================================================================
+# Special Method Recognition (Magic Methods)
+# ============================================================================
+
+# Constructor
+if py:Method(object m) also hasName(object m, "__init__") then isConstructor(object m, true)
+
+# Destructor
+if py:Method(object m) also hasName(object m, "__del__") then isDestructor(object m, true)
+
+# String representation
+if py:Method(object m) also hasName(object m, "__str__") then isStringRepresentation(object m, true)
+
+# Repr representation
+if py:Method(object m) also hasName(object m, "__repr__") then isReprRepresentation(object m, true)
+
+# Equality operator
+if py:Method(object m) also hasName(object m, "__eq__") then isEqualityOperator(object m, true)
+
+# ============================================================================
+# Context Manager Recognition
+# ============================================================================
+
+# Context manager entry
+if py:Method(object m) also hasName(object m, "__enter__") then isContextEnter(object m, true)
+
+# Context manager exit
+if py:Method(object m) also hasName(object m, "__exit__") then isContextExit(object m, true)
+
+# Complete context manager
+if py:Class(object c) also hasMethod(object c, object enter) also isContextEnter(object enter, true) also hasMethod(object c, object exit) also isContextExit(object exit, true) then isContextManager(object c, true)
+
+# ============================================================================
+# Abstract Class Recognition
+# ============================================================================
+
+# Inherits from ABC
+if py:Class(object c) also inheritsFrom(object c, "ABC") then isAbstractClass(object c, true)
+
+# Has abstract methods
+if py:Class(object c) also hasMethod(object c, object m) also isAbstract(object m, true) then isAbstractClass(object c, true)
+
+# ============================================================================
+# Attribute Support
+# ============================================================================
+
+# Attribute concept
+py:Attribute is_subclass_of py:CodeEntity
+
+# Attribute-Class relationship
+if py:Attribute(object attr) also definedIn(object attr, object c) then hasAttribute(object c, object attr)
+
+# Typed attributes
+if py:Attribute(object attr) also hasType(object attr, object t) then hasTypedAttribute(object attr, true)
+
+# Visibility-based categorization
+if py:Attribute(object attr) also visibility(object attr, "public") then isPublicAttribute(object attr, true)
+if py:Attribute(object attr) also visibility(object attr, "protected") then isProtectedAttribute(object attr, true)
+if py:Attribute(object attr) also visibility(object attr, "private") then isPrivateAttribute(object attr, true)
+
+# Inherited attributes
+if hasAttribute(object super, object attr) also inheritsFrom(object sub, object super) then inheritsAttribute(object sub, object attr)

@@ -1,0 +1,342 @@
+# HTML Document Ontology - RETER AI Variant
+# Natural English syntax for semantic HTML analysis
+#
+# This ontology provides concepts for HTML document analysis:
+# - Document structure (documents, elements, forms)
+# - Scripts and event handlers (with JavaScript integration)
+# - Framework detection (Vue, Angular, HTMX, Alpine)
+# - Links and resources (stylesheets, external scripts)
+
+# ============================================================================
+# Class Hierarchy (HTML-specific)
+# ============================================================================
+
+html:DocumentEntity is_subclass_of owl:Thing
+
+html:Document is_subclass_of html:DocumentEntity
+
+html:Element is_subclass_of html:DocumentEntity
+
+html:Script is_subclass_of html:DocumentEntity
+
+html:ScriptReference is_subclass_of html:DocumentEntity
+
+html:StyleSheet is_subclass_of html:DocumentEntity
+
+html:Form is_subclass_of html:Element
+
+html:FormInput is_subclass_of html:Element
+
+html:Link is_subclass_of html:Element
+
+html:Meta is_subclass_of html:Element
+
+html:EventHandler is_subclass_of html:DocumentEntity
+
+html:Image is_subclass_of html:Element
+
+html:Iframe is_subclass_of html:Element
+
+# ============================================================================
+# Framework Directives
+# ============================================================================
+
+html:FrameworkIndicator is_subclass_of html:DocumentEntity
+
+html:VueDirective is_subclass_of html:FrameworkIndicator
+
+html:AngularDirective is_subclass_of html:FrameworkIndicator
+
+html:HtmxAttribute is_subclass_of html:FrameworkIndicator
+
+html:AlpineDirective is_subclass_of html:FrameworkIndicator
+
+html:DataAttribute is_subclass_of html:DocumentEntity
+
+# ============================================================================
+# Document Relationships (use unprefixed properties to match C++ parser)
+# ============================================================================
+
+# Document contains elements
+if html:Element(object e) also inDocument(object e, object d) then containsElement(object d, object e)
+
+# Form contains inputs
+if html:FormInput(object i) also inForm(object i, object f) then hasInput(object f, object i)
+
+# Script is inline
+if html:Script(object s) also isInline(object s, "true") then inlineScript(object s, true)
+
+# Script is external reference
+if html:ScriptReference(object s) also src(object s, object url) then externalScript(object s, true)
+
+# ============================================================================
+# Event Handler Relationships
+# ============================================================================
+
+# Event handlers are attached to elements
+if html:EventHandler(object h) also attachedTo(object h, object e) then hasEventHandler(object e, object h)
+
+# Event handler types
+if html:EventHandler(object h) also event(object h, "click") then clickHandler(object h, true)
+if html:EventHandler(object h) also event(object h, "submit") then submitHandler(object h, true)
+if html:EventHandler(object h) also event(object h, "change") then changeHandler(object h, true)
+if html:EventHandler(object h) also event(object h, "load") then loadHandler(object h, true)
+
+# ============================================================================
+# Framework Detection Rules
+# ============================================================================
+
+# Vue.js detection
+if html:VueDirective(object v) also inDocument(object v, object d) then usesVue(object d, true)
+if html:VueDirective(object v) also directive(object v, "v-if") then vueConditional(object v, true)
+if html:VueDirective(object v) also directive(object v, "v-for") then vueLoop(object v, true)
+if html:VueDirective(object v) also directive(object v, "v-model") then vueBinding(object v, true)
+if html:VueDirective(object v) also directive(object v, "v-on") then vueEvent(object v, true)
+
+# Angular detection
+if html:AngularDirective(object a) also inDocument(object a, object d) then usesAngular(object d, true)
+if html:AngularDirective(object a) also directive(object a, "ng-if") then angularConditional(object a, true)
+if html:AngularDirective(object a) also directive(object a, "ng-repeat") then angularLoop(object a, true)
+if html:AngularDirective(object a) also directive(object a, "ng-model") then angularBinding(object a, true)
+
+# HTMX detection
+if html:HtmxAttribute(object h) also inDocument(object h, object d) then usesHtmx(object d, true)
+if html:HtmxAttribute(object h) also attribute(object h, "hx-get") then htmxGet(object h, true)
+if html:HtmxAttribute(object h) also attribute(object h, "hx-post") then htmxPost(object h, true)
+if html:HtmxAttribute(object h) also attribute(object h, "hx-swap") then htmxSwap(object h, true)
+if html:HtmxAttribute(object h) also attribute(object h, "hx-target") then htmxTarget(object h, true)
+
+# Alpine.js detection
+if html:AlpineDirective(object a) also inDocument(object a, object d) then usesAlpine(object d, true)
+if html:AlpineDirective(object a) also directive(object a, "x-data") then alpineData(object a, true)
+if html:AlpineDirective(object a) also directive(object a, "x-show") then alpineConditional(object a, true)
+if html:AlpineDirective(object a) also directive(object a, "x-on") then alpineEvent(object a, true)
+
+# ============================================================================
+# Form Analysis Rules
+# ============================================================================
+
+# Form has action
+if html:Form(object f) also action(object f, object url) then hasAction(object f, true)
+
+# Form has method
+if html:Form(object f) also method(object f, "POST") then postForm(object f, true)
+if html:Form(object f) also method(object f, "GET") then getForm(object f, true)
+
+# Input types
+if html:FormInput(object i) also inputType(object i, "text") then textInput(object i, true)
+if html:FormInput(object i) also inputType(object i, "password") then passwordInput(object i, true)
+if html:FormInput(object i) also inputType(object i, "email") then emailInput(object i, true)
+if html:FormInput(object i) also inputType(object i, "hidden") then hiddenInput(object i, true)
+if html:FormInput(object i) also inputType(object i, "submit") then submitButton(object i, true)
+
+# ============================================================================
+# Link Analysis Rules
+# ============================================================================
+
+# External links
+if html:Link(object l) also isExternal(object l, "true") then externalLink(object l, true)
+
+# Internal links
+if html:Link(object l) also not isExternal(object l, "true") then internalLink(object l, true)
+
+# ============================================================================
+# Script Analysis Rules
+# ============================================================================
+
+# Module scripts
+if html:Script(object s) also scriptType(object s, "module") then moduleScript(object s, true)
+
+# Deferred scripts
+if html:Script(object s) also defer(object s, "true") then deferredScript(object s, true)
+
+# Async scripts
+if html:Script(object s) also async(object s, "true") then asyncScript(object s, true)
+
+# ============================================================================
+# Meta Tag Analysis
+# ============================================================================
+
+# Charset meta
+if html:Meta(object m) also charset(object m, object cs) then hasCharset(object m, true)
+
+# Viewport meta
+if html:Meta(object m) also name(object m, "viewport") then viewportMeta(object m, true)
+
+# Description meta
+if html:Meta(object m) also name(object m, "description") then descriptionMeta(object m, true)
+
+# ============================================================================
+# Security Considerations
+# ============================================================================
+
+# Forms without CSRF protection (potential issue)
+if html:Form(object f) also postForm(object f, true) also not hasInput(object f, object csrf) also not inputType(object csrf, "hidden") then potentialCsrfVulnerable(object f, true)
+
+# External scripts without integrity
+if html:ScriptReference(object s) also isExternal(object s, "true") also not integrity(object s, object hash) then scriptWithoutIntegrity(object s, true)
+
+# Iframes without sandbox
+if html:Iframe(object i) also not sandbox(object i, object sb) then unsandboxedIframe(object i, true)
+
+# ============================================================================
+# Document Completeness Checks
+# ============================================================================
+
+# Documents with title
+if html:Document(object d) also title(object d, object t) then hasTitle(object d, true)
+
+# Documents with language
+if html:Document(object d) also language(object d, object l) then hasLanguage(object d, true)
+
+# Documents with charset
+if html:Document(object d) also charset(object d, object c) then hasCharset(object d, true)
+
+# ============================================================================
+# Extended Document Containment (additional relationships)
+# ============================================================================
+
+# Document contains script
+if html:Script(object s) also inDocument(object s, object d) then containsScript(object d, object s)
+
+# Document contains script reference
+if html:ScriptReference(object s) also inDocument(object s, object d) then containsScriptReference(object d, object s)
+
+# Document contains stylesheet
+if html:StyleSheet(object s) also inDocument(object s, object d) then containsStyleSheet(object d, object s)
+
+# Document contains form
+if html:Form(object f) also inDocument(object f, object d) then containsForm(object d, object f)
+
+# Document contains link
+if html:Link(object l) also inDocument(object l, object d) then containsLink(object d, object l)
+
+# Document contains image
+if html:Image(object i) also inDocument(object i, object d) then containsImage(object d, object i)
+
+# Document contains iframe
+if html:Iframe(object i) also inDocument(object i, object d) then containsIframe(object d, object i)
+
+# Document contains meta
+if html:Meta(object m) also inDocument(object m, object d) then containsMeta(object d, object m)
+
+# ============================================================================
+# Extended Form Analysis
+# ============================================================================
+
+# Required form inputs
+if html:FormInput(object i) also isRequired(object i, "true") then requiredInput(object i, true)
+
+# Additional input types
+if html:FormInput(object i) also inputType(object i, "file") then fileInput(object i, true)
+if html:FormInput(object i) also inputType(object i, "checkbox") then checkboxInput(object i, true)
+if html:FormInput(object i) also inputType(object i, "radio") then radioInput(object i, true)
+if html:FormInput(object i) also inputType(object i, "number") then numberInput(object i, true)
+if html:FormInput(object i) also inputType(object i, "date") then dateInput(object i, true)
+if html:FormInput(object i) also inputType(object i, "tel") then telInput(object i, true)
+if html:FormInput(object i) also inputType(object i, "url") then urlInput(object i, true)
+
+# ============================================================================
+# Extended Event Handler Analysis
+# ============================================================================
+
+# Event handler calls function
+if html:EventHandler(object h) also calls(object h, object f) then invokesFunction(object h, object f)
+
+# Additional event types
+if html:EventHandler(object h) also event(object h, "focus") then focusHandler(object h, true)
+if html:EventHandler(object h) also event(object h, "blur") then blurHandler(object h, true)
+if html:EventHandler(object h) also event(object h, "input") then inputHandler(object h, true)
+if html:EventHandler(object h) also event(object h, "keydown") then keydownHandler(object h, true)
+if html:EventHandler(object h) also event(object h, "keyup") then keyupHandler(object h, true)
+if html:EventHandler(object h) also event(object h, "mouseover") then mouseoverHandler(object h, true)
+if html:EventHandler(object h) also event(object h, "mouseout") then mouseoutHandler(object h, true)
+
+# ============================================================================
+# StyleSheet Analysis
+# ============================================================================
+
+# Inline stylesheet
+if html:StyleSheet(object s) also isInline(object s, "true") then inlineStyle(object s, true)
+
+# External stylesheet
+if html:StyleSheet(object s) also isExternal(object s, "true") then externalStyle(object s, true)
+
+# ============================================================================
+# Script-JavaScript Integration
+# ============================================================================
+
+# Script contains JavaScript code
+if html:Script(object s) also containsJavaScript(object s, object js) then hasEmbeddedJS(object s, object js)
+
+# ============================================================================
+# Extended Link Analysis
+# ============================================================================
+
+# Link opens in new tab
+if html:Link(object l) also target(object l, "_blank") then opensNewTab(object l, true)
+
+# Nofollow link
+if html:Link(object l) also rel(object l, "nofollow") then nofollowLink(object l, true)
+
+# Noopener link (security)
+if html:Link(object l) also rel(object l, "noopener") then noopenerLink(object l, true)
+
+# ============================================================================
+# Image Analysis
+# ============================================================================
+
+# Image without alt text (accessibility issue)
+if html:Image(object i) also hasAlt(object i, "false") then missingAltText(object i, true)
+
+# External image
+if html:Image(object i) also isExternal(object i, "true") then externalImage(object i, true)
+
+# Lazy loaded image
+if html:Image(object i) also loading(object i, "lazy") then lazyImage(object i, true)
+
+# ============================================================================
+# Extended Iframe Analysis
+# ============================================================================
+
+# Sandboxed iframe
+if html:Iframe(object i) also sandbox(object i, object s) then sandboxedIframe(object i, true)
+
+# External iframe
+if html:Iframe(object i) also isExternal(object i, "true") then externalIframe(object i, true)
+
+# ============================================================================
+# Extended Meta Tag Analysis
+# ============================================================================
+
+# OpenGraph meta tags
+if html:Meta(object m) also property(object m, "og:title") then ogTitleMeta(object m, true)
+if html:Meta(object m) also property(object m, "og:description") then ogDescriptionMeta(object m, true)
+if html:Meta(object m) also property(object m, "og:image") then ogImageMeta(object m, true)
+
+# Twitter Card meta tags
+if html:Meta(object m) also name(object m, "twitter:card") then twitterCardMeta(object m, true)
+if html:Meta(object m) also name(object m, "twitter:title") then twitterTitleMeta(object m, true)
+
+# Robots meta
+if html:Meta(object m) also name(object m, "robots") then robotsMeta(object m, true)
+
+# Author meta
+if html:Meta(object m) also name(object m, "author") then authorMeta(object m, true)
+
+# ============================================================================
+# Extended Document Quality Checks
+# ============================================================================
+
+# Document has DOCTYPE
+if html:Document(object d) also hasDoctype(object d, "true") then validDoctype(object d, true)
+
+# ============================================================================
+# Data Attribute Analysis
+# ============================================================================
+
+# Element has data attributes
+if html:DataAttribute(object d) also attachedTo(object d, object e) then hasDataAttribute(object e, object d)
+
+# Data attribute for JavaScript binding
+if html:DataAttribute(object d) also name(object d, object n) then customData(object d, object n)

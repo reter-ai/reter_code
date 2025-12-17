@@ -1,0 +1,273 @@
+// REQL (RETE Query Language) Grammar in LARK format
+// Converted from ANTLR grammar for LLM reference
+//
+// IMPORTANT SYNTAX NOTES:
+// - Variables start with ? (e.g., ?x, ?name)
+// - Triple patterns use: subject predicate object .
+// - FILTER requires parentheses: FILTER(expression)
+// - Negation: Use !REGEX() or !CONTAINS() to negate function results
+// - NOT EXISTS {...} for pattern negation
+// - String literals use double or single quotes
+// - Keywords are case-insensitive
+
+// ========================================
+// MAIN QUERY STRUCTURE
+// ========================================
+
+query: select_query | ask_query | describe_query
+
+select_query: SELECT (DISTINCT | REDUCED)? (select_term+ | STAR) where_clause? solution_modifier
+
+ask_query: ASK where_clause solution_modifier
+
+describe_query: DESCRIBE (describe_target+ | STAR) where_clause?
+
+describe_target: var | id
+
+select_term: "(" select_query ")" AS var      // Scalar subquery
+           | "(" aggregate AS var ")"          // SPARQL standard: (COUNT(?x) AS ?count)
+           | aggregate AS var                  // Non-parenthesized
+           | aggregate                         // Bare aggregate
+           | var                               // Simple variable
+
+// ========================================
+// AGGREGATES
+// ========================================
+
+aggregate: COUNT "(" (DISTINCT var | STAR | var) ")"
+         | SUM "(" DISTINCT? var ")"
+         | AVG "(" DISTINCT? var ")"
+         | MIN "(" DISTINCT? var ")"
+         | MAX "(" DISTINCT? var ")"
+
+// ========================================
+// WHERE CLAUSE
+// ========================================
+
+where_clause: WHERE? group_graph_pattern
+
+group_graph_pattern: "{" triples_block? ((graph_pattern_not_triples | filter) "."? triples_block?)* "}"
+
+triples_block: triples_same_subject ("." triples_block?)?
+
+graph_pattern_not_triples: optional_graph_pattern
+                         | group_or_union_graph_pattern
+                         | minus_graph_pattern
+
+optional_graph_pattern: OPTIONAL group_graph_pattern
+
+group_or_union_graph_pattern: group_graph_pattern (UNION group_graph_pattern)*
+
+minus_graph_pattern: MINUS group_graph_pattern
+
+// ========================================
+// TRIPLE PATTERNS
+// ========================================
+
+triples_same_subject: var_or_term property_list_not_empty
+                    | triples_node property_list
+
+property_list_not_empty: verb object_list (";" (verb object_list)?)*
+
+property_list: property_list_not_empty?
+
+object_list: object ("," object)*
+
+object: graph_node
+
+verb: var_or_identifier | "a"
+
+// ========================================
+// FILTER EXPRESSIONS
+// ========================================
+// IMPORTANT: FILTER requires parentheses around the expression
+// Correct:   FILTER(?x > 5)
+// Correct:   FILTER(CONTAINS(?name, "test"))
+// Correct:   FILTER(!REGEX(?x, "pattern"))     -- Negate function result
+// Correct:   FILTER(!CONTAINS(?name, "test"))  -- Negate function result
+// Correct:   FILTER(NOT EXISTS {...})          -- Negate pattern existence
+
+filter: FILTER constraint
+
+constraint: bracketted_expression
+          | builtin_call
+
+bracketted_expression: "(" expression ")"
+
+expression: conditional_or_expression
+
+conditional_or_expression: conditional_and_expression ("||" conditional_and_expression)*
+
+conditional_and_expression: value_logical ("&&" value_logical)*
+
+value_logical: relational_expression
+
+relational_expression: additive_expression (("=" | "!=" | "<" | ">" | "<=" | ">=") additive_expression)?
+
+additive_expression: multiplicative_expression (("+" | "-") multiplicative_expression)*
+
+multiplicative_expression: unary_expression (("*" | "/") unary_expression)*
+
+// "!" negates the following expression (including function calls)
+// Correct:   !?bound_var          -- Negate variable (false if bound)
+// Correct:   !(?x > 5)            -- Negate parenthesized expression
+// Correct:   !REGEX(?x, "pat")    -- Negate REGEX result (true if no match)
+// Correct:   !CONTAINS(?s, "x")   -- Negate CONTAINS result
+unary_expression: ("!" | "+" | "-")? primary_expression
+
+primary_expression: bracketted_expression
+                  | builtin_call
+                  | aggregate
+                  | numeric_literal
+                  | boolean_literal
+                  | string
+                  | var
+                  | id
+
+// ========================================
+// BUILT-IN FUNCTIONS
+// ========================================
+// Functions MUST have parentheses around arguments
+
+builtin_call: STR "(" expression ")"
+            | BOUND "(" var ")"
+            | REGEX "(" expression "," expression ("," expression)? ")"
+            | CONTAINS "(" expression "," expression ")"
+            | EXISTS group_graph_pattern
+            | not_exists_func
+
+// NOT EXISTS is the proper way to negate existence checks
+not_exists_func: NOT EXISTS group_graph_pattern
+
+// ========================================
+// SOLUTION MODIFIERS
+// ========================================
+
+solution_modifier: group_clause? having_clause? order_clause? limit_offset_clauses?
+
+group_clause: GROUP BY var+
+
+having_clause: HAVING constraint+
+
+order_clause: ORDER BY order_condition+
+
+order_condition: (ASC | DESC) bracketted_expression
+               | constraint
+               | var
+
+limit_offset_clauses: limit_clause offset_clause?
+                    | offset_clause limit_clause?
+
+limit_clause: LIMIT NAT
+
+offset_clause: OFFSET NAT
+
+// ========================================
+// TERMS AND NODES
+// ========================================
+
+triples_node: collection | blank_node_property_list
+
+blank_node_property_list: "[" property_list_not_empty "]"
+
+collection: "(" graph_node+ ")"
+
+graph_node: var_or_term | triples_node
+
+var_or_term: var | graph_term
+
+var_or_identifier: var | id
+
+graph_term: id | numeric_literal | boolean_literal | string
+
+// ========================================
+// LITERALS
+// ========================================
+
+numeric_literal: NAT | NUM | DBL
+
+boolean_literal: TRUE | FALSE
+
+string: STRING_LITERAL
+
+var: VAR
+
+id: ID
+
+// ========================================
+// TERMINALS (Lexer Rules)
+// ========================================
+
+// Keywords (case-insensitive)
+SELECT: /[Ss][Ee][Ll][Ee][Cc][Tt]/
+WHERE: /[Ww][Hh][Ee][Rr][Ee]/
+FILTER: /[Ff][Ii][Ll][Tt][Ee][Rr]/
+OPTIONAL: /[Oo][Pp][Tt][Ii][Oo][Nn][Aa][Ll]/
+UNION: /[Uu][Nn][Ii][Oo][Nn]/
+MINUS: /[Mm][Ii][Nn][Uu][Ss]/
+ORDER: /[Oo][Rr][Dd][Ee][Rr]/
+BY: /[Bb][Yy]/
+ASC: /[Aa][Ss][Cc]/
+DESC: /[Dd][Ee][Ss][Cc]/
+LIMIT: /[Ll][Ii][Mm][Ii][Tt]/
+OFFSET: /[Oo][Ff][Ff][Ss][Ee][Tt]/
+DISTINCT: /[Dd][Ii][Ss][Tt][Ii][Nn][Cc][Tt]/
+REDUCED: /[Rr][Ee][Dd][Uu][Cc][Ee][Dd]/
+AS: /[Aa][Ss]/
+GROUP: /[Gg][Rr][Oo][Uu][Pp]/
+HAVING: /[Hh][Aa][Vv][Ii][Nn][Gg]/
+COUNT: /[Cc][Oo][Uu][Nn][Tt]/
+SUM: /[Ss][Uu][Mm]/
+AVG: /[Aa][Vv][Gg]/
+MIN: /[Mm][Ii][Nn]/
+MAX: /[Mm][Aa][Xx]/
+ASK: /[Aa][Ss][Kk]/
+DESCRIBE: /[Dd][Ee][Ss][Cc][Rr][Ii][Bb][Ee]/
+BOUND: /[Bb][Oo][Uu][Nn][Dd]/
+REGEX: /[Rr][Ee][Gg][Ee][Xx]/
+CONTAINS: /[Cc][Oo][Nn][Tt][Aa][Ii][Nn][Ss]/
+STR: /[Ss][Tt][Rr]/
+EXISTS: /[Ee][Xx][Ii][Ss][Tt][Ss]/
+NOT: /[Nn][Oo][Tt]/
+TRUE: /[Tt][Rr][Uu][Ee]/
+FALSE: /[Ff][Aa][Ll][Ss][Ee]/
+
+// Variables: ?name
+VAR: /\?[a-zA-Z_][a-zA-Z0-9_]*/
+
+// Identifiers
+ID: /[a-zA-Z_][a-zA-Z0-9_:]*/
+
+// Numeric literals
+DBL: /[+-]?[0-9]*\.[0-9]+([Ee][+-]?[0-9]+)?/
+NUM: /[+-]?[0-9]+/
+NAT: /[0-9]+/
+
+// String literals
+STRING_LITERAL: /"[^"]*"/ | /'[^']*'/
+
+// Operators
+STAR: "*"
+
+// Whitespace (ignored)
+%ignore /\s+/
+
+// ========================================
+// USAGE EXAMPLES
+// ========================================
+//
+// Negate REGEX match:
+//   FILTER(!REGEX(?name, "^test"))   -- Exclude names starting with "test"
+//
+// Negate CONTAINS:
+//   FILTER(!CONTAINS(?path, "/tmp")) -- Exclude paths containing "/tmp"
+//
+// Pattern negation:
+//   FILTER(NOT EXISTS { ?x deleted true })  -- Exclude deleted items
+//
+// Common mistakes:
+//   ERROR: FILTER ?x > 5         -- Missing parentheses
+//   FIX:   FILTER(?x > 5)
+//
+//   ERROR: ?x name ?n ?x age ?a  -- Missing dots between patterns
+//   FIX:   ?x name ?n . ?x age ?a

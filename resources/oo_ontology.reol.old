@@ -1,0 +1,170 @@
+# Object-Oriented Meta-Ontology - RETER AI Variant
+# Language-independent concepts for semantic code analysis
+#
+# This ontology defines generic OO concepts that language-specific ontologies
+# (py_ontology.reol, js_ontology.reol) extend via is_subclass_of relationships.
+#
+# Example: py:Class is_subclass_of oo:Class
+#          js:Class is_subclass_of oo:Class
+#
+# This allows queries like "FIND ?c WHERE oo:Class(?c)" to match both
+# Python and JavaScript classes.
+
+# ============================================================================
+# Core Entity Hierarchy
+# ============================================================================
+
+oo:CodeEntity is_subclass_of owl:Thing
+
+oo:Module is_subclass_of oo:CodeEntity
+
+oo:Class is_subclass_of oo:CodeEntity
+
+oo:Function is_subclass_of oo:CodeEntity
+
+oo:Method is_subclass_of oo:Function
+
+oo:Constructor is_subclass_of oo:Method
+
+oo:Parameter is_subclass_of oo:CodeEntity
+
+oo:Field is_subclass_of oo:CodeEntity
+
+oo:Import is_subclass_of oo:CodeEntity
+
+oo:Export is_subclass_of oo:CodeEntity
+
+oo:Assignment is_subclass_of oo:CodeEntity
+
+# Error handling (language-independent)
+oo:TryBlock is_subclass_of oo:CodeEntity
+
+oo:CatchClause is_subclass_of oo:CodeEntity
+
+oo:ThrowStatement is_subclass_of oo:CodeEntity
+
+# Control flow
+oo:ReturnStatement is_subclass_of oo:CodeEntity
+
+oo:Call is_subclass_of oo:CodeEntity
+
+# Type system entities (TypeScript, C#, Java-like)
+oo:Interface is_subclass_of oo:CodeEntity
+
+oo:Enum is_subclass_of oo:CodeEntity
+
+oo:EnumMember is_subclass_of oo:CodeEntity
+
+oo:TypeAlias is_subclass_of oo:CodeEntity
+
+oo:Namespace is_subclass_of oo:CodeEntity
+
+# ============================================================================
+# Transitive Relationships (use unprefixed properties - shared across languages)
+# ============================================================================
+
+# Inheritance transitivity
+if inheritsFrom(object x, object y) also inheritsFrom(object y, object z) then inheritsFrom(object x, object z)
+
+# Call graph transitivity
+if calls(object x, object y) also calls(object y, object z) then callsTransitive(object x, object z)
+if calls(object x, object y) then callsTransitive(object x, object y)
+
+# Import transitivity
+if imports(object x, object y) also imports(object y, object z) then importsTransitive(object x, object z)
+if imports(object x, object y) then importsTransitive(object x, object y)
+
+# ============================================================================
+# Structural Relationships
+# ============================================================================
+
+# Method-Class relationship
+if oo:Method(object m) also definedIn(object m, object c) then hasMethod(object c, object m)
+
+# Inherited methods
+if hasMethod(object super, object m) also inheritsFrom(object sub, object super) then inheritsMethod(object sub, object m)
+
+# Function-Parameter relationship
+if oo:Parameter(object p) also ofFunction(object p, object f) then hasParameter(object f, object p)
+
+# Field-Class relationship
+if oo:Field(object f) also definedIn(object f, object c) then hasField(object c, object f)
+
+# Module containment
+if oo:Class(object c) also inModule(object c, object m) then containsClass(object m, object c)
+if oo:Function(object f) also inModule(object f, object m) then containsFunction(object m, object f)
+
+# ============================================================================
+# Documentation Checks
+# ============================================================================
+
+# Undocumented classes
+if oo:Class(object c) also not hasDocstring(object c, object d) then undocumented(object c, true)
+
+# Undocumented functions
+if oo:Function(object f) also not hasDocstring(object f, object d) then undocumented(object f, true)
+
+# Undocumented methods
+if oo:Method(object m) also not hasDocstring(object m, object d) then undocumented(object m, true)
+
+# ============================================================================
+# Code Quality Heuristics
+# ============================================================================
+
+# Potentially unused functions (not called)
+if oo:Function(object f) also not calls(object caller, object f) then potentiallyUnused(object f, true)
+
+# Circular dependencies
+if imports(object m1, object m2) also imports(object m2, object m1) then circularDependency(object m1, object m2)
+
+# ============================================================================
+# Large Entity Detection (Code Smells)
+# ============================================================================
+
+# Large classes (> 200 lines)
+if oo:Class(object c) also lineCount(object c, object lines) also greaterThan(object lines, 200) then largeClass(object c, true)
+
+# Large functions (> 50 lines)
+if oo:Function(object f) also lineCount(object f, object lines) also greaterThan(object lines, 50) then largeFunction(object f, true)
+
+# Large methods (> 50 lines)
+if oo:Method(object m) also lineCount(object m, object lines) also greaterThan(object lines, 50) then largeMethod(object m, true)
+
+# ============================================================================
+# Method Type Recognition
+# ============================================================================
+
+# Static methods
+if oo:Method(object m) also isStatic(object m, "true") then staticMethod(object m, true)
+
+# Async functions/methods
+if oo:Function(object f) also isAsync(object f, "true") then asyncFunction(object f, true)
+if oo:Method(object m) also isAsync(object m, "true") then asyncMethod(object m, true)
+
+# ============================================================================
+# Visibility Recognition
+# ============================================================================
+
+# Private members
+if oo:Method(object m) also isPrivate(object m, "true") then privateMethod(object m, true)
+if oo:Field(object f) also isPrivate(object f, "true") then privateField(object f, true)
+
+# ============================================================================
+# Error Handling Patterns
+# ============================================================================
+
+# Try block with catch
+if oo:TryBlock(object t) also hasCatch(object t, "true") then handleErrors(object t, true)
+
+# Throw statements inside functions
+if oo:ThrowStatement(object th) also inFunction(object th, object f) then throws(object f, object th)
+
+# ============================================================================
+# Class Patterns
+# ============================================================================
+
+# Classes with inheritance (derived classes)
+if oo:Class(object c) also inheritsFrom(object c, object parent) then derivedClass(object c, true)
+
+# Base classes (have subclasses)
+if oo:Class(object c) also inheritsFrom(object sub, object c) then baseClass(object c, true)

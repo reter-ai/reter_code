@@ -1,0 +1,36 @@
+# Object-Oriented Meta-Ontology - RETER AI Variant
+# Language-independent concepts for semantic code analysis
+#
+# This ontology defines generic OO concepts that language-specific ontologies
+# (py_ontology.reol, js_ontology.reol) extend via is_subclass_of relationships.
+#
+# Example: py:Class is_subclass_of oo:Class
+#          js:Class is_subclass_of oo:Class
+#
+# This allows queries like "FIND ?c WHERE oo:Class(?c)" to match both
+# Python and JavaScript classes.
+
+# ============================================================================
+# Core Entity Hierarchy
+# ============================================================================
+
+oo:Method is_subclass_of oo:Function
+oo:Constructor is_subclass_of oo:Method
+oo:Destructor is_subclass_of oo:Method
+
+# ============================================================================
+# Statement Hierarchy
+# ============================================================================
+
+# Base statement type - language-specific statements extend this
+# oo:Statement is the root for all statement types
+
+# Exception handling
+oo:CatchClause is_subclass_of oo:Statement
+oo:FinallyClause is_subclass_of oo:Statement
+oo:TryBlock is_subclass_of oo:Statement
+oo:ThrowStatement is_subclass_of oo:Statement
+
+# Control flow
+oo:ReturnStatement is_subclass_of oo:Statement
+

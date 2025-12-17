@@ -1,0 +1,155 @@
+# C++ Code Ontology - RETER AI Variant
+# Natural English syntax for semantic code analysis
+#
+# This ontology extends the OO meta-ontology (oo_ontology.reol) with
+# C++-specific concepts. All cpp:* types are subclasses of oo:* types,
+# enabling language-independent queries using the oo: prefix.
+
+# ============================================================================
+# Class Hierarchy (C++-specific)
+# ============================================================================
+
+cpp:Method is_subclass_of cpp:Function
+
+cpp:Constructor is_subclass_of cpp:Method
+
+cpp:Destructor is_subclass_of cpp:Method
+
+cpp:Operator is_subclass_of cpp:Method
+
+# ============================================================================
+# Meta-Ontology Integration (extends oo_ontology.reol)
+# ============================================================================
+
+cpp:TranslationUnit is_subclass_of oo:Module
+
+cpp:Namespace is_subclass_of oo:Namespace
+
+cpp:Class is_subclass_of oo:Class
+
+cpp:Struct is_subclass_of oo:Class
+
+cpp:Function is_subclass_of oo:Function
+
+cpp:Method is_subclass_of oo:Method
+
+cpp:Constructor is_subclass_of oo:Constructor
+
+cpp:Destructor is_subclass_of oo:Destructor
+
+cpp:Operator is_subclass_of oo:Method
+
+cpp:Field is_subclass_of oo:Field
+
+cpp:Parameter is_subclass_of oo:Parameter
+
+cpp:UsingDirective is_subclass_of oo:Import
+
+cpp:UsingDeclaration is_subclass_of oo:Import
+
+# ============================================================================
+# Enum Types
+# ============================================================================
+
+cpp:Enum is_subclass_of oo:Enum
+
+cpp:EnumClass is_subclass_of oo:Enum
+
+cpp:Enumerator is_subclass_of oo:EnumValue
+
+# ============================================================================
+# Exception Handling (Try/Catch/Throw)
+# ============================================================================
+
+cpp:TryBlock is_subclass_of oo:TryBlock
+
+cpp:CatchClause is_subclass_of oo:CatchClause
+
+cpp:ThrowStatement is_subclass_of oo:ThrowStatement
+
+# ============================================================================
+# Control Flow Statements
+# ============================================================================
+
+cpp:ReturnStatement is_subclass_of oo:ReturnStatement
+
+cpp:BreakStatement is_subclass_of oo:Statement
+
+cpp:ContinueStatement is_subclass_of oo:Statement
+
+cpp:GotoStatement is_subclass_of oo:Statement
+
+# ============================================================================
+# Expressions and Calls
+# ============================================================================
+
+cpp:Call is_subclass_of oo:Call
+
+# ============================================================================
+# Literals (for magic number detection)
+# ============================================================================
+
+cpp:IntegerLiteral is_subclass_of oo:Literal
+
+cpp:FloatingLiteral is_subclass_of oo:Literal
+
+cpp:StringLiteral is_subclass_of oo:Literal
+
+cpp:CharacterLiteral is_subclass_of oo:Literal
+
+cpp:BooleanLiteral is_subclass_of oo:Literal
+
+cpp:NullptrLiteral is_subclass_of oo:Literal
+
+# ============================================================================
+# C++ Built-in Types
+# ============================================================================
+
+cpp:int is_subclass_of cpp:Type
+cpp:long is_subclass_of cpp:Type
+cpp:short is_subclass_of cpp:Type
+cpp:char is_subclass_of cpp:Type
+cpp:bool is_subclass_of cpp:Type
+cpp:float is_subclass_of cpp:Type
+cpp:double is_subclass_of cpp:Type
+cpp:void is_subclass_of cpp:Type
+cpp:auto is_subclass_of cpp:Type
+cpp:unsigned is_subclass_of cpp:Type
+cpp:signed is_subclass_of cpp:Type
+cpp:size_t is_subclass_of cpp:Type
+cpp:ptrdiff_t is_subclass_of cpp:Type
+cpp:nullptr_t is_subclass_of cpp:Type
+cpp:wchar_t is_subclass_of cpp:Type
+cpp:char8_t is_subclass_of cpp:Type
+cpp:char16_t is_subclass_of cpp:Type
+cpp:char32_t is_subclass_of cpp:Type
+
+# ============================================================================
+# Template Support
+# ============================================================================
+
+cpp:TemplateClass is_subclass_of cpp:Class
+
+cpp:TemplateFunction is_subclass_of cpp:Function
+
+cpp:TemplateParameter is_subclass_of cpp:Parameter
+
+# ============================================================================
+# Access Specifiers (used as values for cpp:visibility property)
+# ============================================================================
+
+# cpp:public, cpp:protected, cpp:private are used as property values
+# e.g., entity cpp:visibility "public"
+
+# ============================================================================
+# Inference Rules (Transitive Relationships)
+# ============================================================================
+
+# Transitive inheritance
+if cpp:Class(object child) also cpp:inheritsFrom(object child, object parent) also cpp:inheritsFrom(object parent, object ancestor) then cpp:inheritsFromTransitive(object child, object ancestor)
+
+# Transitive calls (function A calls B which calls C -> A transitively calls C)
+if cpp:Function(object caller) also cpp:calls(object caller, object callee) also cpp:calls(object callee, object target) then cpp:callsTransitive(object caller, object target)
+
+# Methods inherit visibility from class access specifier context
+# (This is handled by fact extraction visitor)

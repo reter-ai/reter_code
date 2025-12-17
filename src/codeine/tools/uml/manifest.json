@@ -1,0 +1,28 @@
+{
+  "name": "uml",
+  "version": "1.0.0",
+  "description": "Generate UML diagrams (class hierarchy, class diagrams, sequence diagrams) from Python code",
+  "author": "RETER Team",
+  "requires_reter": true,
+  "dependencies": [],
+  "categories": [
+    "visualization",
+    "documentation",
+    "uml",
+    "diagrams"
+  ],
+  "tools": [
+    {
+      "name": "get_class_hierarchy",
+      "description": "Generate class hierarchy diagram showing inheritance relationships (class names only, no methods/attributes)"
+    },
+    {
+      "name": "get_class_diagram",
+      "description": "Generate class diagram for specified classes showing attributes, methods, and relationships"
+    },
+    {
+      "name": "get_sequence_diagram",
+      "description": "Generate sequence diagram showing method calls between specified classes"
+    }
+  ]
+}

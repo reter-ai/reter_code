@@ -1,0 +1,68 @@
+# Python Code Ontology - RETER AI Variant
+# Natural English syntax for semantic code analysis
+#
+# This ontology extends the OO meta-ontology (oo_ontology.reol) with
+# Python-specific concepts. All py:* types are subclasses of oo:* types,
+# enabling language-independent queries using the oo: prefix.
+
+# ============================================================================
+# Class Hierarchy (Python-specific)
+# ============================================================================
+
+py:Method is_subclass_of py:Function
+
+# ============================================================================
+# Meta-Ontology Integration (extends oo_ontology.reol)
+# ============================================================================
+
+py:Module is_subclass_of oo:Module
+
+py:Class is_subclass_of oo:Class
+
+py:Function is_subclass_of oo:Function
+
+py:Method is_subclass_of oo:Method
+
+py:Parameter is_subclass_of oo:Parameter
+
+py:Import is_subclass_of oo:Import
+
+py:Assignment is_subclass_of oo:Assignment
+
+py:Attribute is_subclass_of oo:Field
+
+# ============================================================================
+# Exception Handling (extends oo_ontology.reol)
+# ============================================================================
+
+py:TryBlock is_subclass_of oo:TryBlock
+
+py:ExceptHandler is_subclass_of oo:CatchClause
+
+py:FinallyBlock is_subclass_of oo:FinallyClause
+
+py:TryElseBlock is_subclass_of oo:Statement
+
+# ============================================================================
+# Statements (extends oo_ontology.reol)
+# ============================================================================
+
+py:RaiseStatement is_subclass_of oo:ThrowStatement
+
+py:ReturnStatement is_subclass_of oo:ReturnStatement
+
+py:WithStatement is_subclass_of oo:Statement
+
+# ============================================================================
+# Type Hierarchy
+# ============================================================================
+
+py:int is_subclass_of py:Type
+py:str is_subclass_of py:Type
+py:bool is_subclass_of py:Type
+py:float is_subclass_of py:Type
+py:list is_subclass_of py:Type
+py:dict is_subclass_of py:Type
+py:set is_subclass_of py:Type
+py:tuple is_subclass_of py:Type
+py:None is_subclass_of py:Type

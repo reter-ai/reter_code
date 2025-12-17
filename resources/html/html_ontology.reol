@@ -1,0 +1,54 @@
+# HTML Document Ontology - RETER AI Variant
+# Natural English syntax for semantic HTML analysis
+#
+# This ontology provides concepts for HTML document analysis:
+# - Document structure (documents, elements, forms)
+# - Scripts and event handlers (with JavaScript integration)
+# - Framework detection (Vue, Angular, HTMX, Alpine)
+# - Links and resources (stylesheets, external scripts)
+
+# ============================================================================
+# Class Hierarchy (HTML-specific)
+# ============================================================================
+
+html:DocumentEntity is_subclass_of owl:Thing
+
+html:Document is_subclass_of html:DocumentEntity
+
+html:Element is_subclass_of html:DocumentEntity
+
+html:Script is_subclass_of html:DocumentEntity
+
+html:ScriptReference is_subclass_of html:DocumentEntity
+
+html:StyleSheet is_subclass_of html:DocumentEntity
+
+html:Form is_subclass_of html:Element
+
+html:FormInput is_subclass_of html:Element
+
+html:Link is_subclass_of html:Element
+
+html:Meta is_subclass_of html:Element
+
+html:EventHandler is_subclass_of html:DocumentEntity
+
+html:Image is_subclass_of html:Element
+
+html:Iframe is_subclass_of html:Element
+
+# ============================================================================
+# Framework Directives
+# ============================================================================
+
+html:FrameworkIndicator is_subclass_of html:DocumentEntity
+
+html:VueDirective is_subclass_of html:FrameworkIndicator
+
+html:AngularDirective is_subclass_of html:FrameworkIndicator
+
+html:HtmxAttribute is_subclass_of html:FrameworkIndicator
+
+html:AlpineDirective is_subclass_of html:FrameworkIndicator
+
+html:DataAttribute is_subclass_of html:DocumentEntity

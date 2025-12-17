@@ -1,0 +1,95 @@
+# C# Code Ontology - RETER AI Variant
+# Natural English syntax for semantic code analysis
+#
+# This ontology extends the OO meta-ontology (oo_ontology.reol) with
+# C#-specific concepts. All cs:* types are subclasses of oo:* types,
+# enabling language-independent queries using the oo: prefix.
+
+# ============================================================================
+# Class Hierarchy (C#-specific)
+# ============================================================================
+
+cs:Method is_subclass_of cs:Function
+
+cs:Constructor is_subclass_of cs:Method
+
+# ============================================================================
+# Meta-Ontology Integration (extends oo_ontology.reol)
+# ============================================================================
+
+cs:CompilationUnit is_subclass_of oo:Module
+
+cs:Namespace is_subclass_of oo:Namespace
+
+cs:Class is_subclass_of oo:Class
+
+cs:Interface is_subclass_of oo:Interface
+
+cs:Struct is_subclass_of oo:Class
+
+cs:Enum is_subclass_of oo:Enum
+
+cs:Delegate is_subclass_of oo:TypeAlias
+
+cs:Function is_subclass_of oo:Function
+
+cs:Method is_subclass_of oo:Method
+
+cs:Constructor is_subclass_of oo:Constructor
+
+cs:Property is_subclass_of oo:Field
+
+cs:Field is_subclass_of oo:Field
+
+cs:Event is_subclass_of oo:Field
+
+cs:Parameter is_subclass_of oo:Parameter
+
+cs:Using is_subclass_of oo:Import
+
+cs:Attribute is_subclass_of oo:Decorator
+
+# ============================================================================
+# Exception Handling (Try/Catch/Finally)
+# ============================================================================
+
+cs:TryBlock is_subclass_of oo:TryBlock
+
+cs:CatchClause is_subclass_of oo:CatchClause
+
+cs:FinallyClause is_subclass_of oo:FinallyClause
+
+# ============================================================================
+# Statements
+# ============================================================================
+
+cs:ThrowStatement is_subclass_of oo:ThrowStatement
+
+cs:ReturnStatement is_subclass_of oo:ReturnStatement
+
+# ============================================================================
+# Expressions and Literals
+# ============================================================================
+
+# Note: Call tracking uses "calls" role relationships instead of cs:Call instances
+# This enables uniform call graph analysis across all languages
+
+cs:Literal is_subclass_of oo:Literal
+
+# ============================================================================
+# C# Built-in Types
+# ============================================================================
+
+cs:int is_subclass_of cs:Type
+cs:string is_subclass_of cs:Type
+cs:bool is_subclass_of cs:Type
+cs:float is_subclass_of cs:Type
+cs:double is_subclass_of cs:Type
+cs:decimal is_subclass_of cs:Type
+cs:long is_subclass_of cs:Type
+cs:short is_subclass_of cs:Type
+cs:byte is_subclass_of cs:Type
+cs:char is_subclass_of cs:Type
+cs:object is_subclass_of cs:Type
+cs:void is_subclass_of cs:Type
+cs:dynamic is_subclass_of cs:Type

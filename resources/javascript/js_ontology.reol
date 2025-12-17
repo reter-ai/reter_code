@@ -1,0 +1,60 @@
+# JavaScript Code Ontology - RETER AI Variant
+# Natural English syntax for semantic code analysis
+#
+# This ontology extends the OO meta-ontology (oo_ontology.reol) with
+# JavaScript-specific concepts. All js:* types are subclasses of oo:* types,
+# enabling language-independent queries using the oo: prefix.
+
+# ============================================================================
+# Class Hierarchy (JavaScript-specific)
+# ============================================================================
+
+js:Method is_subclass_of js:Function
+
+js:Constructor is_subclass_of js:Method
+
+js:ArrowFunction is_subclass_of js:Function
+
+js:Module is_subclass_of oo:Module
+
+js:Class is_subclass_of oo:Class
+
+js:Function is_subclass_of oo:Function
+
+js:Method is_subclass_of oo:Method
+
+js:Constructor is_subclass_of oo:Constructor
+
+js:ArrowFunction is_subclass_of oo:Function
+
+js:Parameter is_subclass_of oo:Parameter
+
+js:Field is_subclass_of oo:Field
+
+js:Import is_subclass_of oo:Import
+
+js:Export is_subclass_of oo:Export
+
+js:Assignment is_subclass_of oo:Assignment
+
+js:TryBlock is_subclass_of oo:TryBlock
+
+js:CatchClause is_subclass_of oo:CatchClause
+
+js:ThrowStatement is_subclass_of oo:ThrowStatement
+
+js:ReturnStatement is_subclass_of oo:ReturnStatement
+
+# Note: Call tracking uses "calls" role relationships instead of js:Call instances
+# This enables uniform call graph analysis across all languages
+
+# TypeScript-specific meta-ontology integration
+js:Interface is_subclass_of oo:Interface
+
+js:Enum is_subclass_of oo:Enum
+
+js:EnumMember is_subclass_of oo:EnumMember
+
+js:TypeAlias is_subclass_of oo:TypeAlias
+
+js:Namespace is_subclass_of oo:Namespace

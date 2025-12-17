@@ -1,0 +1,6 @@
+{
+    "project_include": "src/*,lib/*",
+    "project_exclude": "test_*.py,*_test.py,**/__pycache__/*,**/node_modules/*",
+    "anthropic_model": "claude-sonnet-4-20250514",
+    "anthropic_max_tokens": 1024
+}

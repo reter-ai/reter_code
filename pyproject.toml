@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codeine"
+version = "0.1.0"
+description = "Codeine - AI-powered code reasoning MCP server"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Codeine.AI", email = "contact@codeine.ai"}
+]
+keywords = ["mcp", "reasoning", "code-analysis", "ai", "llm"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+# Note: Installation requires --find-links for reter-core:
+# uv pip install codeine --find-links https://raw.githubusercontent.com/codeine-ai/reter/main/reter_core/index.html
+dependencies = [
+    "fastmcp>=2.0.0",
+    "reter @ git+https://github.com/codeine-ai/reter.git",
+    "pyarrow>=10.0.0",
+    "sentence-transformers>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "inline-snapshot>=0.6.0",
+    "dirty-equals>=0.6.0",
+]
+
+[project.scripts]
+codeine = "codeine:main"
+
+[project.urls]
+Homepage = "https://github.com/codeine-ai/codeine"
+Documentation = "https://github.com/codeine-ai/codeine#readme"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+codeine = ["resources/*", "resources/**/*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

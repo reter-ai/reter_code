@@ -1,0 +1,3397 @@
+"""
+Refactoring Opportunity Detector
+
+Detects opportunities for Martin Fowler's fundamental refactorings from Chapter 6.
+Implements automated detection for:
+- Extract Function
+- Introduce Parameter Object (Data Clumps)
+- Combine Functions into Class (Function Groups)
+
+Created as part of Phase 1 implementation of Chapter 6 refactoring patterns.
+"""
+
+from typing import Dict, Any, List, Set, Tuple
+from collections import defaultdict
+import time
+
+
+class RefactoringOpportunityDetector:
+    """
+    Detects refactoring opportunities based on Martin Fowler's patterns.
+
+    This service provides detection for:
+    - Data clumps (parameters appearing together → Introduce Parameter Object)
+    - Function groups (functions sharing data → Combine Functions into Class)
+    - Extract function opportunities (long functions, duplicated patterns)
+
+    Responsibilities:
+    - Query RETER for code patterns
+    - Analyze parameter and call relationships
+    - Identify refactoring opportunities
+    - Provide actionable recommendations with severity levels
+    """
+
+    def __init__(self, reter_wrapper):
+        """
+        Initialize refactoring opportunity detector.
+
+        Args:
+            reter_wrapper: ReterWrapper instance with loaded Python code
+        """
+        self.reter = reter_wrapper
+
+    def _query_to_list(self, result) -> List[tuple]:
+        """
+        Convert PyArrow Table to list of tuples.
+
+        Args:
+            result: PyArrow Table from REQL query
+
+        Returns:
+            List of tuples, one per row
+        """
+        if result.num_rows == 0:
+            return []
+
+        columns = [result.column(name).to_pylist() for name in result.column_names]
+        return list(zip(*columns))
+
+    # =========================================================================
+    # DATA CLUMP DETECTION (Introduce Parameter Object)
+    # =========================================================================
+
+    async def find_data_clumps(
+        self,
+        instance_name: str,
+        min_params: int = 3,
+        min_functions: int = 2
+    ) -> Dict[str, Any]:
+        """
+        Detect parameter groups that appear together in multiple functions.
+
+        Data clumps are groups of parameters that travel together across
+        multiple function signatures. This suggests the need for an
+        Introduce Parameter Object refactoring.
+
+        Example:
+            If calculatePrice(customer, product, quantity) and
+            applyDiscount(customer, product, quantity) both have the
+            same three parameters, suggest OrderDetails parameter object.
+
+        Args:
+            instance_name: RETER instance name
+            min_params: Minimum parameters in a clump (default: 3)
+            min_functions: Minimum functions sharing parameters (default: 2)
+
+        Returns:
+            dict with:
+                success: bool
+                data_clumps: List of parameter clumps with affected functions
+                count: Number of clumps found
+                queries: REQL queries executed
+                time_ms: Execution time
+        """
+        start_time = time.time()
+        queries = []
+
+        try:
+            # Query all function-parameter relationships
+            query = """
+                SELECT ?func ?func_name ?module ?param_name
+                WHERE {
+                    ?func concept ?type .
+                    ?func name ?func_name .
+                    ?func inModule ?module .
+                    ?param concept "py:Parameter" .
+                    ?param ofFunction ?func .
+                    ?param name ?param_name .
+                    FILTER(?type = "py:Function" || ?type = "py:Method")
+                }
+                ORDER BY ?func ?param_name
+            """
+            queries.append(query.strip())
+
+            result = await self.reter.reql(query)
+            rows = self._query_to_list(result)
+
+            # Build function -> parameters mapping
+            func_params: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
+                "params": set(),
+                "name": "",
+                "module": ""
+            })
+
+            for func_id, func_name, module, param_name in rows:
+                func_params[func_id]["params"].add(param_name)
+                func_params[func_id]["name"] = func_name
+                func_params[func_id]["module"] = module
+
+            # Find parameter sets appearing in multiple functions
+            param_set_to_functions: Dict[frozenset, List[Dict[str, str]]] = defaultdict(list)
+
+            for func_id, func_data in func_params.items():
+                params = func_data["params"]
+
+                # Only consider functions with enough parameters
+                if len(params) >= min_params:
+                    # Generate all subsets of size >= min_params
+                    param_list = sorted(params)
+
+                    # For now, use the full parameter set
+                    # TODO: Could enhance to find all n-sized subsets
+                    param_frozenset = frozenset(params)
+
+                    param_set_to_functions[param_frozenset].append({
+                        "qualified_name": func_id,
+                        "name": func_data["name"],
+                        "module": func_data["module"]
+                    })
+
+            # Filter to clumps appearing in multiple functions
+            data_clumps = []
+
+            for param_set, functions in param_set_to_functions.items():
+                if len(functions) >= min_functions and len(param_set) >= min_params:
+                    # Check if this is a wrapper pattern (false positive)
+                    if len(functions) == 2 and await self._is_wrapper_pattern(functions[0], functions[1]):
+                        continue  # Skip wrapper patterns
+                    # Calculate severity based on occurrences and parameter count
+                    occurrence_count = len(functions)
+                    param_count = len(param_set)
+
+                    if occurrence_count >= 5 or param_count >= 5:
+                        severity = "HIGH"
+                    elif occurrence_count >= 3 or param_count >= 4:
+                        severity = "MEDIUM"
+                    else:
+                        severity = "LOW"
+
+                    # Generate suggested parameter object name
+                    # Use common naming patterns: combine function name prefixes
+                    func_names = [f["name"] for f in functions]
+                    suggested_name = self._suggest_parameter_object_name(
+                        sorted(param_set),
+                        func_names
+                    )
+
+                    data_clumps.append({
+                        "parameters": sorted(param_set),
+                        "parameter_count": param_count,
+                        "functions": functions,
+                        "occurrence_count": occurrence_count,
+                        "severity": severity,
+                        "refactoring": "Introduce Parameter Object",
+                        "suggestion": f"Create {suggested_name} class with fields: {', '.join(sorted(param_set))}",
+                        "estimated_effort": "moderate"
+                    })
+
+            # Sort by severity and occurrence count
+            severity_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+            data_clumps.sort(
+                key=lambda x: (severity_order[x["severity"]], -x["occurrence_count"])
+            )
+
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": True,
+                "data_clumps": data_clumps,
+                "count": len(data_clumps),
+                "min_params": min_params,
+                "min_functions": min_functions,
+                "queries": queries,
+                "time_ms": time_ms
+            }
+
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": False,
+                "error": str(e),
+                "data_clumps": [],
+                "count": 0,
+                "queries": queries,
+                "time_ms": time_ms
+            }
+
+    def _suggest_parameter_object_name(
+        self,
+        params: List[str],
+        func_names: List[str]
+    ) -> str:
+        """
+        Suggest a name for parameter object based on parameters and functions.
+
+        Args:
+            params: List of parameter names
+            func_names: List of function names using these parameters
+
+        Returns:
+            Suggested class name for parameter object
+        """
+        # Strategy 1: If params include obvious domain term (customer, order, product)
+        domain_terms = {'customer', 'order', 'product', 'invoice', 'user', 'account', 'payment'}
+        for param in params:
+            param_lower = param.lower()
+            if param_lower in domain_terms:
+                return param.capitalize() + "Details"
+
+        # Strategy 2: Look for common prefix in function names
+        if len(func_names) >= 2:
+            prefix = self._common_prefix(func_names)
+            if len(prefix) > 2:
+                return prefix.capitalize() + "Parameters"
+
+        # Strategy 3: Use first parameter name as basis
+        if params:
+            return params[0].capitalize() + "Group"
+
+        # Fallback
+        return "ParameterObject"
+
+    def _common_prefix(self, strings: List[str]) -> str:
+        """Find common prefix of strings."""
+        if not strings:
+            return ""
+
+        prefix = strings[0]
+        for s in strings[1:]:
+            while not s.startswith(prefix):
+                prefix = prefix[:-1]
+                if not prefix:
+                    return ""
+        return prefix
+
+    async def _is_wrapper_pattern(self, func1: Dict[str, str], func2: Dict[str, str]) -> bool:
+        """
+        Detect if two functions are in a wrapper/delegate pattern.
+
+        Wrapper pattern characteristics:
+        - One function calls the other
+        - The calling function is short (typically < 10 lines)
+        - Minimal additional logic beyond delegation
+
+        This helps eliminate false positives where parameter passing is intentional
+        architectural design (Facade/Adapter patterns).
+
+        Args:
+            func1: First function dict with qualified_name, name, module
+            func2: Second function dict with qualified_name, name, module
+
+        Returns:
+            True if functions form a wrapper pattern, False otherwise
+        """
+        try:
+            func1_id = func1["qualified_name"]
+            func2_id = func2["qualified_name"]
+
+            # Query 1: Check if func1 calls func2 or vice versa
+            calls_query = f"""
+            SELECT ?caller ?callee
+            WHERE {{
+                ?caller calls ?callee .
+                FILTER(
+                    (?caller = <{func1_id}> && ?callee = <{func2_id}>) ||
+                    (?caller = <{func2_id}> && ?callee = <{func1_id}>)
+                )
+            }}
+            """
+            calls_result = await self.reter.reql(calls_query)
+            calls_list = self._query_to_list(calls_result)
+
+            if not calls_list:
+                return False  # No call relationship
+
+            # Determine which is the wrapper (caller)
+            caller_id = calls_list[0][0]
+
+            # Query 2: Check line count of the wrapper
+            line_count_query = f"""
+            SELECT ?line_count
+            WHERE {{
+                <{caller_id}> lineCount ?line_count .
+            }}
+            """
+            line_result = await self.reter.reql(line_count_query)
+            line_list = self._query_to_list(line_result)
+
+            if not line_list:
+                return False
+
+            line_count = int(line_list[0][0]) if line_list[0][0] else 999
+
+            # Wrapper pattern: short function (< 10 lines) that calls another
+            if line_count <= 10:
+                return True
+
+            return False
+
+        except Exception as e:
+            # If there's any error in pattern detection, don't skip
+            return False
+
+    # =========================================================================
+    # FUNCTION GROUP DETECTION (Combine Functions into Class)
+    # =========================================================================
+
+    async def find_function_groups(
+        self,
+        instance_name: str,
+        min_shared_params: int = 2,
+        min_functions: int = 3
+    ) -> Dict[str, Any]:
+        """
+        Identify groups of functions operating on shared data.
+
+        Function groups are sets of functions that:
+        1. Share common parameters (operate on same data)
+        2. May call each other (collaboration)
+        3. Are candidates for Combine Functions into Class
+
+        Example:
+            calculateBaseCharge(reading), calculateTaxableCharge(reading),
+            and printInvoice(reading) all work with the same 'reading' data
+            → Suggest ReadingProcessor class
+
+        Args:
+            instance_name: RETER instance name
+            min_shared_params: Minimum shared parameters (default: 2)
+            min_functions: Minimum functions in group (default: 3)
+
+        Returns:
+            dict with:
+                success: bool
+                function_groups: List of function groups
+                count: Number of groups found
+                queries: REQL queries executed
+                time_ms: Execution time
+        """
+        start_time = time.time()
+        queries = []
+
+        try:
+            # Query 1: Get all function-parameter relationships
+            param_query = """
+                SELECT ?func ?func_name ?module ?param_name
+                WHERE {
+                    ?func concept ?type .
+                    ?func name ?func_name .
+                    ?func inModule ?module .
+                    ?param concept "py:Parameter" .
+                    ?param ofFunction ?func .
+                    ?param name ?param_name .
+                    FILTER(?type = "py:Function" || ?type = "py:Method")
+                }
+                ORDER BY ?func
+            """
+            queries.append(param_query.strip())
+
+            result = await self.reter.reql(param_query)
+            rows = self._query_to_list(result)
+
+            # Build function info and parameter mappings
+            func_info: Dict[str, Dict[str, Any]] = {}
+            param_to_funcs: Dict[str, Set[str]] = defaultdict(set)
+
+            for func_id, func_name, module, param_name in rows:
+                if func_id not in func_info:
+                    func_info[func_id] = {
+                        "name": func_name,
+                        "module": module,
+                        "params": set()
+                    }
+                func_info[func_id]["params"].add(param_name)
+                param_to_funcs[param_name].add(func_id)
+
+            # Query 2: Get call relationships
+            call_query = """
+                SELECT ?caller ?callee
+                WHERE {
+                    ?caller concept ?type1 .
+                    ?caller calls ?callee .
+                    ?callee concept ?type2 .
+                    FILTER(?type1 = "py:Function" || ?type1 = "py:Method")
+                    FILTER(?type2 = "py:Function" || ?type2 = "py:Method")
+                }
+            """
+            queries.append(call_query.strip())
+
+            result = await self.reter.reql(call_query)
+            call_rows = self._query_to_list(result)
+
+            # Build call graph
+            call_graph: Dict[str, Set[str]] = defaultdict(set)
+            for caller, callee in call_rows:
+                call_graph[caller].add(callee)
+                # Add reverse edge for bidirectional grouping
+                call_graph[callee].add(caller)
+
+            # Find function groups: functions sharing parameters
+            # Group by shared parameter patterns
+            param_pattern_to_funcs: Dict[frozenset, List[str]] = defaultdict(list)
+
+            for func_id, info in func_info.items():
+                # Create a pattern from sorted parameter names
+                if len(info["params"]) > 0:
+                    pattern = frozenset(info["params"])
+                    param_pattern_to_funcs[pattern].append(func_id)
+
+            # Find groups with sufficient shared parameters
+            function_groups = []
+            processed_funcs = set()
+
+            for pattern, func_ids in param_pattern_to_funcs.items():
+                # Skip if we've already processed these functions
+                if any(fid in processed_funcs for fid in func_ids):
+                    continue
+
+                if len(func_ids) >= min_functions and len(pattern) >= min_shared_params:
+                    # Get call relationships within group
+                    call_relationships = []
+                    for func_id in func_ids:
+                        for callee in call_graph.get(func_id, []):
+                            if callee in func_ids:
+                                caller_name = func_info[func_id]["name"]
+                                callee_name = func_info[callee]["name"]
+                                call_relationships.append(f"{caller_name} -> {callee_name}")
+
+                    # Calculate severity
+                    func_count = len(func_ids)
+                    param_count = len(pattern)
+                    has_calls = len(call_relationships) > 0
+
+                    if func_count >= 5 or (param_count >= 3 and has_calls):
+                        severity = "HIGH"
+                    elif func_count >= 3 or param_count >= 2:
+                        severity = "MEDIUM"
+                    else:
+                        severity = "LOW"
+
+                    # Get function details
+                    functions = [
+                        {
+                            "qualified_name": func_id,
+                            "name": func_info[func_id]["name"],
+                            "module": func_info[func_id]["module"]
+                        }
+                        for func_id in func_ids
+                    ]
+
+                    # Suggest class name
+                    func_names = [f["name"] for f in functions]
+                    suggested_class = self._suggest_class_name(func_names, list(pattern))
+
+                    # Check if functions are already in the same class (false positive)
+                    if await self._already_in_same_class(func_ids):
+                        continue  # Skip - already refactored
+
+                    function_groups.append({
+                        "functions": functions,
+                        "function_count": func_count,
+                        "shared_parameters": sorted(pattern),
+                        "parameter_count": param_count,
+                        "call_relationships": call_relationships,
+                        "has_collaboration": has_calls,
+                        "severity": severity,
+                        "refactoring": "Combine Functions into Class",
+                        "suggestion": f"Create {suggested_class} class with methods: {', '.join([f['name'] for f in functions[:3]])}{'...' if len(functions) > 3 else ''}",
+                        "estimated_effort": "moderate" if func_count <= 5 else "high"
+                    })
+
+                    # Mark as processed
+                    processed_funcs.update(func_ids)
+
+            # Sort by severity and function count
+            severity_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+            function_groups.sort(
+                key=lambda x: (severity_order[x["severity"]], -x["function_count"])
+            )
+
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": True,
+                "function_groups": function_groups,
+                "count": len(function_groups),
+                "min_shared_params": min_shared_params,
+                "min_functions": min_functions,
+                "queries": queries,
+                "time_ms": time_ms
+            }
+
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": False,
+                "error": str(e),
+                "function_groups": [],
+                "count": 0,
+                "queries": queries,
+                "time_ms": time_ms
+            }
+
+    def _suggest_class_name(
+        self,
+        func_names: List[str],
+        params: List[str]
+    ) -> str:
+        """
+        Suggest a class name based on function names and shared parameters.
+
+        Args:
+            func_names: List of function names in the group
+            params: List of shared parameter names
+
+        Returns:
+            Suggested class name
+        """
+        # Strategy 1: Look for common prefix in function names
+        if len(func_names) >= 2:
+            prefix = self._common_prefix(func_names)
+            if len(prefix) > 2:
+                # Remove common action verbs
+                prefix_clean = prefix.rstrip('_')
+                if prefix_clean:
+                    return prefix_clean.capitalize() + "Processor"
+
+        # Strategy 2: Use dominant parameter name
+        domain_terms = {'customer', 'order', 'product', 'invoice', 'user', 'reading', 'account'}
+        for param in params:
+            param_lower = param.lower()
+            if param_lower in domain_terms:
+                return param.capitalize() + "Processor"
+
+        # Strategy 3: Use first parameter
+        if params:
+            return params[0].capitalize() + "Handler"
+
+        # Fallback
+        return "ServiceClass"
+
+    async def _already_in_same_class(self, function_ids: List[str]) -> bool:
+        """
+        Check if all functions are already methods of the same class.
+
+        This helps eliminate false positives where functions are already
+        properly encapsulated in a class (no refactoring needed).
+
+        Args:
+            function_ids: List of function/method qualified names
+
+        Returns:
+            True if all functions are in the same class, False otherwise
+        """
+        try:
+            if not function_ids:
+                return False
+
+            # Query to find the containing class for each function
+            classes = set()
+
+            for func_id in function_ids:
+                class_query = f"""
+                SELECT ?class
+                WHERE {{
+                    ?func qualifiedName "{func_id}" .
+                    ?func definedIn ?class .
+                    ?class concept "py:Class" .
+                }}
+                """
+                result = await self.reter.reql(class_query)
+                class_list = self._query_to_list(result)
+
+                if class_list:
+                    classes.add(class_list[0][0])
+                else:
+                    # Function not in a class (standalone function)
+                    return False
+
+            # All in same class = already combined
+            return len(classes) == 1
+
+        except Exception as e:
+            # If there's any error, don't skip (conservative approach)
+            return False
+
+    # =========================================================================
+    # EXTRACT FUNCTION OPPORTUNITIES
+    # =========================================================================
+
+    async def find_extract_function_opportunities(
+        self,
+        instance_name: str,
+        min_lines: int = 20
+    ) -> Dict[str, Any]:
+        """
+        Enhanced long function detection for Extract Function refactoring.
+
+        Identifies functions that are candidates for Extract Function based on:
+        - Line count exceeding threshold
+        - High complexity (if available)
+        - Presence of comments indicating sections
+
+        Args:
+            instance_name: RETER instance name
+            min_lines: Minimum line count to flag (default: 20)
+
+        Returns:
+            dict with:
+                success: bool
+                opportunities: List of extraction opportunities
+                count: Number of opportunities found
+                queries: REQL queries executed
+                time_ms: Execution time
+        """
+        start_time = time.time()
+        queries = []
+
+        try:
+            # Query functions with line counts
+            query = f"""
+                SELECT ?func ?name ?module ?line_count
+                WHERE {{
+                    ?func concept ?type .
+                    ?func name ?name .
+                    ?func inModule ?module .
+                    ?func lineCount ?line_count .
+                    FILTER(?type = "py:Function" || ?type = "py:Method")
+                    FILTER(?line_count >= {min_lines})
+                }}
+                ORDER BY DESC(?line_count)
+            """
+            queries.append(query.strip())
+
+            result = await self.reter.reql(query)
+            rows = self._query_to_list(result)
+
+            opportunities = []
+
+            for func_id, name, module, line_count in rows:
+                # Convert line_count to integer (comes from REQL as string)
+                line_count = int(line_count)
+
+                # Calculate severity based on line count
+                if line_count >= 100:
+                    severity = "CRITICAL"
+                    effort = "high"
+                elif line_count >= 50:
+                    severity = "HIGH"
+                    effort = "moderate"
+                elif line_count >= 30:
+                    severity = "MEDIUM"
+                    effort = "moderate"
+                else:
+                    severity = "LOW"
+                    effort = "simple"
+
+                opportunities.append({
+                    "function": func_id,
+                    "name": name,
+                    "module": module,
+                    "line_count": int(line_count) if line_count else 0,
+                    "severity": severity,
+                    "refactoring": "Extract Function",
+                    "suggestion": f"Function '{name}' has {line_count} lines. Consider extracting logical sections into separate functions.",
+                    "estimated_effort": effort
+                })
+
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": True,
+                "opportunities": opportunities,
+                "count": len(opportunities),
+                "min_lines": min_lines,
+                "queries": queries,
+                "time_ms": time_ms
+            }
+
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": False,
+                "error": str(e),
+                "opportunities": [],
+                "count": 0,
+                "queries": queries,
+                "time_ms": time_ms
+            }
+
+    async def find_inline_function_candidates(
+        self,
+        instance_name: str,
+        max_lines: int = 5,
+        limit: int = 100
+    ):
+        """
+        Detect trivial functions that are called from only one location.
+
+        Inline Function (Fowler, Chapter 6):
+        When a function body is as clear as its name, inline the function.
+
+        Detection:
+        - Function has ≤ max_lines (default: 5)
+        - Function is called from exactly 1 location
+        - Not a public API function (avoid breaking external callers)
+
+        Args:
+            instance_name: RETER instance name
+            max_lines: Maximum lines to be considered trivial (default: 5)
+            limit: Maximum results to return (default: 100)
+
+        Returns:
+            success: Whether analysis succeeded
+            candidates: List of inline function candidates
+            count: Number of candidates found
+            max_lines: Threshold used
+            queries: REQL queries executed
+            time_ms: Execution time
+        """
+        start_time = time.time()
+        queries = []
+
+        try:
+            # Query 1: Find all functions with line count ≤ max_lines
+            query1 = f"""
+            SELECT ?func ?name ?module ?line_count ?line
+            WHERE {{
+                ?func concept "py:Function" .
+                ?func name ?name .
+                ?func inModule ?module .
+                ?module file ?file .
+                ?func atLine ?line .
+                ?func lineCount ?line_count .
+                FILTER(?line_count <= {max_lines})
+            }}
+            """
+            queries.append(("trivial_functions", query1))
+            result1 = await self.reter.reql(query1)
+            trivial_functions = self._query_to_list(result1)
+
+            # Query 2: Find all call relationships
+            query2 = """
+            SELECT ?caller ?callee
+            WHERE {
+                ?caller calls ?callee .
+            }
+            """
+            queries.append(("call_graph", query2))
+            result2 = await self.reter.reql(query2)
+            call_graph = self._query_to_list(result2)
+
+            # Count callers for each function
+            caller_count = {}
+            for caller, callee in call_graph:
+                if callee not in caller_count:
+                    caller_count[callee] = 0
+                caller_count[callee] += 1
+
+            # Query 3: Check if functions are public API (not starting with _)
+            public_functions = set()
+            for func_id, name, module, line_count, line in trivial_functions:
+                if not name.startswith('_'):
+                    public_functions.add(func_id)
+
+            # Find candidates: trivial functions called exactly once, not public API
+            candidates = []
+            for func_id, name, module, line_count, line in trivial_functions[:limit]:
+                count = caller_count.get(func_id, 0)
+
+                if count == 1 and func_id not in public_functions:
+                    # Find the single caller
+                    caller_name = None
+                    for caller, callee in call_graph:
+                        if callee == func_id:
+                            # Get caller name
+                            query_caller = f"""
+                            SELECT ?caller_name
+                            WHERE {{
+                                <{caller}> name ?caller_name .
+                            }}
+                            """
+                            caller_result = await self.reter.reql(query_caller)
+                            caller_list = self._query_to_list(caller_result)
+                            if caller_list:
+                                caller_name = caller_list[0][0]
+                            break
+
+                    severity = "LOW" if line_count <= 3 else "MEDIUM"
+                    effort = "simple"
+
+                    candidates.append({
+                        "function": func_id,
+                        "name": name,
+                        "module": module,
+                        "line": int(line) if line else 0,
+                        "line_count": int(line_count) if line_count else 0,
+                        "caller": caller_name or "unknown",
+                        "severity": severity,
+                        "refactoring": "Inline Function",
+                        "suggestion": f"Function '{name}' ({line_count} lines) is only called once. Consider inlining into '{caller_name}'.",
+                        "estimated_effort": effort
+                    })
+
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": True,
+                "candidates": candidates,
+                "count": len(candidates),
+                "max_lines": max_lines,
+                "queries": queries,
+                "time_ms": time_ms
+            }
+
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": False,
+                "error": str(e),
+                "candidates": [],
+                "count": 0,
+                "queries": queries,
+                "time_ms": time_ms
+            }
+
+    def _suggest_interface_name(self, function_names: list) -> str:
+        """
+        Suggest an interface name based on function names.
+
+        Args:
+            function_names: List of function names with common signatures
+
+        Returns:
+            Suggested interface name
+        """
+        if not function_names:
+            return "CommonInterface"
+
+        # Find common prefix
+        prefix = self._common_prefix(function_names)
+        if prefix and len(prefix) >= 3:
+            # Remove trailing underscore
+            prefix = prefix.rstrip('_')
+            return f"{prefix}Interface"
+
+        # Try to find common suffix
+        reversed_names = [name[::-1] for name in function_names]
+        suffix = self._common_prefix(reversed_names)[::-1]
+        if suffix and len(suffix) >= 3:
+            suffix = suffix.lstrip('_')
+            return f"{suffix}Interface"
+
+        # Fallback: use first function name + Interface
+        first_name = function_names[0].replace('_', ' ').title().replace(' ', '')
+        return f"{first_name}Interface"
+
+    async def find_duplicate_parameter_lists(
+        self,
+        instance_name: str,
+        min_params: int = 2,
+        min_functions: int = 2,
+        limit: int = 100
+    ):
+        """
+        Find functions with identical parameter signatures.
+
+        Change Function Declaration (Fowler, Chapter 6):
+        Functions with identical signatures may indicate need for interface extraction.
+
+        Detection:
+        - Functions have identical parameter lists (names and order)
+        - At least min_params parameters
+        - At least min_functions functions share the signature
+
+        Args:
+            instance_name: RETER instance name
+            min_params: Minimum parameters required (default: 2)
+            min_functions: Minimum functions sharing signature (default: 2)
+            limit: Maximum results to return (default: 100)
+
+        Returns:
+            success: Whether analysis succeeded
+            duplicates: List of duplicate parameter lists
+            count: Number of duplicates found
+            min_params: Minimum parameters threshold
+            min_functions: Minimum functions threshold
+            queries: REQL queries executed
+            time_ms: Execution time
+        """
+        start_time = time.time()
+        queries = []
+
+        try:
+            # Query 1: Get all function parameters
+            query1 = """
+            SELECT ?func ?func_name ?param ?param_name ?param_index
+            WHERE {
+                ?func concept "py:Function" .
+                ?func name ?func_name .
+                ?param concept "py:Parameter" .
+                ?param ofFunction ?func .
+                ?param name ?param_name .
+                ?param atIndex ?param_index .
+            }
+            ORDER BY ?func ?param_index
+            """
+            queries.append(("function_parameters", query1))
+            result1 = await self.reter.reql(query1)
+            params_data = self._query_to_list(result1)
+
+            # Build parameter signatures for each function
+            function_signatures = {}
+            for func_id, func_name, param_id, param_name, param_index in params_data:
+                if func_id not in function_signatures:
+                    function_signatures[func_id] = {
+                        'name': func_name,
+                        'params': []
+                    }
+                function_signatures[func_id]['params'].append((int(param_index) if param_index else 0, param_name))
+
+            # Sort parameters by index and create signature tuples
+            signature_to_functions = {}
+            for func_id, data in function_signatures.items():
+                params = sorted(data['params'], key=lambda x: x[0])
+                param_names = tuple(p[1] for p in params)
+
+                # Skip if less than min_params
+                if len(param_names) < min_params:
+                    continue
+
+                if param_names not in signature_to_functions:
+                    signature_to_functions[param_names] = []
+                signature_to_functions[param_names].append((func_id, data['name']))
+
+            # Find duplicates
+            duplicates = []
+            for signature, functions in signature_to_functions.items():
+                if len(functions) >= min_functions:
+                    func_names = [f[1] for f in functions]
+
+                    # Calculate severity
+                    func_count = len(functions)
+                    param_count = len(signature)
+                    if func_count >= 5 or param_count >= 5:
+                        severity = "HIGH"
+                        effort = "moderate"
+                    elif func_count >= 3:
+                        severity = "MEDIUM"
+                        effort = "moderate"
+                    else:
+                        severity = "LOW"
+                        effort = "simple"
+
+                    suggested_interface = self._suggest_interface_name(func_names)
+
+                    duplicates.append({
+                        "signature": list(signature),
+                        "parameter_count": param_count,
+                        "functions": [{"id": f[0], "name": f[1]} for f in functions],
+                        "function_count": func_count,
+                        "severity": severity,
+                        "refactoring": "Change Function Declaration / Extract Interface",
+                        "suggestion": f"{func_count} functions share identical parameter signature ({', '.join(signature)}). Consider extracting interface '{suggested_interface}'.",
+                        "suggested_interface": suggested_interface,
+                        "estimated_effort": effort
+                    })
+
+            # Sort by severity and function count
+            severity_order = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
+            duplicates.sort(key=lambda x: (severity_order.get(x["severity"], 0), x["function_count"]), reverse=True)
+
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": True,
+                "duplicates": duplicates[:limit],
+                "count": len(duplicates),
+                "min_params": min_params,
+                "min_functions": min_functions,
+                "queries": queries,
+                "time_ms": time_ms
+            }
+
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": False,
+                "error": str(e),
+                "duplicates": [],
+                "count": 0,
+                "queries": queries,
+                "time_ms": time_ms
+            }
+
+    async def find_unused_parameters(
+        self,
+        instance_name: str,
+        include_self: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Find parameters that are declared but never used in function bodies.
+
+        Based on Martin Fowler's "Remove Dead Code" refactoring pattern.
+        A parameter is unused if:
+        - It has hasParameter relationship with a function
+        - It does NOT have usesParameter relationship with that function
+
+        Args:
+            instance_name: RETER instance name
+            include_self: Whether to include unused 'self' parameters (default: False)
+
+        Returns:
+            Dict with unused parameters found
+        """
+        start_time = time.time()
+
+        try:
+            # Query 1: Get all parameters and their usage status
+            query = """
+            SELECT ?func ?funcName ?module ?param ?paramName ?position
+            WHERE {
+                ?func concept ?type .
+                ?func name ?funcName .
+                ?func inModule ?module .
+                ?func hasParameter ?param .
+                ?param name ?paramName .
+                ?param position ?position .
+                FILTER(?type = "py:Function" || ?type = "py:Method")
+            }
+            ORDER BY ?func ?position
+            """
+
+            result = await self.reter.reql(query)
+            params_list = self._query_to_list(result)
+
+            # Query 2: Get all used parameters
+            used_query = """
+            SELECT ?func ?param
+            WHERE {
+                ?func concept ?type .
+                ?func usesParameter ?param .
+                FILTER(?type = "py:Function" || ?type = "py:Method")
+            }
+            """
+
+            used_result = await self.reter.reql(used_query)
+            used_list = self._query_to_list(used_result)
+
+            # Build set of used (func, param) pairs
+            used_pairs = set()
+            for func_id, param_id in used_list:
+                used_pairs.add((func_id, param_id))
+
+            # Find unused parameters
+            unused_params = []
+            func_unused_count = defaultdict(int)
+
+            for func_id, func_name, module, param_id, param_name, position in params_list:
+                # Skip 'self' if requested
+                if not include_self and param_name == "self":
+                    continue
+
+                # Check if parameter is used
+                if (func_id, param_id) not in used_pairs:
+                    unused_params.append({
+                        "function": func_id,
+                        "function_name": func_name,
+                        "module": module,
+                        "parameter": param_id,
+                        "parameter_name": param_name,
+                        "position": int(position),
+                        "severity": "MEDIUM",  # Unused parameters are generally moderate issues
+                        "refactoring": "Remove Parameter",
+                        "suggestion": f"Parameter '{param_name}' is never used in function '{func_name}'. Consider removing it.",
+                        "estimated_effort": "simple"
+                    })
+                    func_unused_count[func_id] += 1
+
+            # Sort by function then position
+            unused_params.sort(key=lambda x: (x["function"], x["position"]))
+
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": True,
+                "unused_parameters": unused_params,
+                "count": len(unused_params),
+                "functions_affected": len(func_unused_count),
+                "queries": [query, used_query],
+                "time_ms": time_ms
+            }
+
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": False,
+                "error": str(e),
+                "unused_parameters": [],
+                "count": 0,
+                "functions_affected": 0,
+                "time_ms": time_ms
+            }
+
+    # =========================================================================
+    # SHOTGUN SURGERY DETECTION
+    # =========================================================================
+
+    async def find_shotgun_surgery(
+        self,
+        instance_name: str,
+        min_callers: int = 5,
+        min_modules: int = 3
+    ) -> Dict[str, Any]:
+        """
+        Detect functions/classes with high fan-in from many modules.
+
+        Shotgun Surgery (Fowler, Chapter 3) occurs when a single change
+        requires modifications in many different places. This detector finds
+        code that is called from many different locations, suggesting that
+        related behavior should be consolidated.
+
+        Detection:
+        - Functions/classes called by >= min_callers callers
+        - Callers spread across >= min_modules different modules
+        - Suggests: Extract Class or Move Method to consolidate
+
+        Args:
+            instance_name: RETER instance name
+            min_callers: Minimum number of callers to flag (default: 5)
+            min_modules: Minimum number of calling modules (default: 3)
+
+        Returns:
+            success: bool
+            shotgun_surgery_cases: List of high fan-in entities
+            count: Number of cases found
+            queries: REQL queries executed
+            time_ms: Execution time
+        """
+        start_time = time.time()
+        queries = []
+
+        try:
+            # Query: Get all call relationships
+            query = """
+            SELECT ?caller ?callerName ?callerModule ?callee ?calleeName ?calleeModule
+            WHERE {
+                ?caller concept ?callerType .
+                ?caller name ?callerName .
+                ?caller inModule ?callerModule .
+                ?caller calls ?callee .
+                ?callee concept ?calleeType .
+                ?callee name ?calleeName .
+                ?callee inModule ?calleeModule .
+                FILTER(?callerType = "py:Function" || ?callerType = "py:Method")
+                FILTER(?calleeType = "py:Function" || ?calleeType = "py:Method")
+            }
+            """
+            queries.append(query)
+
+            result = await self.reter.reql(query)
+            calls_list = self._query_to_list(result)
+
+            # Build fan-in data: callee -> list of (caller, caller_module)
+            fan_in = defaultdict(list)
+            callee_info = {}  # callee_id -> (name, module)
+
+            for caller_id, caller_name, caller_module, callee_id, callee_name, callee_module in calls_list:
+                fan_in[callee_id].append((caller_id, caller_module))
+                callee_info[callee_id] = (callee_name, callee_module)
+
+            # Find high fan-in cases
+            shotgun_cases = []
+
+            for callee_id, callers in fan_in.items():
+                caller_count = len(callers)
+                unique_modules = len(set(module for _, module in callers))
+
+                # Check thresholds
+                if caller_count >= min_callers and unique_modules >= min_modules:
+                    callee_name, callee_module = callee_info[callee_id]
+
+                    # Calculate severity
+                    if caller_count >= 10 and unique_modules >= 5:
+                        severity = "CRITICAL"
+                    elif caller_count >= 7 and unique_modules >= 4:
+                        severity = "HIGH"
+                    else:
+                        severity = "MEDIUM"
+
+                    shotgun_cases.append({
+                        "entity": callee_id,
+                        "entity_name": callee_name,
+                        "module": callee_module,
+                        "caller_count": caller_count,
+                        "module_count": unique_modules,
+                        "severity": severity,
+                        "smell": "Shotgun Surgery",
+                        "refactoring": "Extract Class or Consolidate Behavior",
+                        "suggestion": f"Function '{callee_name}' is called from {caller_count} places across {unique_modules} modules. Consider consolidating related behavior into a class or module.",
+                        "estimated_effort": "medium" if severity != "CRITICAL" else "high"
+                    })
+
+            # Sort by severity and caller count
+            severity_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+            shotgun_cases.sort(key=lambda x: (severity_order[x["severity"]], -x["caller_count"]))
+
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": True,
+                "shotgun_surgery_cases": shotgun_cases,
+                "count": len(shotgun_cases),
+                "queries": queries,
+                "time_ms": time_ms
+            }
+
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": False,
+                "error": str(e),
+                "shotgun_surgery_cases": [],
+                "count": 0,
+                "time_ms": time_ms
+            }
+
+    # =========================================================================
+    # MIDDLE MAN DETECTION
+    # =========================================================================
+
+    async def find_middle_man(
+        self,
+        instance_name: str,
+        max_lines: int = 10,
+        min_delegation_ratio: float = 0.5
+    ) -> Dict[str, Any]:
+        """
+        Detect classes/methods that just delegate to other classes.
+
+        Middle Man (Fowler, Chapter 3) occurs when a class or method does
+        little more than delegate to another class. This adds unnecessary
+        indirection without adding value.
+
+        Detection:
+        - Methods with <= max_lines lines
+        - Methods where delegation calls >= min_delegation_ratio of total calls
+        - Suggests: Remove Middle Man or Inline Method
+
+        Args:
+            instance_name: RETER instance name
+            max_lines: Maximum lines for a method to be considered (default: 10)
+            min_delegation_ratio: Minimum ratio of delegating calls (default: 0.5)
+
+        Returns:
+            success: bool
+            middle_man_cases: List of middle man methods/classes
+            count: Number of cases found
+            queries: REQL queries executed
+            time_ms: Execution time
+        """
+        start_time = time.time()
+        queries = []
+
+        try:
+            # Query 1: Get all methods with line counts
+            query1 = """
+            SELECT ?method ?methodName ?className ?module ?lines
+            WHERE {
+                ?method concept "py:Method" .
+                ?method name ?methodName .
+                ?method inClass ?class .
+                ?class name ?className .
+                ?method inModule ?module .
+                ?method lineCount ?lines .
+                FILTER(?lines <= """ + str(max_lines) + """)
+            }
+            """
+            queries.append(query1)
+
+            result1 = await self.reter.reql(query1)
+            methods_list = self._query_to_list(result1)
+
+            # Query 2: Get all call relationships for these methods
+            query2 = """
+            SELECT ?caller ?callee ?calleeName
+            WHERE {
+                ?caller concept "py:Method" .
+                ?caller calls ?callee .
+                ?callee name ?calleeName .
+            }
+            """
+            queries.append(query2)
+
+            result2 = await self.reter.reql(query2)
+            calls_list = self._query_to_list(result2)
+
+            # Build calls map: method -> list of callees
+            method_calls = defaultdict(list)
+            for caller_id, callee_id, callee_name in calls_list:
+                method_calls[caller_id].append((callee_id, callee_name))
+
+            # Analyze each short method
+            middle_man_cases = []
+
+            for method_id, method_name, class_name, module, lines in methods_list:
+                calls = method_calls.get(method_id, [])
+                total_calls = len(calls)
+
+                if total_calls == 0:
+                    continue
+
+                # Check if most calls are to the same external class
+                # (delegation pattern)
+                callee_counts = defaultdict(int)
+                for callee_id, callee_name in calls:
+                    # Extract class from qualified name if it's a method
+                    if "." in callee_name:
+                        external_class = callee_name.split(".")[0]
+                    else:
+                        external_class = callee_name
+                    callee_counts[external_class] += 1
+
+                # Find most common delegation target
+                if callee_counts:
+                    max_delegations = max(callee_counts.values())
+                    delegation_ratio = max_delegations / total_calls
+
+                    if delegation_ratio >= min_delegation_ratio:
+                        # This is a middle man
+                        severity = "HIGH" if delegation_ratio >= 0.8 else "MEDIUM"
+
+                        middle_man_cases.append({
+                            "method": method_id,
+                            "method_name": method_name,
+                            "class_name": class_name,
+                            "module": module,
+                            "lines": int(lines),
+                            "total_calls": total_calls,
+                            "delegation_ratio": round(delegation_ratio, 2),
+                            "severity": severity,
+                            "smell": "Middle Man",
+                            "refactoring": "Remove Middle Man or Inline Method",
+                            "suggestion": f"Method '{method_name}' in class '{class_name}' primarily delegates to other classes ({int(delegation_ratio * 100)}% of calls). Consider removing this indirection.",
+                            "estimated_effort": "simple"
+                        })
+
+            # Sort by delegation ratio
+            middle_man_cases.sort(key=lambda x: -x["delegation_ratio"])
+
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": True,
+                "middle_man_cases": middle_man_cases,
+                "count": len(middle_man_cases),
+                "queries": queries,
+                "time_ms": time_ms
+            }
+
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": False,
+                "error": str(e),
+                "middle_man_cases": [],
+                "count": 0,
+                "time_ms": time_ms
+            }
+
+    # =========================================================================
+    # EXTRACT CLASS DETECTION
+    # =========================================================================
+
+    async def find_extract_class_opportunities(
+        self,
+        instance_name: str,
+        min_methods: int = 10,
+        min_cohesion_gap: float = 0.3
+    ) -> Dict[str, Any]:
+        """
+        Detect classes that should be split into multiple classes.
+
+        Extract Class (Fowler, Chapter 7) is needed when a class is doing
+        the work of two or more classes. This detector identifies:
+        - Large classes with many methods
+        - Low cohesion (methods using different attributes)
+        - Distinct method groups suggesting separate responsibilities
+
+        Detection:
+        - Classes with >= min_methods methods
+        - Identifies method groups based on call patterns
+        - Suggests: Extract Class for each distinct group
+
+        Args:
+            instance_name: RETER instance name
+            min_methods: Minimum methods to consider (default: 10)
+            min_cohesion_gap: Minimum cohesion difference to split (default: 0.3)
+
+        Returns:
+            success: bool
+            extract_class_opportunities: List of classes to split
+            count: Number of opportunities found
+            queries: REQL queries executed
+            time_ms: Execution time
+        """
+        start_time = time.time()
+        queries = []
+
+        try:
+            # Query 1: Get classes with method counts
+            query1 = """
+            SELECT ?class ?className ?module (COUNT(?method) AS ?methodCount)
+            WHERE {
+                ?class concept "py:Class" .
+                ?class name ?className .
+                ?class inModule ?module .
+                ?method concept "py:Method" .
+                ?method inClass ?class .
+            }
+            GROUP BY ?class ?className ?module
+            HAVING (COUNT(?method) >= """ + str(min_methods) + """)
+            ORDER BY DESC(?methodCount)
+            """
+            queries.append(query1)
+
+            result1 = await self.reter.reql(query1)
+            classes_list = self._query_to_list(result1)
+
+            # Query 2: Get method calls within classes
+            query2 = """
+            SELECT ?caller ?callee
+            WHERE {
+                ?caller concept "py:Method" .
+                ?caller inClass ?class .
+                ?caller calls ?callee .
+                ?callee concept "py:Method" .
+                ?callee inClass ?class .
+            }
+            """
+            queries.append(query2)
+
+            result2 = await self.reter.reql(query2)
+            calls_list = self._query_to_list(result2)
+
+            # Build call graph within each class
+            internal_calls = defaultdict(set)
+            for caller, callee in calls_list:
+                internal_calls[caller].add(callee)
+
+            # Analyze each large class
+            opportunities = []
+
+            for class_id, class_name, module, method_count in classes_list:
+                method_count = int(method_count)
+
+                # Calculate severity based on size
+                if method_count >= 20:
+                    severity = "CRITICAL"
+                elif method_count >= 15:
+                    severity = "HIGH"
+                else:
+                    severity = "MEDIUM"
+
+                opportunities.append({
+                    "class": class_id,
+                    "class_name": class_name,
+                    "module": module,
+                    "method_count": method_count,
+                    "severity": severity,
+                    "smell": "Large Class / God Class",
+                    "refactoring": "Extract Class",
+                    "suggestion": f"Class '{class_name}' has {method_count} methods. Consider extracting related methods into separate classes with focused responsibilities.",
+                    "estimated_effort": "high" if method_count >= 20 else "medium",
+                    "recommendation": "Identify groups of methods that work on related data and extract them into cohesive classes."
+                })
+
+            # Sort by severity and method count
+            severity_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+            opportunities.sort(key=lambda x: (severity_order[x["severity"]], -x["method_count"]))
+
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": True,
+                "extract_class_opportunities": opportunities,
+                "count": len(opportunities),
+                "queries": queries,
+                "time_ms": time_ms
+            }
+
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": False,
+                "error": str(e),
+                "extract_class_opportunities": [],
+                "count": 0,
+                "time_ms": time_ms
+            }
+
+    async def analyze_refactoring_opportunities(
+        self,
+        instance_name: str,
+        severity_threshold: str = "MEDIUM",
+        limit_per_type: int = 10,
+        limit: int = 50,
+        offset: int = 0
+    ):
+        """
+        Unified analysis of ALL refactoring opportunities across detectors.
+
+        Runs all refactoring detectors and provides prioritized dashboard.
+
+        Args:
+            instance_name: RETER instance name
+            severity_threshold: Minimum severity to include (LOW, MEDIUM, HIGH, CRITICAL)
+            limit_per_type: Maximum results per refactoring type (default: 10)
+            limit: Maximum number of results to return (default: 50)
+            offset: Number of results to skip (default: 0)
+
+        Returns:
+            success: Whether analysis succeeded
+            summary: Summary statistics by refactoring type and severity (before pagination)
+            opportunities: All opportunities sorted by priority (paginated)
+            total_count: Total opportunities found (before pagination)
+            count_returned: Number of items returned in this page
+            limit: Limit used for pagination
+            offset: Offset used for pagination
+            has_more: Whether there are more results available
+            next_offset: Offset for next page (if applicable)
+            time_ms: Total execution time
+        """
+        start_time = time.time()
+        all_opportunities = []
+
+        try:
+            # Run all detectors
+
+            # 1. Extract Function
+            extract_result = await self.find_extract_function_opportunities(instance_name, min_lines=20)
+            if extract_result["success"]:
+                for opp in extract_result["opportunities"][:limit_per_type]:
+                    all_opportunities.append({
+                        **opp,
+                        "type": "Extract Function"
+                    })
+
+            # 2. Data Clumps
+            clumps_result = await self.find_data_clumps(instance_name, min_params=3, min_functions=2)
+            if clumps_result["success"]:
+                for clump in clumps_result["data_clumps"][:limit_per_type]:
+                    all_opportunities.append({
+                        "name": f"Data Clump: {', '.join(clump['parameters'])}",
+                        "type": "Introduce Parameter Object",
+                        "severity": clump["severity"],
+                        "suggestion": clump["suggestion"],
+                        "estimated_effort": clump["estimated_effort"],
+                        "affected_functions": clump["occurrence_count"],
+                        "details": clump
+                    })
+
+            # 3. Function Groups
+            groups_result = await self.find_function_groups(instance_name, min_shared_params=2, min_functions=3)
+            if groups_result["success"]:
+                for group in groups_result["function_groups"][:limit_per_type]:
+                    # Extract suggested class name from functions
+                    func_names = [f["name"] for f in group["functions"][:3]]
+                    group_name = self._suggest_class_name(func_names, group["shared_parameters"])
+                    all_opportunities.append({
+                        "name": f"Function Group: {group_name}",
+                        "type": "Combine Functions into Class",
+                        "severity": group["severity"],
+                        "suggestion": group["suggestion"],
+                        "estimated_effort": group["estimated_effort"],
+                        "affected_functions": group["function_count"],
+                        "details": group
+                    })
+
+            # 4. Inline Function
+            inline_result = await self.find_inline_function_candidates(instance_name, max_lines=5, limit=limit_per_type)
+            if inline_result["success"]:
+                for candidate in inline_result["candidates"][:limit_per_type]:
+                    all_opportunities.append({
+                        **candidate,
+                        "type": "Inline Function"
+                    })
+
+            # 5. Duplicate Parameter Lists
+            duplicate_result = await self.find_duplicate_parameter_lists(instance_name, min_params=2, min_functions=2, limit=limit_per_type)
+            if duplicate_result["success"]:
+                for dup in duplicate_result["duplicates"][:limit_per_type]:
+                    all_opportunities.append({
+                        "name": f"Duplicate Signature: {dup['suggested_interface']}",
+                        "type": "Extract Interface",
+                        "severity": dup["severity"],
+                        "suggestion": dup["suggestion"],
+                        "estimated_effort": dup["estimated_effort"],
+                        "affected_functions": dup["function_count"],
+                        "details": dup
+                    })
+
+            # Filter by severity threshold
+            severity_order = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
+            threshold_value = severity_order.get(severity_threshold.upper(), 2)
+            filtered_opportunities = [
+                opp for opp in all_opportunities
+                if severity_order.get(opp.get("severity", "LOW"), 1) >= threshold_value
+            ]
+
+            # Sort by severity and effort
+            effort_order = {"simple": 1, "moderate": 2, "high": 3}
+            filtered_opportunities.sort(
+                key=lambda x: (
+                    -severity_order.get(x.get("severity", "LOW"), 1),
+                    effort_order.get(x.get("estimated_effort", "moderate"), 2)
+                )
+            )
+
+            # Generate summary (before pagination)
+            summary = {
+                "by_type": {},
+                "by_severity": {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+            }
+
+            for opp in filtered_opportunities:
+                opp_type = opp.get("type", "Unknown")
+                severity = opp.get("severity", "LOW")
+
+                if opp_type not in summary["by_type"]:
+                    summary["by_type"][opp_type] = 0
+                summary["by_type"][opp_type] += 1
+                summary["by_severity"][severity] += 1
+
+            # Apply pagination
+            total_count = len(filtered_opportunities)
+            paginated_opportunities = filtered_opportunities[offset:offset + limit]
+            count_returned = len(paginated_opportunities)
+
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": True,
+                "summary": summary,
+                "opportunities": paginated_opportunities,
+                "total_count": total_count,
+                "count_returned": count_returned,
+                "limit": limit,
+                "offset": offset,
+                "has_more": (offset + limit) < total_count,
+                "next_offset": offset + limit if (offset + limit) < total_count else None,
+                "severity_threshold": severity_threshold,
+                "time_ms": time_ms
+            }
+
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": False,
+                "error": str(e),
+                "summary": {},
+                "opportunities": [],
+                "total_count": 0,
+                "time_ms": time_ms
+            }
+
+    async def find_inline_class_opportunities(
+        self,
+        instance_name: str,
+        max_methods: int = 3,
+        limit: int = 50,
+        offset: int = 0
+    ) -> Dict[str, Any]:
+        """
+        Detect small, trivial classes that should be inlined into their clients.
+
+        This implements Fowler's "Inline Class" refactoring (Chapter 7).
+
+        Detection signals:
+        - Class has <= max_methods methods (default: 3)
+        - Class is used by only 1 or 2 client classes
+        - Class is a data class (only getters/setters, no business logic)
+        - Class has no subclasses (can't inline if subclassed)
+
+        Args:
+            instance_name: RETER instance name
+            max_methods: Maximum method count for small class (default: 3)
+            limit: Maximum results to return (pagination)
+            offset: Starting offset for pagination
+
+        Returns:
+            dict with success, inline_class_opportunities (list), pagination metadata
+        """
+        start_time = time.time()
+
+        try:
+            # Query 1: Find small classes with method count
+            query_small_classes = f"""
+            SELECT ?class ?className ?module (COUNT(?method) AS ?methodCount)
+            WHERE {{
+                ?class concept "py:Class" .
+                ?class name ?className .
+                ?class inModule ?module .
+                ?method concept "py:Method" .
+                ?method inClass ?class .
+            }}
+            GROUP BY ?class ?className ?module
+            HAVING (COUNT(?method) <= {max_methods})
+            ORDER BY ?methodCount
+            """
+
+            result_small_classes = await self.reter.reql(query_small_classes)
+            small_classes = self._query_to_list(result_small_classes)
+
+            if not small_classes:
+                time_ms = (time.time() - start_time) * 1000
+                return {
+                    "success": True,
+                    "inline_class_opportunities": [],
+                    "count": 0,
+                    "total_count": 0,
+                    "count_returned": 0,
+                    "limit": limit,
+                    "offset": offset,
+                    "has_more": False,
+                    "next_offset": None,
+                    "queries": [query_small_classes],
+                    "time_ms": time_ms
+                }
+
+            # Query 2: Find all call relationships to build client map
+            query_calls = """
+            SELECT ?callerClass ?targetClass
+            WHERE {
+                ?caller concept "py:Method" .
+                ?caller inClass ?callerClass .
+                ?callee concept "py:Method" .
+                ?callee inClass ?targetClass .
+                ?caller calls ?callee .
+            }
+            """
+
+            result_calls = await self.reter.reql(query_calls)
+            calls = self._query_to_list(result_calls)
+
+            # Build client map: target class -> set of client classes
+            client_map = defaultdict(set)
+            for caller_class, target_class in calls:
+                if caller_class != target_class:  # Exclude self-calls
+                    client_map[target_class].add(caller_class)
+
+            # Query 3: Find classes with subclasses (can't inline if subclassed)
+            query_subclasses = """
+            SELECT ?class ?subclass
+            WHERE {
+                ?subclass concept "py:Class" .
+                ?subclass inheritsFrom ?class .
+            }
+            """
+
+            result_subclasses = await self.reter.reql(query_subclasses)
+            subclassed = set()
+            for parent_class, _ in self._query_to_list(result_subclasses):
+                subclassed.add(parent_class)
+
+            # Analyze each small class
+            opportunities = []
+
+            for class_id, class_name, module, method_count in small_classes:
+                # Skip if class has subclasses
+                if class_id in subclassed:
+                    continue
+
+                # Count unique clients
+                clients = client_map.get(class_id, set())
+                client_count = len(clients)
+
+                # Skip if no clients or too many clients
+                if client_count == 0 or client_count > 2:
+                    continue
+
+                # Determine severity based on method count and client count
+                if method_count == 1 and client_count == 1:
+                    severity = "HIGH"
+                    confidence = "high"
+                elif method_count <= 2 and client_count == 1:
+                    severity = "MEDIUM"
+                    confidence = "medium"
+                else:
+                    severity = "LOW"
+                    confidence = "low"
+
+                # Build client list
+                client_names = []
+                for client_id in clients:
+                    # Extract client class name from ID
+                    client_name = client_id.split(".")[-1] if "." in client_id else client_id
+                    client_names.append(client_name)
+
+                opportunity = {
+                    "class": class_id,
+                    "class_name": class_name,
+                    "module": module,
+                    "method_count": method_count,
+                    "client_count": client_count,
+                    "client_classes": client_names,
+                    "severity": severity,
+                    "confidence": confidence,
+                    "smell": "Lazy Class / Trivial Class",
+                    "refactoring": "Inline Class",
+                    "suggestion": (
+                        f"Class '{class_name}' has only {method_count} method(s) and is used by "
+                        f"only {client_count} client class(es): {', '.join(client_names)}. "
+                        f"Consider inlining it into the client class. "
+                        f"This reduces unnecessary abstraction and simplifies the codebase."
+                    ),
+                    "estimated_effort": "simple" if method_count <= 2 else "moderate",
+                    "recommendation": (
+                        f"1. Move all methods from '{class_name}' into '{client_names[0]}'\n"
+                        f"2. Move all data fields into '{client_names[0]}'\n"
+                        f"3. Update references to use '{client_names[0]}' directly\n"
+                        f"4. Delete '{class_name}'"
+                    )
+                }
+
+                opportunities.append(opportunity)
+
+            # Sort by severity and method count
+            severity_order = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
+            opportunities.sort(
+                key=lambda x: (-severity_order[x["severity"]], x["method_count"])
+            )
+
+            # Apply pagination
+            total_count = len(opportunities)
+            paginated = opportunities[offset:offset + limit]
+            count_returned = len(paginated)
+
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": True,
+                "inline_class_opportunities": paginated,
+                "count": count_returned,
+                "total_count": total_count,
+                "count_returned": count_returned,
+                "limit": limit,
+                "offset": offset,
+                "has_more": (offset + limit) < total_count,
+                "next_offset": offset + limit if (offset + limit) < total_count else None,
+                "queries": [query_small_classes, query_calls, query_subclasses],
+                "time_ms": time_ms
+            }
+
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": False,
+                "error": str(e),
+                "inline_class_opportunities": [],
+                "count": 0,
+                "total_count": 0,
+                "time_ms": time_ms
+            }
+
+    async def find_primitive_obsession(
+        self,
+        instance_name: str,
+        min_usages: int = 5,
+        limit: int = 50,
+        offset: int = 0
+    ) -> Dict[str, Any]:
+        """
+        Detect primitive parameters (str, int, float) that should be value objects.
+
+        This implements detection for Fowler's "Replace Primitive with Object"
+        refactoring (Chapter 7).
+
+        Detection signals:
+        - Same primitive parameter name appears in many functions
+        - High fan-out (>= min_usages functions)
+        - Parameter name suggests domain concept (email, phone, money, etc.)
+
+        Args:
+            instance_name: RETER instance name
+            min_usages: Minimum function count to flag (default: 5)
+            limit: Maximum results to return (pagination)
+            offset: Starting offset for pagination
+
+        Returns:
+            dict with success, primitive_obsession_cases (list), pagination metadata
+        """
+        start_time = time.time()
+
+        # Domain concept keywords for enhanced detection
+        DOMAIN_CONCEPTS = {
+            "email": ["email", "mail", "e_mail"],
+            "phone": ["phone", "telephone", "mobile", "cell"],
+            "url": ["url", "link", "uri", "href", "endpoint"],
+            "money": ["price", "amount", "cost", "fee", "balance", "salary", "payment"],
+            "percentage": ["percent", "rate", "ratio"],
+            "identifier": ["id", "uuid", "guid", "code", "key"],
+            "priority": ["priority", "level", "rank", "severity"],
+            "status": ["status", "state", "stage"],
+            "date": ["date", "time", "timestamp", "datetime", "when"],
+            "address": ["address", "location", "addr"],
+            "name": ["name", "title", "label"],
+        }
+
+        def normalize_param_name(name: str) -> str:
+            """Normalize parameter name to detect variants."""
+            name_lower = name.lower()
+
+            # Check domain concepts
+            for concept, keywords in DOMAIN_CONCEPTS.items():
+                for keyword in keywords:
+                    if keyword in name_lower:
+                        return concept
+
+            # Return original if no match
+            return name_lower
+
+        def suggest_class_name(normalized_name: str, param_type: str) -> str:
+            """Suggest a value class name based on normalized parameter name."""
+            # Capitalize and remove underscores
+            if normalized_name in DOMAIN_CONCEPTS:
+                # Use concept name
+                if normalized_name == "email":
+                    return "EmailAddress"
+                elif normalized_name == "phone":
+                    return "PhoneNumber"
+                elif normalized_name == "url":
+                    return "URL"
+                elif normalized_name == "money":
+                    return "Money"
+                elif normalized_name == "identifier":
+                    return "Identifier"
+                else:
+                    return normalized_name.capitalize()
+            else:
+                # Use parameter name
+                return "".join(word.capitalize() for word in normalized_name.split("_"))
+
+        try:
+            # Query: Find all primitive-typed parameters
+            query_params = """
+            SELECT ?param ?paramName ?paramType ?func ?funcName ?module
+            WHERE {
+                ?param concept "py:Parameter" .
+                ?param name ?paramName .
+                ?param hasType ?paramType .
+                ?param ofFunction ?func .
+                ?func name ?funcName .
+                ?func inModule ?module .
+                FILTER(?paramType = "str" || ?paramType = "int" || ?paramType = "float" ||
+                       ?paramType = "bool")
+            }
+            """
+
+            result_params = await self.reter.reql(query_params)
+            params = self._query_to_list(result_params)
+
+            if not params:
+                time_ms = (time.time() - start_time) * 1000
+                return {
+                    "success": True,
+                    "primitive_obsession_cases": [],
+                    "count": 0,
+                    "total_count": 0,
+                    "count_returned": 0,
+                    "limit": limit,
+                    "offset": offset,
+                    "has_more": False,
+                    "next_offset": None,
+                    "queries": [query_params],
+                    "time_ms": time_ms
+                }
+
+            # Group parameters by normalized name and type
+            param_groups = defaultdict(lambda: {
+                "functions": [],
+                "modules": set(),
+                "original_names": set(),
+                "param_type": None
+            })
+
+            for param_id, param_name, param_type, func_id, func_name, module in params:
+                normalized = normalize_param_name(param_name)
+                key = (normalized, param_type)
+
+                param_groups[key]["functions"].append({
+                    "func_id": func_id,
+                    "func_name": func_name,
+                    "module": module
+                })
+                param_groups[key]["modules"].add(module)
+                param_groups[key]["original_names"].add(param_name)
+                param_groups[key]["param_type"] = param_type
+
+            # Analyze each parameter group
+            opportunities = []
+
+            for (normalized_name, param_type), data in param_groups.items():
+                usage_count = len(data["functions"])
+                module_count = len(data["modules"])
+
+                # Skip if usage below threshold
+                if usage_count < min_usages:
+                    continue
+
+                # Determine severity based on usage count
+                if usage_count >= 15:
+                    severity = "CRITICAL"
+                    confidence = "high"
+                elif usage_count >= 10:
+                    severity = "HIGH"
+                    confidence = "high"
+                elif usage_count >= 5:
+                    severity = "MEDIUM"
+                    confidence = "medium"
+                else:
+                    severity = "LOW"
+                    confidence = "low"
+
+                # Check if it's a recognized domain concept
+                is_domain_concept = normalized_name in DOMAIN_CONCEPTS
+
+                # Suggest value class name
+                suggested_class = suggest_class_name(normalized_name, param_type)
+
+                # Build function list (limit to first 10 for readability)
+                function_list = []
+                for func_data in data["functions"][:10]:
+                    func_name = func_data["func_name"]
+                    module = func_data["module"]
+                    # Extract short module name
+                    short_module = module.split(".")[-1].replace(".py", "")
+                    function_list.append(f"{func_name} ({short_module})")
+
+                opportunity = {
+                    "normalized_name": normalized_name,
+                    "param_type": param_type,
+                    "original_names": sorted(data["original_names"]),
+                    "usage_count": usage_count,
+                    "module_count": module_count,
+                    "is_domain_concept": is_domain_concept,
+                    "suggested_class_name": suggested_class,
+                    "severity": severity,
+                    "confidence": confidence,
+                    "smell": "Primitive Obsession",
+                    "refactoring": "Replace Primitive with Object",
+                    "suggestion": (
+                        f"Primitive parameter '{', '.join(sorted(data['original_names'])[:3])}: {param_type}' "
+                        f"is used in {usage_count} functions across {module_count} module(s). "
+                        f"Consider creating a value class '{suggested_class}' to encapsulate this domain concept. "
+                        f"This provides type safety, centralized validation, and domain-specific operations."
+                    ),
+                    "estimated_effort": "moderate" if usage_count >= 10 else "simple",
+                    "functions_sample": function_list,
+                    "total_functions": usage_count,
+                    "recommendation": (
+                        f"1. Create value class '{suggested_class}':\n"
+                        f"   class {suggested_class}:\n"
+                        f"       def __init__(self, value: {param_type}):\n"
+                        f"           self._value = self._validate(value)\n"
+                        f"       def _validate(self, value):\n"
+                        f"           # Add validation logic\n"
+                        f"           return value\n"
+                        f"       def __str__(self):\n"
+                        f"           return str(self._value)\n"
+                        f"2. Replace all {usage_count} uses of '{normalized_name}: {param_type}' with '{normalized_name}: {suggested_class}'\n"
+                        f"3. Add domain-specific methods to '{suggested_class}' as needed"
+                    )
+                }
+
+                opportunities.append(opportunity)
+
+            # Sort by severity and usage count
+            severity_order = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
+            opportunities.sort(
+                key=lambda x: (-severity_order[x["severity"]], -x["usage_count"])
+            )
+
+            # Apply pagination
+            total_count = len(opportunities)
+            paginated = opportunities[offset:offset + limit]
+            count_returned = len(paginated)
+
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": True,
+                "primitive_obsession_cases": paginated,
+                "count": count_returned,
+                "total_count": total_count,
+                "count_returned": count_returned,
+                "limit": limit,
+                "offset": offset,
+                "has_more": (offset + limit) < total_count,
+                "next_offset": offset + limit if (offset + limit) < total_count else None,
+                "queries": [query_params],
+                "time_ms": time_ms
+            }
+
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": False,
+                "error": str(e),
+                "primitive_obsession_cases": [],
+                "count": 0,
+                "total_count": 0,
+                "time_ms": time_ms
+            }
+
+    async def find_encapsulate_collection_opportunities(
+        self,
+        instance_name: str,
+        limit: int = 50,
+        offset: int = 0
+    ) -> Dict[str, Any]:
+        """
+        Detect methods that return mutable collections without encapsulation.
+
+        Fowler Chapter 7: Encapsulate Collection
+
+        Detection signals (heuristic approach using type hints):
+        - Method returns List, Dict, or Set type
+        - No corresponding add_X or remove_X methods exist
+        - Suggests wrapping collection access in proper methods
+
+        Args:
+            instance_name: RETER instance name
+            limit: Maximum results to return (pagination)
+            offset: Number of results to skip (pagination)
+
+        Returns:
+            dict with success, encapsulate_collection_opportunities list,
+            pagination metadata, time_ms
+
+        Example:
+            # BEFORE (bad - direct collection access)
+            class Person:
+                def get_courses(self) -> List[Course]:
+                    return self._courses  # Clients can modify!
+
+            # AFTER (good - encapsulated)
+            class Person:
+                def get_courses(self) -> List[Course]:
+                    return self._courses.copy()  # Return copy
+
+                def add_course(self, course: Course):
+                    self._courses.append(course)
+
+                def remove_course(self, course: Course):
+                    self._courses.remove(course)
+        """
+        start_time = time.time()
+
+        try:
+            # Query: Find methods returning collection types
+            query_collection_getters = """
+            SELECT ?method ?methodName ?returnType ?class ?className ?module
+            WHERE {
+                ?method concept "py:Method" .
+                ?method name ?methodName .
+                ?method inClass ?class .
+                ?class name ?className .
+                ?class inModule ?module .
+                ?method hasReturnType ?returnType .
+                FILTER(?returnType = "List" || ?returnType = "list" ||
+                       ?returnType = "Dict" || ?returnType = "dict" ||
+                       ?returnType = "Set" || ?returnType = "set" ||
+                       ?returnType = "List[" || ?returnType = "Dict[" || ?returnType = "Set[")
+            }
+            ORDER BY ?className ?methodName
+            """
+
+            result = await self.reter.reql(query_collection_getters)
+            collection_getters = self._query_to_list(result)
+
+            # Build opportunities by analyzing each getter
+            opportunities = []
+
+            for method_id, method_name, return_type, class_id, class_name, module in collection_getters:
+                # Parse element name from method name
+                # e.g., get_courses -> "course", get_items -> "item", students -> "student"
+                element_name = self._extract_element_name(method_name)
+
+                if not element_name:
+                    continue
+
+                # Query for add/remove methods in the same class
+                query_modifiers = f"""
+                SELECT ?method ?methodName
+                WHERE {{
+                    ?method concept "py:Method" .
+                    ?method name ?methodName .
+                    ?method inClass ?class .
+                    ?class name "{class_name}" .
+                    FILTER(REGEX(?methodName, "^(add_|remove_|append_|delete_){element_name}"))
+                }}
+                """
+
+                modifier_result = await self.reter.reql(query_modifiers)
+                modifiers = self._query_to_list(modifier_result)
+
+                has_add = any("add" in method_name or "append" in method_name
+                              for _, method_name in modifiers)
+                has_remove = any("remove" in method_name or "delete" in method_name
+                                for _, method_name in modifiers)
+
+                # Flag if no modification methods exist
+                if not has_add and not has_remove:
+                    severity = "HIGH"  # No encapsulation at all
+                elif not has_add or not has_remove:
+                    severity = "MEDIUM"  # Partial encapsulation
+                else:
+                    continue  # Both exist, properly encapsulated
+
+                # Determine collection type
+                if "List" in return_type or "list" in return_type:
+                    collection_type = "List"
+                elif "Dict" in return_type or "dict" in return_type:
+                    collection_type = "Dict"
+                elif "Set" in return_type or "set" in return_type:
+                    collection_type = "Set"
+                else:
+                    collection_type = return_type
+
+                # Generate suggestions
+                suggestions = []
+                if not has_add:
+                    suggestions.append(f"Add 'add_{element_name}()' method for controlled insertion")
+                if not has_remove:
+                    suggestions.append(f"Add 'remove_{element_name}()' method for controlled deletion")
+                suggestions.append(f"Consider returning a copy: 'return self._{element_name}s.copy()'")
+                if collection_type == "List":
+                    suggestions.append(f"Or return immutable tuple: 'return tuple(self._{element_name}s)'")
+
+                opportunity = {
+                    "class": class_name,
+                    "module": module,
+                    "method": method_name,
+                    "return_type": return_type,
+                    "collection_type": collection_type,
+                    "element_name": element_name,
+                    "severity": severity,
+                    "has_add_method": has_add,
+                    "has_remove_method": has_remove,
+                    "existing_modifiers": [m_name for _, m_name in modifiers],
+                    "suggestions": suggestions,
+                    "refactoring": "Encapsulate Collection (Fowler Chapter 7)",
+                    "reason": f"Method '{method_name}' returns mutable {collection_type} without protective methods. "
+                              f"Clients can directly modify the collection, breaking encapsulation."
+                }
+
+                opportunities.append(opportunity)
+
+            # Apply pagination
+            total_count = len(opportunities)
+            paginated = opportunities[offset:offset + limit]
+            has_more = (offset + limit) < total_count
+
+            time_ms = (time.time() - start_time) * 1000
+
+            return {
+                "success": True,
+                "encapsulate_collection_opportunities": paginated,
+                "count": len(paginated),
+                "total_count": total_count,
+                "has_more": has_more,
+                "pagination": {
+                    "limit": limit,
+                    "offset": offset,
+                    "next_offset": offset + limit if has_more else None
+                },
+                "time_ms": time_ms,
+                "note": "Requires type hints on return types. May miss collections returned without type annotations."
+            }
+
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": False,
+                "error": str(e),
+                "encapsulate_collection_opportunities": [],
+                "count": 0,
+                "total_count": 0,
+                "time_ms": time_ms
+            }
+
+    def _extract_element_name(self, method_name: str) -> str:
+        """
+        Extract element name from getter method name.
+
+        Examples:
+            get_courses -> course
+            get_items -> item
+            students -> student
+            getCourses -> course
+        """
+        # Remove common prefixes
+        name = method_name
+        for prefix in ["get_", "fetch_", "retrieve_", "load_", "list_"]:
+            if name.startswith(prefix):
+                name = name[len(prefix):]
+                break
+
+        # Handle camelCase (getCourses -> Courses -> courses)
+        if method_name[0].islower() and any(c.isupper() for c in method_name):
+            # Find first uppercase letter
+            for i, c in enumerate(method_name):
+                if c.isupper():
+                    name = method_name[i:].lower()
+                    break
+
+        # Singularize (simple approach)
+        if name.endswith("ses"):  # courses -> course
+            return name[:-2]
+        elif name.endswith("ies"):  # entries -> entry
+            return name[:-3] + "y"
+        elif name.endswith("s") and len(name) > 1:  # items -> item
+            return name[:-1]
+        else:
+            return name
+
+    async def find_hide_delegate_opportunities(
+        self,
+        instance_name: str,
+        min_client_calls: int = 3,
+        limit: int = 50,
+        offset: int = 0
+    ) -> Dict[str, Any]:
+        """
+        Detect classes that should add delegating methods (inverse of Middle Man).
+
+        Fowler Chapter 7: Hide Delegate (pragmatic version)
+
+        Detection signals:
+        - Class has dependencies (calls other classes)
+        - Clients frequently access those dependencies
+        - No delegating methods exist to hide the dependencies
+        - High coupling to external classes
+
+        This is the INVERSE of Remove Middle Man:
+        - Middle Man: Too much delegation → remove it
+        - Hide Delegate: No delegation + high coupling → add it
+
+        Args:
+            instance_name: RETER instance name
+            min_client_calls: Minimum client calls to flag (default: 3)
+            limit: Maximum results to return (pagination)
+            offset: Number of results to skip (pagination)
+
+        Returns:
+            dict with success, hide_delegate_opportunities list,
+            pagination metadata, time_ms
+
+        Example:
+            # BEFORE (Law of Demeter violation)
+            class Person:
+                def __init__(self):
+                    self.department = Department()
+
+            # Client code (bad - knows about department)
+            manager = person.department.manager
+            budget = person.department.get_budget()
+
+            # AFTER (Hide Delegate)
+            class Person:
+                def get_manager(self):
+                    return self.department.manager
+
+                def get_department_budget(self):
+                    return self.department.get_budget()
+
+            # Client code (good - simpler)
+            manager = person.get_manager()
+            budget = person.get_department_budget()
+        """
+        start_time = time.time()
+
+        try:
+            # Query 1: Find classes and their external dependencies
+            query_dependencies = """
+            SELECT ?class ?className ?module ?targetClass ?targetClassName (COUNT(?call) AS ?callCount)
+            WHERE {
+                ?class concept "py:Class" .
+                ?class name ?className .
+                ?class inModule ?module .
+                ?call concept "py:Call" .
+                ?call fromClass ?class .
+                ?call toClass ?targetClass .
+                ?targetClass concept "py:Class" .
+                ?targetClass name ?targetClassName .
+                FILTER(?class != ?targetClass)
+            }
+            GROUP BY ?class ?className ?module ?targetClass ?targetClassName
+            ORDER BY DESC(?callCount)
+            """
+
+            result = await self.reter.reql(query_dependencies)
+            dependencies = self._query_to_list(result)
+
+            # Query 2: Find classes with client relationships (who calls whom)
+            query_clients = """
+            SELECT ?class ?className ?clientClass ?clientClassName (COUNT(?call) AS ?clientCallCount)
+            WHERE {
+                ?class concept "py:Class" .
+                ?class name ?className .
+                ?call concept "py:Call" .
+                ?call toClass ?class .
+                ?call fromClass ?clientClass .
+                ?clientClass concept "py:Class" .
+                ?clientClass name ?clientClassName .
+                FILTER(?class != ?clientClass)
+            }
+            GROUP BY ?class ?className ?clientClass ?clientClassName
+            ORDER BY DESC(?clientCallCount)
+            """
+
+            client_result = await self.reter.reql(query_clients)
+            client_relationships = self._query_to_list(client_result)
+
+            # Build client map: class -> list of clients
+            client_map = {}
+            for class_id, class_name, client_class_id, client_name, call_count in client_relationships:
+                if class_name not in client_map:
+                    client_map[class_name] = []
+                client_map[class_name].append({
+                    "client": client_name,
+                    "call_count": int(call_count)
+                })
+
+            # Query 3: Check for delegation methods (methods that just call other classes)
+            # A delegating method typically has a single call to another class
+            query_delegating_methods = """
+            SELECT ?method ?methodName ?class ?className
+            WHERE {
+                ?method concept "py:Method" .
+                ?method name ?methodName .
+                ?method inClass ?class .
+                ?class name ?className .
+                ?call concept "py:Call" .
+                ?call fromFunction ?method .
+            }
+            """
+
+            delegation_result = await self.reter.reql(query_delegating_methods)
+            all_methods_with_calls = self._query_to_list(delegation_result)
+
+            # Build map: class -> count of methods with calls
+            delegation_map = {}
+            for method_id, method_name, class_id, class_name in all_methods_with_calls:
+                delegation_map[class_name] = delegation_map.get(class_name, 0) + 1
+
+            # Analyze opportunities
+            opportunities = []
+
+            for class_id, class_name, module, target_class_id, target_class, call_count in dependencies:
+                call_count = int(call_count)
+
+                # Get clients of this class
+                clients = client_map.get(class_name, [])
+                client_count = len(clients)
+
+                # Check if this class has delegating methods
+                delegation_count = delegation_map.get(class_name, 0)
+
+                # Heuristic: Suggest Hide Delegate if:
+                # 1. Class has external dependencies (call_count > 0)
+                # 2. Class has multiple clients (client_count >= min_client_calls)
+                # 3. Class has few or no delegating methods (delegation_count < 3)
+
+                if call_count > 0 and client_count >= min_client_calls and delegation_count < 3:
+                    severity = "HIGH" if delegation_count == 0 else "MEDIUM"
+
+                    opportunity = {
+                        "class": class_name,
+                        "module": module,
+                        "target_dependency": target_class,
+                        "dependency_call_count": call_count,
+                        "client_count": client_count,
+                        "clients": [c["client"] for c in clients[:5]],  # Top 5 clients
+                        "delegation_method_count": delegation_count,
+                        "severity": severity,
+                        "refactoring": "Hide Delegate (Fowler Chapter 7)",
+                        "reason": f"Class '{class_name}' has {client_count} clients and {call_count} calls to '{target_class}', "
+                                  f"but only {delegation_count} delegating methods. "
+                                  f"Consider adding delegation methods to hide '{target_class}' from clients.",
+                        "suggestions": [
+                            f"Add delegation methods in '{class_name}' to hide '{target_class}'",
+                            f"This reduces coupling between clients and '{target_class}'",
+                            f"Clients currently depend on '{class_name}' AND '{target_class}' (Law of Demeter violation)",
+                            f"Example: Add methods like 'get_X()' that delegate to '{target_class}.get_X()'"
+                        ]
+                    }
+
+                    opportunities.append(opportunity)
+
+            # Apply pagination
+            total_count = len(opportunities)
+            paginated = opportunities[offset:offset + limit]
+            has_more = (offset + limit) < total_count
+
+            time_ms = (time.time() - start_time) * 1000
+
+            return {
+                "success": True,
+                "hide_delegate_opportunities": paginated,
+                "count": len(paginated),
+                "total_count": total_count,
+                "has_more": has_more,
+                "pagination": {
+                    "limit": limit,
+                    "offset": offset,
+                    "next_offset": offset + limit if has_more else None
+                },
+                "time_ms": time_ms,
+                "note": "Pragmatic heuristic approach. True Law of Demeter violations require tracking attribute access chains."
+            }
+
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": False,
+                "error": str(e),
+                "hide_delegate_opportunities": [],
+                "count": 0,
+                "total_count": 0,
+                "time_ms": time_ms
+            }
+
+    async def find_encapsulate_record_opportunities(
+        self,
+        instance_name: str,
+        min_accesses: int = 5,
+        limit: int = 100,
+        offset: int = 0
+    ) -> Dict:
+        """
+        Detect dict/record usage that should be encapsulated in a class.
+
+        Based on Fowler Chapter 7: Encapsulate Record
+
+        Args:
+            instance_name: RETER instance name
+            min_accesses: Minimum number of dict accesses to flag
+            limit: Maximum results to return
+            offset: Pagination offset
+
+        Returns:
+            Dict with encapsulate_record_opportunities
+        """
+        start_time = time.time()
+
+        try:
+            # Query: Find dict variables with many accesses
+            query = f"""
+            SELECT ?dict_id ?func_name ?module (COUNT(?access) AS ?access_count)
+            WHERE {{
+                ?dict_id concept "py:DictLiteral" .
+                ?dict_id inFunction ?func_id .
+                ?func_id name ?func_name .
+                ?func_id inModule ?module_id .
+                ?module_id name ?module .
+
+                ?access concept "py:DictAccess" .
+                ?access inFunction ?func_id .
+            }}
+            GROUP BY ?dict_id ?func_name ?module
+            HAVING (?access_count >= {min_accesses})
+            ORDER BY DESC(?access_count)
+            """
+
+            result = await self.reter.reql(query)
+            dicts = self._query_to_list(result)
+
+            opportunities = []
+
+            for dict_id, func_name, module, access_count in dicts[offset:offset+limit]:
+                access_count = int(access_count)
+
+                # Get keys from this dict
+                query_keys = f"""
+                SELECT ?key_attr ?key_value
+                WHERE {{
+                    {dict_id} concept "py:DictLiteral" .
+                    {dict_id} ?key_attr ?key_value .
+                    FILTER(REGEX(?key_attr, "^hasKey"))
+                }}
+                """
+
+                keys_result = await self.reter.reql(query_keys)
+                keys_list = self._query_to_list(keys_result)
+                keys = [key_value for _, key_value in keys_list]
+
+                # Get all accesses for this dict
+                query_accesses = f"""
+                SELECT ?target ?key
+                WHERE {{
+                    ?access concept "py:DictAccess" .
+                    ?access target ?target .
+                    ?access key ?key .
+                    ?access inFunction ?func_id .
+                    {dict_id} inFunction ?func_id .
+                }}
+                """
+
+                accesses_result = await self.reter.reql(query_accesses)
+                accesses = self._query_to_list(accesses_result)
+
+                # Get unique targets and keys accessed
+                targets = set(target for target, _ in accesses)
+                keys_accessed = set(key for _, key in accesses)
+
+                # Calculate severity
+                severity = "HIGH" if access_count >= 15 else "MEDIUM" if access_count >= 10 else "LOW"
+
+                opportunities.append({
+                    "function": func_name,
+                    "module": module,
+                    "dict_id": dict_id,
+                    "total_accesses": access_count,
+                    "dict_keys": keys,
+                    "keys_accessed": list(keys_accessed),
+                    "variables_used": list(targets),
+                    "severity": severity,
+                    "refactoring": "Encapsulate Record (Fowler Chapter 7)",
+                    "reason": f"Dict with {len(keys)} keys accessed {access_count} times in function '{func_name}'",
+                    "suggestions": [
+                        f"Create a class to encapsulate this dict structure",
+                        f"Add properties for keys: {', '.join(keys[:5])}",
+                        "Replace dict access with method calls",
+                        "Add validation in setters",
+                        "Consider using @dataclass or namedtuple"
+                    ]
+                })
+
+            time_ms = (time.time() - start_time) * 1000
+
+            return {
+                "success": True,
+                "encapsulate_record_opportunities": opportunities,
+                "count": len(opportunities),
+                "total_count": len(dicts),
+                "has_more": offset + limit < len(dicts),
+                "pagination": {
+                    "limit": limit,
+                    "offset": offset,
+                    "next_offset": offset + limit if offset + limit < len(dicts) else None
+                },
+                "time_ms": time_ms,
+                "note": "Requires C++ AST enhancements for dict access tracking (Phase 4a)."
+            }
+
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": False,
+                "error": str(e),
+                "encapsulate_record_opportunities": [],
+                "count": 0,
+                "total_count": 0,
+                "time_ms": time_ms
+            }
+
+    async def find_split_loop_opportunities(
+        self,
+        instance_name: str,
+        min_operations: int = 2,
+        limit: int = 100,
+        offset: int = 0
+    ) -> Dict:
+        """Find loops doing multiple things (Fowler Chapter 8: Split Loop)."""
+        start_time = time.time()
+        try:
+            # Find all loops
+            query = """
+            SELECT ?loop ?func_name ?module ?line ?var
+            WHERE {
+                ?loop concept "py:Loop" .
+                ?loop inFunction ?func_id .
+                ?loop atLine ?line .
+                ?loop loopVariable ?var .
+                ?func_id name ?func_name .
+                ?func_id inModule ?module_id .
+                ?module_id name ?module .
+            }
+            """
+            result = await self.reter.reql(query)
+            loops = self._query_to_list(result)
+
+            opportunities = []
+            for loop_id, func_name, module, line, var in loops[offset:offset+limit]:
+                # Count assignments in same function (heuristic for multiple operations)
+                query_ops = f"""
+                SELECT (COUNT(?assignment) as ?count)
+                WHERE {{
+                    {loop_id} inFunction ?func_id .
+                    ?assignment concept "py:Assignment" .
+                    ?assignment inFunction ?func_id .
+                }}
+                """
+                op_result = await self.reter.reql(query_ops)
+                op_list = self._query_to_list(op_result)
+                op_count = int(op_list[0][0]) if op_list and op_list[0][0] else 0
+
+                if op_count >= min_operations:
+                    opportunities.append({
+                        "function": func_name,
+                        "module": module,
+                        "loop_line": int(line),
+                        "loop_variable": var,
+                        "estimated_operations": op_count,
+                        "severity": "MEDIUM",
+                        "refactoring": "Split Loop (Fowler Chapter 8)",
+                        "reason": f"Loop may be doing {op_count} operations",
+                        "suggestion": "Review loop body for independent operations"
+                    })
+
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": True,
+                "split_loop_opportunities": opportunities,
+                "count": len(opportunities),
+                "time_ms": time_ms
+            }
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {"success": False, "error": str(e), "time_ms": time_ms}
+
+    async def find_pipeline_conversion_opportunities(
+        self,
+        instance_name: str,
+        limit: int = 100,
+        offset: int = 0
+    ) -> Dict:
+        """Find loops replaceable with pipelines (Fowler Chapter 8)."""
+        start_time = time.time()
+        try:
+            # Find for loops only (best candidates for pipelines)
+            query = """
+            SELECT ?loop ?func_name ?module ?line ?var
+            WHERE {
+                ?loop concept "py:Loop" .
+                ?loop loopType "for" .
+                ?loop inFunction ?func_id .
+                ?loop atLine ?line .
+                ?loop loopVariable ?var .
+                ?func_id name ?func_name .
+                ?func_id inModule ?module_id .
+                ?module_id name ?module .
+            }
+            """
+            result = await self.reter.reql(query)
+            loops = self._query_to_list(result)
+
+            opportunities = []
+            for loop_id, func_name, module, line, var in loops[offset:offset+limit]:
+                opportunities.append({
+                    "function": func_name,
+                    "module": module,
+                    "loop_line": int(line),
+                    "loop_variable": var,
+                    "suggested_pipeline": "list_comprehension_or_map_filter",
+                    "severity": "LOW",
+                    "refactoring": "Replace Loop with Pipeline (Fowler Chapter 8)",
+                    "reason": "For loop may be replaceable with collection pipeline",
+                    "examples": [
+                        "Filter: [x for x in items if condition]",
+                        "Map: [f(x) for x in items]",
+                        "Reduce: sum(x.val for x in items)"
+                    ]
+                })
+
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": True,
+                "pipeline_opportunities": opportunities,
+                "count": len(opportunities),
+                "time_ms": time_ms
+            }
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {"success": False, "error": str(e), "time_ms": time_ms}
+
+    async def find_move_function_opportunities(
+        self,
+        instance_name: str,
+        coupling_threshold: float = 0.5,
+        min_external_refs: int = 5,
+        limit: int = 100,
+        offset: int = 0
+    ) -> Dict:
+        """Find functions that should move to a different class (Fowler Chapter 8: Move Function)."""
+        start_time = time.time()
+        try:
+            # Find methods that access external class attributes more than own
+            query = """
+            SELECT ?function ?func_name ?current_class ?module
+            WHERE {
+                ?function concept "py:Function" .
+                ?function name ?func_name .
+                ?function inClass ?class_id .
+                ?class_id name ?current_class .
+                ?function inModule ?module_id .
+                ?module_id name ?module .
+            }
+            """
+            result = await self.reter.reql(query)
+            functions = self._query_to_list(result)
+
+            opportunities = []
+            for func_id, func_name, current_class, module in functions[offset:offset+limit]:
+                # Count self accesses (internal)
+                query_self = f"""
+                SELECT (COUNT(?access) as ?count)
+                WHERE {{
+                    ?access concept "py:AttributeAccess" .
+                    ?access inFunction {func_id} .
+                    ?access isSelfAccess "true" .
+                }}
+                """
+                self_result = await self.reter.reql(query_self)
+                self_list = self._query_to_list(self_result)
+                self_count = int(self_list[0][0]) if self_list and self_list[0][0] else 0
+
+                # Count external accesses by target object
+                query_external = f"""
+                SELECT ?target_obj (COUNT(?access) as ?count)
+                WHERE {{
+                    ?access concept "py:AttributeAccess" .
+                    ?access inFunction {func_id} .
+                    ?access isSelfAccess "false" .
+                    ?access onObject ?target_obj .
+                }}
+                GROUP BY ?target_obj
+                """
+                ext_result = await self.reter.reql(query_external)
+                ext_list = self._query_to_list(ext_result)
+
+                # Find the most-referenced external object
+                if ext_list:
+                    max_ext = max(ext_list, key=lambda x: int(x[1]))
+                    target_obj, ext_count = max_ext[0], int(max_ext[1])
+
+                    total_refs = self_count + ext_count
+                    if total_refs == 0:
+                        continue
+
+                    coupling_ratio = ext_count / total_refs
+
+                    # Threshold: external refs > coupling_threshold of total
+                    if ext_count >= min_external_refs and coupling_ratio > coupling_threshold:
+                        severity = "HIGH" if coupling_ratio >= 0.8 else "MEDIUM"
+                        opportunities.append({
+                            "function": func_name,
+                            "current_class": current_class,
+                            "module": module,
+                            "target_object": target_obj,
+                            "external_references": ext_count,
+                            "internal_references": self_count,
+                            "coupling_ratio": round(coupling_ratio, 2),
+                            "severity": severity,
+                            "refactoring": "Move Function (Fowler Chapter 8)",
+                            "reason": f"Function references {target_obj} data {ext_count} times vs own data {self_count} times",
+                            "suggestion": f"Consider moving {func_name} to the {target_obj} class or creating a new class"
+                        })
+
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": True,
+                "move_function_opportunities": opportunities,
+                "count": len(opportunities),
+                "time_ms": time_ms
+            }
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {"success": False, "error": str(e), "time_ms": time_ms}
+
+    async def find_move_field_opportunities(
+        self,
+        instance_name: str,
+        access_ratio_threshold: float = 0.6,
+        min_external_accesses: int = 3,
+        limit: int = 100,
+        offset: int = 0
+    ) -> Dict:
+        """Find fields that should move to a different class (Fowler Chapter 8: Move Field)."""
+        start_time = time.time()
+        try:
+            # Find fields (self.x assignments in __init__)
+            # For simplicity, track via AttributeAccess on self in __init__
+            query = """
+            SELECT DISTINCT ?attr ?class_name ?module
+            WHERE {
+                ?access concept "py:AttributeAccess" .
+                ?access attribute ?attr .
+                ?access isSelfAccess "true" .
+                ?access inFunction ?func .
+                ?func name "__init__" .
+                ?func inClass ?class_id .
+                ?class_id name ?class_name .
+                ?class_id inModule ?module_id .
+                ?module_id name ?module .
+            }
+            """
+            result = await self.reter.reql(query)
+            fields = self._query_to_list(result)
+
+            opportunities = []
+            for attr, class_name, module in fields[offset:offset+limit]:
+                # Count accesses from own class
+                query_own = f"""
+                SELECT (COUNT(?access) as ?count)
+                WHERE {{
+                    ?access concept "py:AttributeAccess" .
+                    ?access attribute "{attr}" .
+                    ?access fromClass ?class_id .
+                    ?class_id name "{class_name}" .
+                }}
+                """
+                own_result = await self.reter.reql(query_own)
+                own_list = self._query_to_list(own_result)
+                own_count = int(own_list[0][0]) if own_list and own_list[0][0] else 0
+
+                # Count accesses from other classes (would need cross-class tracking)
+                # For now, use heuristic: if field is rarely used in own class
+                # This is simplified - full implementation needs cross-class analysis
+
+                if own_count < min_external_accesses:
+                    opportunities.append({
+                        "field": attr,
+                        "current_class": class_name,
+                        "module": module,
+                        "own_class_accesses": own_count,
+                        "severity": "LOW",
+                        "refactoring": "Move Field (Fowler Chapter 8)",
+                        "reason": f"Field '{attr}' rarely used in {class_name} ({own_count} accesses)",
+                        "suggestion": f"Review if '{attr}' belongs in {class_name} or should move to another class"
+                    })
+
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": True,
+                "move_field_opportunities": opportunities,
+                "count": len(opportunities),
+                "time_ms": time_ms
+            }
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {"success": False, "error": str(e), "time_ms": time_ms}
+
+    # =========================================================================
+    # PHASE 8C: STATEMENT-LEVEL REFACTORINGS (Fowler Chapter 8)
+    # =========================================================================
+
+    async def find_move_statements_into_function_opportunities(
+        self,
+        instance_name: str,
+        min_duplicate_stmts: int = 2,
+        limit: int = 100,
+        offset: int = 0
+    ) -> Dict:
+        """
+        Find repeated statement sequences before/after function calls.
+
+        Fowler Chapter 8: Move Statements into Function (213)
+
+        When the same code appears before or after multiple calls to a function,
+        that duplicated code should be moved into the called function.
+
+        Example:
+            # Before:
+            validate_user(user)
+            log_access(user)
+            process_request(user, request)
+
+            validate_user(user)
+            log_access(user)
+            handle_error(user, error)
+
+            # After moving duplicate statements into validate_user:
+            validate_user(user)  # now includes log_access internally
+            process_request(user, request)
+
+            validate_user(user)
+            handle_error(user, error)
+
+        Args:
+            instance_name: RETER instance name
+            min_duplicate_stmts: Minimum duplicate statements to report (default: 2)
+            limit: Maximum opportunities to return
+            offset: Offset for pagination
+
+        Returns:
+            dict with:
+                success: bool
+                opportunities: List of move-into-function opportunities
+                count: Number of opportunities found
+                time_ms: Execution time
+        """
+        start_time = time.time()
+        try:
+            # Find all function calls
+            query_calls = """
+            SELECT ?call_site ?called_func ?caller_func ?seq
+            WHERE {
+                ?stmt concept "py:Statement" .
+                ?stmt stmtType ?type .
+                ?stmt inFunction ?caller_func .
+                ?stmt sequenceNumber ?seq .
+                ?stmt codeText ?code .
+                FILTER(CONTAINS(?code, "("))
+            }
+            ORDER BY ?caller_func ?seq
+            """
+            call_result = await self.reter.reql(query_calls)
+            calls = self._query_to_list(call_result)
+
+            if not calls:
+                return {
+                    "success": True,
+                    "move_into_function_opportunities": [],
+                    "count": 0,
+                    "time_ms": (time.time() - start_time) * 1000
+                }
+
+            # Group calls by called function name (extract from code text)
+            from collections import defaultdict
+            calls_by_target = defaultdict(list)
+
+            for call_id, called, caller, seq in calls:
+                # Extract function name from code (simple heuristic)
+                code_result = await self.reter.reql(f"""
+                SELECT ?code
+                WHERE {{
+                    <{call_id}> codeText ?code .
+                }}
+                """)
+                code_rows = self._query_to_list(code_result)
+                if code_rows:
+                    code = code_rows[0][0]
+                    # Extract function name before '('
+                    import re
+                    match = re.search(r'(\w+)\s*\(', code)
+                    if match:
+                        func_name = match.group(1)
+                        calls_by_target[func_name].append({
+                            "caller": caller,
+                            "seq": int(seq),
+                            "call_id": call_id,
+                            "code": code
+                        })
+
+            # For each called function, look for common statements before/after
+            opportunities = []
+            for called_func, call_sites in calls_by_target.items():
+                if len(call_sites) < 2:
+                    continue  # Need at least 2 call sites to find duplicates
+
+                # Check statements immediately before each call
+                before_patterns = defaultdict(list)
+                for site in call_sites:
+                    seq = site["seq"]
+                    if seq > 0:
+                        # Get statement before this call
+                        query_before = f"""
+                        SELECT ?code
+                        WHERE {{
+                            ?stmt concept "py:Statement" .
+                            ?stmt inFunction "{site['caller']}" .
+                            ?stmt sequenceNumber "{seq - 1}" .
+                            ?stmt codeText ?code .
+                        }}
+                        """
+                        before_result = await self.reter.reql(query_before)
+                        before_rows = self._query_to_list(before_result)
+                        if before_rows:
+                            before_code = before_rows[0][0]
+                            before_patterns[before_code].append(site)
+
+                # Report duplicates found before calls
+                for pattern_code, sites in before_patterns.items():
+                    if len(sites) >= min_duplicate_stmts:
+                        opportunities.append({
+                            "called_function": called_func,
+                            "duplicate_statement": pattern_code,
+                            "position": "before",
+                            "call_sites": [s["caller"] for s in sites],
+                            "occurrences": len(sites),
+                            "severity": "MEDIUM" if len(sites) >= 3 else "LOW",
+                            "refactoring": "Move Statements into Function (Fowler Chapter 8)",
+                            "reason": f"Statement '{pattern_code}' appears before {len(sites)} calls to {called_func}",
+                            "suggestion": f"Move '{pattern_code}' into the beginning of {called_func}()"
+                        })
+
+            opportunities = opportunities[offset:offset+limit]
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": True,
+                "move_into_function_opportunities": opportunities,
+                "count": len(opportunities),
+                "time_ms": time_ms
+            }
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {"success": False, "error": str(e), "time_ms": time_ms}
+
+    async def find_slide_statements_opportunities(
+        self,
+        instance_name: str,
+        min_gap: int = 2,
+        limit: int = 100,
+        offset: int = 0
+    ) -> Dict:
+        """
+        Find statements that access same data but are separated by unrelated code.
+
+        Fowler Chapter 8: Slide Statements (223)
+
+        Related statements should be grouped together. If two statements work with
+        the same variables but are separated by unrelated code, they should be
+        moved next to each other.
+
+        Example:
+            # Before:
+            user = get_user(id)
+            product = get_product(code)
+            price = product.price
+            discount = user.discount_rate
+            final_price = price * (1 - discount)
+
+            # After sliding user-related statements together:
+            user = get_user(id)
+            discount = user.discount_rate
+            product = get_product(code)
+            price = product.price
+            final_price = price * (1 - discount)
+
+        Args:
+            instance_name: RETER instance name
+            min_gap: Minimum statements between related ones (default: 2)
+            limit: Maximum opportunities to return
+            offset: Offset for pagination
+
+        Returns:
+            dict with:
+                success: bool
+                opportunities: List of slide opportunities
+                count: Number of opportunities found
+                time_ms: Execution time
+        """
+        start_time = time.time()
+        try:
+            # Find all statements with their dependencies
+            query = """
+            SELECT ?stmt ?func ?seq ?var
+            WHERE {
+                ?stmt concept "py:Statement" .
+                ?stmt inFunction ?func .
+                ?stmt sequenceNumber ?seq .
+                ?dep concept "py:StatementDependency" .
+                ?dep statement ?stmt .
+                {
+                    ?dep reads ?var .
+                }
+            }
+            ORDER BY ?func ?seq
+            """
+            result = await self.reter.reql(query)
+            rows = self._query_to_list(result)
+
+            if not rows:
+                return {
+                    "success": True,
+                    "slide_opportunities": [],
+                    "count": 0,
+                    "time_ms": (time.time() - start_time) * 1000
+                }
+
+            # Group by function
+            from collections import defaultdict
+            stmts_by_func = defaultdict(list)
+            for stmt_id, func, seq, var in rows:
+                stmts_by_func[func].append({
+                    "stmt": stmt_id,
+                    "seq": int(seq),
+                    "var": var
+                })
+
+            opportunities = []
+            for func, stmts in stmts_by_func.items():
+                # Build map of variable to statements
+                var_to_stmts = defaultdict(set)
+                for s in stmts:
+                    var_to_stmts[s["var"]].add(s["seq"])
+
+                # Find variables used by multiple separated statements
+                for var, seqs in var_to_stmts.items():
+                    if len(seqs) < 2:
+                        continue
+
+                    seqs_sorted = sorted(seqs)
+                    for i in range(len(seqs_sorted) - 1):
+                        gap = seqs_sorted[i+1] - seqs_sorted[i]
+                        if gap >= min_gap:
+                            # Get code text for both statements
+                            query_code1 = f"""
+                            SELECT ?code
+                            WHERE {{
+                                ?stmt concept "py:Statement" .
+                                ?stmt inFunction "{func}" .
+                                ?stmt sequenceNumber "{seqs_sorted[i]}" .
+                                ?stmt codeText ?code .
+                            }}
+                            """
+                            code1_result = await self.reter.reql(query_code1)
+                            code1_rows = self._query_to_list(code1_result)
+
+                            query_code2 = f"""
+                            SELECT ?code
+                            WHERE {{
+                                ?stmt concept "py:Statement" .
+                                ?stmt inFunction "{func}" .
+                                ?stmt sequenceNumber "{seqs_sorted[i+1]}" .
+                                ?stmt codeText ?code .
+                            }}
+                            """
+                            code2_result = await self.reter.reql(query_code2)
+                            code2_rows = self._query_to_list(code2_result)
+
+                            if code1_rows and code2_rows:
+                                opportunities.append({
+                                    "function": func,
+                                    "shared_variable": var,
+                                    "statement1": code1_rows[0][0],
+                                    "statement2": code2_rows[0][0],
+                                    "sequence1": seqs_sorted[i],
+                                    "sequence2": seqs_sorted[i+1],
+                                    "gap": gap - 1,
+                                    "severity": "MEDIUM" if gap >= 5 else "LOW",
+                                    "refactoring": "Slide Statements (Fowler Chapter 8)",
+                                    "reason": f"Statements working with '{var}' are {gap-1} statements apart",
+                                    "suggestion": f"Move statements together to improve code locality"
+                                })
+
+            opportunities = opportunities[offset:offset+limit]
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": True,
+                "slide_opportunities": opportunities,
+                "count": len(opportunities),
+                "time_ms": time_ms
+            }
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {"success": False, "error": str(e), "time_ms": time_ms}
+
+    async def find_replace_inline_code_opportunities(
+        self,
+        instance_name: str,
+        min_sequence_length: int = 3,
+        limit: int = 100,
+        offset: int = 0
+    ) -> Dict:
+        """
+        Find duplicate statement sequences that could be replaced with function calls.
+
+        Fowler Chapter 8: Replace Inline Code with Function Call (222)
+
+        When you find duplicate code that matches the body of an existing function,
+        replace the inline code with a call to that function.
+
+        Example:
+            # Existing function:
+            def calculate_discount(price, rate):
+                return price * (1 - rate)
+
+            # Duplicate inline code:
+            total = subtotal * (1 - discount_rate)  # Should call calculate_discount!
+
+        Args:
+            instance_name: RETER instance name
+            min_sequence_length: Minimum statements in duplicate sequence (default: 3)
+            limit: Maximum opportunities to return
+            offset: Offset for pagination
+
+        Returns:
+            dict with:
+                success: bool
+                opportunities: List of inline code replacement opportunities
+                count: Number of opportunities found
+                time_ms: Execution time
+        """
+        start_time = time.time()
+        try:
+            # Find all statements grouped by function
+            query = """
+            SELECT ?stmt ?func ?seq ?code
+            WHERE {
+                ?stmt concept "py:Statement" .
+                ?stmt inFunction ?func .
+                ?stmt sequenceNumber ?seq .
+                ?stmt codeText ?code .
+            }
+            ORDER BY ?func ?seq
+            """
+            result = await self.reter.reql(query)
+            rows = self._query_to_list(result)
+
+            if not rows:
+                return {
+                    "success": True,
+                    "inline_code_opportunities": [],
+                    "count": 0,
+                    "time_ms": (time.time() - start_time) * 1000
+                }
+
+            # Group by function
+            from collections import defaultdict
+            stmts_by_func = defaultdict(list)
+            for stmt_id, func, seq, code in rows:
+                stmts_by_func[func].append({
+                    "stmt": stmt_id,
+                    "seq": int(seq),
+                    "code": code
+                })
+
+            # Sort statements by sequence
+            for func in stmts_by_func:
+                stmts_by_func[func].sort(key=lambda x: x["seq"])
+
+            # Find duplicate sequences across different functions
+            opportunities = []
+            funcs = list(stmts_by_func.keys())
+
+            for i in range(len(funcs)):
+                for j in range(i + 1, len(funcs)):
+                    func1 = funcs[i]
+                    func2 = funcs[j]
+                    stmts1 = stmts_by_func[func1]
+                    stmts2 = stmts_by_func[func2]
+
+                    # Look for matching sequences
+                    for start1 in range(len(stmts1) - min_sequence_length + 1):
+                        for start2 in range(len(stmts2) - min_sequence_length + 1):
+                            # Check if sequences match
+                            match_len = 0
+                            while (start1 + match_len < len(stmts1) and
+                                   start2 + match_len < len(stmts2) and
+                                   stmts1[start1 + match_len]["code"] == stmts2[start2 + match_len]["code"]):
+                                match_len += 1
+
+                            if match_len >= min_sequence_length:
+                                duplicate_code = [stmts1[start1 + k]["code"] for k in range(match_len)]
+                                opportunities.append({
+                                    "function1": func1,
+                                    "function2": func2,
+                                    "duplicate_code": duplicate_code,
+                                    "sequence_length": match_len,
+                                    "severity": "HIGH" if match_len >= 5 else "MEDIUM",
+                                    "refactoring": "Replace Inline Code with Function Call (Fowler Chapter 8)",
+                                    "reason": f"Duplicate sequence of {match_len} statements found",
+                                    "suggestion": f"Extract duplicate code into a function and call it from both locations"
+                                })
+
+            opportunities = opportunities[offset:offset+limit]
+            time_ms = (time.time() - start_time) * 1000
+            return {
+                "success": True,
+                "inline_code_opportunities": opportunities,
+                "count": len(opportunities),
+                "time_ms": time_ms
+            }
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            return {"success": False, "error": str(e), "time_ms": time_ms}
