@@ -4,23 +4,13 @@ AI-powered code reasoning MCP server.
 
 ## Installation
 
-**Step 1: Install with uv**
-
 ```bash
-uv tool install git+https://github.com/codeine-ai/codeine --find-links https://raw.githubusercontent.com/codeine-ai/reter/main/reter_core/index.html
+claude mcp add codeine -s user -e ANTHROPIC_API_KEY=your-api-key -- uvx --from git+https://github.com/codeine-ai/codeine --find-links https://raw.githubusercontent.com/codeine-ai/reter/main/reter_core/index.html codeine
 ```
 
-**Step 2: Add to Claude Code**
-
-```bash
-claude mcp add codeine -s user -e ANTHROPIC_API_KEY=your-api-key -- uv tool run codeine
-```
-
-> **Note**: The `--find-links` flag is required because `reter-core` (the C++ engine) is distributed as platform-specific wheels from a private index.
+> **First run**: Start with `MCP_TIMEOUT=120000 claude` to allow time for dependency download.
 
 ### Configure with Claude Desktop
-
-Add to your Claude Desktop config:
 
 **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
@@ -29,11 +19,16 @@ Add to your Claude Desktop config:
 {
   "mcpServers": {
     "codeine": {
-      "command": "uv",
-      "args": ["tool", "run", "codeine"],
+      "command": "uvx",
+      "args": [
+        "--from", "git+https://github.com/codeine-ai/codeine",
+        "--find-links", "https://raw.githubusercontent.com/codeine-ai/reter/main/reter_core/index.html",
+        "codeine"
+      ],
       "env": {
         "ANTHROPIC_API_KEY": "your-api-key"
-      }
+      },
+      "timeout": 120000
     }
   }
 }
