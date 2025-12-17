@@ -10,6 +10,7 @@ Handles all core RETER knowledge operations including:
 Extracted from LogicalThinkingServer as part of God Class refactoring.
 """
 
+import sys
 import logging
 from pathlib import Path
 from typing import Dict, Any
@@ -177,7 +178,7 @@ class ReterOperations:
 
                     except Exception as e:
                         # Error parsing or checking this source, skip it
-                        print(f"Error checking source '{source_id}': {e}")
+                        print(f"Error checking source '{source_id}': {e}", file=sys.stderr)
                         continue
 
             except TypeError as e:

@@ -1974,4 +1974,4 @@ class ReterWrapper:
         """
         # No async resources to clean up in synchronous version
         # The operation lock is automatically released when operations complete
-        print(f"  ReterWrapper shutdown complete")
+        print(f"  ReterWrapper shutdown complete", file=sys.stderr)

@@ -4,6 +4,7 @@ Base Tool Registrar
 Common functionality for all tool registrars.
 """
 
+import sys
 from typing import Dict, Any, Optional, Callable, TypeVar
 from pathlib import Path
 from functools import wraps
@@ -111,7 +112,7 @@ class ToolRegistrarBase:
             if temp_path.exists():
                 temp_path.replace(snapshot_path)
         except Exception as e:
-            print(f"WARNING: Failed to save snapshot for {instance_name}: {e}")
+            print(f"WARNING: Failed to save snapshot for {instance_name}: {e}", file=sys.stderr)
 
     def _ensure_ontology_loaded(self, instance_name: str, tool_name: str) -> None:
         """Ensure ontology is loaded for the given tool and instance."""
@@ -140,7 +141,7 @@ class ToolRegistrarBase:
             self._ontology_loaded[instance_name][tool_name] = True
         except Exception as e:
             self._ontology_loaded[instance_name][tool_name] = True
-            print(f"Error loading ontology for {tool_name}: {e}")
+            print(f"Error loading ontology for {tool_name}: {e}", file=sys.stderr)
 
     def register(self, app) -> None:
         """Register tools with FastMCP. Override in subclasses."""

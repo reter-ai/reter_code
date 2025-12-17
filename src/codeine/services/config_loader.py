@@ -27,6 +27,7 @@ Supported settings in reter.json:
 }
 """
 
+import sys
 import os
 import json
 from pathlib import Path
@@ -108,12 +109,12 @@ class ConfigLoader:
                 with open(config_path, 'r', encoding='utf-8') as f:
                     self._config = json.load(f)
                 self._config_path = config_path
-                print(f"📋 Loaded config from: {config_path}", flush=True)
+                print(f"📋 Loaded config from: {config_path}", file=sys.stderr, flush=True)
                 self._apply_config()
             except json.JSONDecodeError as e:
-                print(f"⚠️  Invalid JSON in {config_path}: {e}", flush=True)
+                print(f"⚠️  Invalid JSON in {config_path}: {e}", file=sys.stderr, flush=True)
             except Exception as e:
-                print(f"⚠️  Error loading {config_path}: {e}", flush=True)
+                print(f"⚠️  Error loading {config_path}: {e}", file=sys.stderr, flush=True)
 
         self._loaded = True
         return self._config_path is not None
@@ -137,7 +138,7 @@ class ConfigLoader:
                         value = ",".join(str(v) for v in value)
 
                     os.environ[env_var] = value
-                    print(f"   {env_var}={value} (from reter.json)", flush=True)
+                    print(f"   {env_var}={value} (from reter.json)", file=sys.stderr, flush=True)
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get a config value."""

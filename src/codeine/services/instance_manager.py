@@ -5,6 +5,7 @@ Manages RETER instances and synchronization locks.
 Extracted from LogicalThinkingServer as part of God Class refactoring.
 """
 
+import sys
 from typing import Dict, Optional, TYPE_CHECKING
 from ..reter_wrapper import ReterWrapper, debug_log
 
@@ -77,31 +78,31 @@ class InstanceManager:
         if instance_name in self._instances:
             # For default instance, sync files even if already loaded
             if instance_name == "default" and self._default_manager and self._default_manager.is_configured():
-                print(f"[instance_manager] Instance '{instance_name}' already loaded, syncing...")
+                print(f"[instance_manager] Instance '{instance_name}' already loaded, syncing...", file=sys.stderr)
                 rebuilt = self._default_manager.ensure_default_instance_synced(self._instances[instance_name])
                 if rebuilt is not None:
                     # Instance was rebuilt from scratch to compact RETE network
-                    print(f"[instance_manager] Default instance rebuilt, replacing in cache")
+                    print(f"[instance_manager] Default instance rebuilt, replacing in cache", file=sys.stderr)
                     self._instances[instance_name] = rebuilt
             return
 
         # Try lazy loading from snapshot if persistence service is available
         if self._persistence:
             import time
-            print(f"[instance_manager] Trying to load '{instance_name}' from snapshot...")
+            print(f"[instance_manager] Trying to load '{instance_name}' from snapshot...", file=sys.stderr)
             start = time.time()
             self._persistence.load_snapshot_if_available(instance_name)
             if instance_name in self._instances:
-                print(f"[instance_manager] Successfully loaded '{instance_name}' from snapshot in {time.time()-start:.2f}s")
+                print(f"[instance_manager] Successfully loaded '{instance_name}' from snapshot in {time.time()-start:.2f}s", file=sys.stderr)
                 # For default instance: sync files after loading from snapshot (handles changed files + RAG init)
                 if instance_name == "default" and self._default_manager and self._default_manager.is_configured():
-                    print(f"[instance_manager] Syncing default instance after snapshot load...")
+                    print(f"[instance_manager] Syncing default instance after snapshot load...", file=sys.stderr)
                     rebuilt = self._default_manager.ensure_default_instance_synced(self._instances[instance_name])
                     if rebuilt is not None:
                         # Instance was rebuilt from scratch to compact RETE network
-                        print(f"[instance_manager] Default instance rebuilt, replacing in cache")
+                        print(f"[instance_manager] Default instance rebuilt, replacing in cache", file=sys.stderr)
                         self._instances[instance_name] = rebuilt
-                    print(f"[instance_manager] Sync complete in {time.time()-start:.2f}s total")
+                    print(f"[instance_manager] Sync complete in {time.time()-start:.2f}s total", file=sys.stderr)
 
     def get_or_create_instance(self, instance_name: str) -> ReterWrapper:
         """

@@ -10,6 +10,7 @@ Handles all RETER state persistence operations including:
 Extracted from LogicalThinkingServer as part of God Class refactoring.
 """
 
+import sys
 import logging
 import os
 from pathlib import Path
@@ -74,7 +75,7 @@ class StatePersistenceService:
 
             instances = self.instance_manager.get_all_instances()
             if not instances:
-                print("  ℹ️  No instances to save")
+                print("  ℹ️  No instances to save", file=sys.stderr)
                 return
 
             # Save each instance to a file (atomic write: .tmp then rename)
@@ -96,10 +97,10 @@ class StatePersistenceService:
                         if success:
                             # Atomic rename: .tmp → .reter
                             temp_path.replace(snapshot_path)
-                            print(f"  ✅ Saved '{instance_name}' → {snapshot_path} ({time_ms:.2f}ms)")
+                            print(f"  ✅ Saved '{instance_name}' → {snapshot_path} ({time_ms:.2f}ms)", file=sys.stderr)
                             saved_count += 1
                         else:
-                            print(f"  ⚠️  Failed to save '{instance_name}': Unknown error")
+                            print(f"  ⚠️  Failed to save '{instance_name}': Unknown error", file=sys.stderr)
                             # Clean up temp file on failure
                             if temp_path.exists():
                                 temp_path.unlink()
@@ -108,21 +109,21 @@ class StatePersistenceService:
                     try:
                         reter.shutdown()
                     except Exception as shutdown_err:
-                        print(f"  ⚠️  Error shutting down '{instance_name}': {shutdown_err}")
+                        print(f"  ⚠️  Error shutting down '{instance_name}': {shutdown_err}", file=sys.stderr)
 
                 except Exception as e:
-                    print(f"  ❌ Error saving '{instance_name}': {e}")
+                    print(f"  ❌ Error saving '{instance_name}': {e}", file=sys.stderr)
                     # Clean up temp file on error
                     if temp_path.exists():
                         temp_path.unlink()
 
             if skipped_count > 0:
-                print(f"  📊 Saved {saved_count}/{len(instances)} instances ({skipped_count} unchanged, skipped)")
+                print(f"  📊 Saved {saved_count}/{len(instances)} instances ({skipped_count} unchanged, skipped)", file=sys.stderr)
             else:
-                print(f"  📊 Saved {saved_count}/{len(instances)} instances")
+                print(f"  📊 Saved {saved_count}/{len(instances)} instances", file=sys.stderr)
 
         except Exception as e:
-            print(f"  ❌ Error during save_all_instances: {e}")
+            print(f"  ❌ Error during save_all_instances: {e}", file=sys.stderr)
 
     def discover_snapshots(self) -> None:
         """
@@ -134,17 +135,17 @@ class StatePersistenceService:
             self._scan_snapshot_directory()
 
             if not self.snapshots_dir.exists():
-                print(f"  ℹ️  No snapshots directory found (will be created on first save)")
+                print(f"  ℹ️  No snapshots directory found (will be created on first save)", file=sys.stderr)
                 return
 
             if not self._available_snapshots:
-                print(f"  ℹ️  No snapshots found in {self.snapshots_dir}")
+                print(f"  ℹ️  No snapshots found in {self.snapshots_dir}", file=sys.stderr)
                 return
 
-            print(f"  📊 Discovered {len(self._available_snapshots)} snapshot(s) (will load on first use)")
+            print(f"  📊 Discovered {len(self._available_snapshots)} snapshot(s) (will load on first use)", file=sys.stderr)
 
         except Exception as e:
-            print(f"  ❌ Error during discover_snapshots: {e}")
+            print(f"  ❌ Error during discover_snapshots: {e}", file=sys.stderr)
 
     def _scan_snapshot_directory(self) -> None:
         """
@@ -256,8 +257,8 @@ class StatePersistenceService:
                     reter = ReterWrapper(load_ontology=False)
                     self.instance_manager._instances[instance_name] = reter
             except Exception as inst_error:
-                print(f"  ❌ Error creating instance '{instance_name}': {inst_error}", flush=True)
-                print(f"  Traceback:\n{traceback.format_exc()}", flush=True)
+                print(f"  ❌ Error creating instance '{instance_name}': {inst_error}", file=sys.stderr, flush=True)
+                print(f"  Traceback:\n{traceback.format_exc()}", file=sys.stderr, flush=True)
                 return False
 
             # Load the snapshot
@@ -272,23 +273,23 @@ class StatePersistenceService:
                     if sources:
                         debug_log(f"[persistence] First 3 sources: {sources[:3]}")
 
-                    print(f"  ✅ Lazy-loaded '{instance_name}' ← {snapshot_path} ({time_ms:.2f}ms)", flush=True)
+                    print(f"  ✅ Lazy-loaded '{instance_name}' ← {snapshot_path} ({time_ms:.2f}ms)", file=sys.stderr, flush=True)
                     # Remove from available snapshots (now loaded)
                     del self._available_snapshots[instance_name]
                     return True
                 else:
-                    print(f"  ⚠️  Failed to lazy-load '{instance_name}': load_network returned False", flush=True)
+                    print(f"  ⚠️  Failed to lazy-load '{instance_name}': load_network returned False", file=sys.stderr, flush=True)
                     return False
 
             except Exception as load_error:
-                print(f"  ❌ Error loading network for '{instance_name}': {load_error}", flush=True)
-                print(f"  Traceback:\n{traceback.format_exc()}", flush=True)
+                print(f"  ❌ Error loading network for '{instance_name}': {load_error}", file=sys.stderr, flush=True)
+                print(f"  Traceback:\n{traceback.format_exc()}", file=sys.stderr, flush=True)
                 return False
 
         except Exception as e:
             import traceback
-            print(f"  ❌ Unexpected error lazy-loading '{instance_name}': {e}", flush=True)
-            print(f"  Traceback:\n{traceback.format_exc()}", flush=True)
+            print(f"  ❌ Unexpected error lazy-loading '{instance_name}': {e}", file=sys.stderr, flush=True)
+            print(f"  Traceback:\n{traceback.format_exc()}", file=sys.stderr, flush=True)
             return False
 
     def load_all_instances(self) -> None:
@@ -300,14 +301,14 @@ class StatePersistenceService:
         try:
             # Check if snapshots directory exists
             if not self.snapshots_dir.exists():
-                print(f"  ℹ️  No snapshots directory found (will be created on first save)")
+                print(f"  ℹ️  No snapshots directory found (will be created on first save)", file=sys.stderr)
                 return
 
             # Find all .reter snapshot files (with leading dot: .{instance_name}.reter)
             snapshot_files = list(self.snapshots_dir.glob(".*.reter"))
 
             if not snapshot_files:
-                print(f"  ℹ️  No snapshots found in {self.snapshots_dir}")
+                print(f"  ℹ️  No snapshots found in {self.snapshots_dir}", file=sys.stderr)
                 return
 
             # Load each snapshot
@@ -325,18 +326,18 @@ class StatePersistenceService:
                     success, filename, time_ms = reter.load_network(str(snapshot_path))
 
                     if success:
-                        print(f"  ✅ Loaded '{instance_name}' ← {snapshot_path}")
+                        print(f"  ✅ Loaded '{instance_name}' ← {snapshot_path}", file=sys.stderr)
                         loaded_count += 1
                     else:
-                        print(f"  ⚠️  Failed to load '{instance_name}': Unknown error")
+                        print(f"  ⚠️  Failed to load '{instance_name}': Unknown error", file=sys.stderr)
 
                 except Exception as e:
-                    print(f"  ❌ Error loading '{instance_name}': {e}")
+                    print(f"  ❌ Error loading '{instance_name}': {e}", file=sys.stderr)
 
-            print(f"  📊 Loaded {loaded_count}/{len(snapshot_files)} instances")
+            print(f"  📊 Loaded {loaded_count}/{len(snapshot_files)} instances", file=sys.stderr)
 
         except Exception as e:
-            print(f"  ❌ Error during load_all_instances: {e}")
+            print(f"  ❌ Error during load_all_instances: {e}", file=sys.stderr)
 
     def save_state(self, instance_name: str, filename: str) -> Dict[str, Any]:
         """

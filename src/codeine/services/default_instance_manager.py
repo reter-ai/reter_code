@@ -22,6 +22,7 @@ RAG Integration:
 - RAG indexing is triggered after RETER sync completes
 """
 
+import sys
 import os
 import hashlib
 from pathlib import Path
@@ -95,7 +96,7 @@ class DefaultInstanceManager:
             # (has .py files, pyproject.toml, setup.py, or .git)
             if self._looks_like_python_project(cwd):
                 root = str(cwd)
-                print(f"[default] Auto-detected project root from CWD: {root}", flush=True)
+                print(f"[default] Auto-detected project root from CWD: {root}", file=sys.stderr, flush=True)
 
         if root:
             self._project_root = Path(root).resolve()
@@ -234,7 +235,7 @@ class DefaultInstanceManager:
         # This can happen when RAG sync triggers REQL queries that somehow
         # trigger another sync request
         if self._syncing:
-            print(f"[default] Sync already in progress, skipping recursive call", flush=True)
+            print(f"[default] Sync already in progress, skipping recursive call", file=sys.stderr, flush=True)
             return None
 
         self._syncing = True
@@ -253,63 +254,63 @@ class DefaultInstanceManager:
         """
         import time
         start = time.time()
-        print(f"[default] Syncing... (initialized={self._initialized})", flush=True)
+        print(f"[default] Syncing... (initialized={self._initialized})", file=sys.stderr, flush=True)
         if self._include_patterns:
-            print(f"[default] Include patterns: {self._include_patterns}", flush=True)
+            print(f"[default] Include patterns: {self._include_patterns}", file=sys.stderr, flush=True)
         if self._exclude_patterns:
-            print(f"[default] Exclude patterns: {self._exclude_patterns}", flush=True)
+            print(f"[default] Exclude patterns: {self._exclude_patterns}", file=sys.stderr, flush=True)
 
         # Get current files from filesystem
-        print(f"[default] Scanning filesystem...", flush=True)
+        print(f"[default] Scanning filesystem...", file=sys.stderr, flush=True)
         current_files = self._scan_project_files()
-        print(f"[default] Found {len(current_files)} Python files in {time.time()-start:.2f}s", flush=True)
+        print(f"[default] Found {len(current_files)} Python files in {time.time()-start:.2f}s", file=sys.stderr, flush=True)
 
         # Check if we should do a full rebuild instead of incremental sync
         # This compacts the RETE network which bloats ~20% per modify cycle
         if self._modification_count >= self.REBUILD_THRESHOLD:
-            print(f"[default] Modification threshold exceeded ({self._modification_count} >= {self.REBUILD_THRESHOLD})", flush=True)
+            print(f"[default] Modification threshold exceeded ({self._modification_count} >= {self.REBUILD_THRESHOLD})", file=sys.stderr, flush=True)
             fresh_reter = self._force_rebuild(current_files)
 
             # Save the fresh (compacted) snapshot
             self._persistence.snapshots_dir.mkdir(parents=True, exist_ok=True)
             snapshot_path = self._persistence.snapshots_dir / ".default.reter"
-            print(f"[default] Saving compacted snapshot to {snapshot_path}...", flush=True)
+            print(f"[default] Saving compacted snapshot to {snapshot_path}...", file=sys.stderr, flush=True)
             save_start = time.time()
             fresh_reter.save_network(str(snapshot_path))
             fresh_reter.mark_clean()
-            print(f"[default] Compacted snapshot saved in {time.time()-save_start:.2f}s (total: {time.time()-start:.2f}s)", flush=True)
+            print(f"[default] Compacted snapshot saved in {time.time()-save_start:.2f}s (total: {time.time()-start:.2f}s)", file=sys.stderr, flush=True)
 
             self._initialized = True
             return fresh_reter  # Caller should replace instance
 
         # Get existing sources from RETER
-        print(f"[default] Querying existing sources...", flush=True)
+        print(f"[default] Querying existing sources...", file=sys.stderr, flush=True)
         existing_sources = self._get_existing_sources(reter)
-        print(f"[default] Found {len(existing_sources)} sources already loaded in {time.time()-start:.2f}s", flush=True)
+        print(f"[default] Found {len(existing_sources)} sources already loaded in {time.time()-start:.2f}s", file=sys.stderr, flush=True)
 
         # Sync files
-        print(f"[default] Syncing files...", flush=True)
+        print(f"[default] Syncing files...", file=sys.stderr, flush=True)
         changes_made = self._sync_files(reter, current_files, existing_sources)
-        print(f"[default] Sync completed in {time.time()-start:.2f}s", flush=True)
+        print(f"[default] Sync completed in {time.time()-start:.2f}s", file=sys.stderr, flush=True)
 
         # Auto-save snapshot if any changes were made
         if changes_made:
             self._persistence.snapshots_dir.mkdir(parents=True, exist_ok=True)
             snapshot_path = self._persistence.snapshots_dir / ".default.reter"  # Leading dot matches persistence convention
-            print(f"[default] Saving snapshot to {snapshot_path}...", flush=True)
+            print(f"[default] Saving snapshot to {snapshot_path}...", file=sys.stderr, flush=True)
             save_start = time.time()
             reter.save_network(str(snapshot_path))
             reter.mark_clean()
-            print(f"[default] Snapshot saved in {time.time()-save_start:.2f}s (total: {time.time()-start:.2f}s)", flush=True)
+            print(f"[default] Snapshot saved in {time.time()-save_start:.2f}s (total: {time.time()-start:.2f}s)", file=sys.stderr, flush=True)
         else:
-            print(f"[default] No changes detected, skipping snapshot save (total: {time.time()-start:.2f}s)", flush=True)
+            print(f"[default] No changes detected, skipping snapshot save (total: {time.time()-start:.2f}s)", file=sys.stderr, flush=True)
 
         self._initialized = True
 
         # Initialize RAG index if configured (lazy initialization)
         # This ensures RAG is ready for semantic search after first use
         if self._rag_manager and self._rag_manager.is_enabled and not self._rag_manager.is_initialized:
-            print(f"[default] Initializing RAG index...", flush=True)
+            print(f"[default] Initializing RAG index...", file=sys.stderr, flush=True)
             try:
                 rag_start = time.time()
                 # sync_sources calls initialize() internally and indexes all sources
@@ -324,7 +325,7 @@ class DefaultInstanceManager:
                 )
             except Exception as e:
                 import traceback
-                print(f"[default] RAG initialization error: {e}", flush=True)
+                print(f"[default] RAG initialization error: {e}", file=sys.stderr, flush=True)
                 debug_log(f"[default] RAG initialization error: {traceback.format_exc()}")
 
         return None  # No rebuild needed, sync completed in-place
@@ -434,7 +435,7 @@ class DefaultInstanceManager:
                     md5_hash = hashlib.md5(content.encode('utf-8')).hexdigest()
                     files[rel_path_str] = (str(code_file), md5_hash)
                 except Exception as e:
-                    print(f"Warning: Failed to read {code_file}: {e}")
+                    print(f"Warning: Failed to read {code_file}: {e}", file=sys.stderr)
 
     def _is_excluded(self, rel_path: Path) -> bool:
         """
@@ -641,30 +642,30 @@ class DefaultInstanceManager:
             if rel_path not in existing_sources:
                 # New file - load it using the appropriate loader
                 debug_log(f"[default] NEW file (not in existing): {rel_path}")
-                print(f"[default] Adding new file: {rel_path}", flush=True)
+                print(f"[default] Adding new file: {rel_path}", file=sys.stderr, flush=True)
                 try:
                     self._load_code_file(reter, abs_path, rel_path)
                     added_count += 1
-                    print(f"[default]   ✓ Added {rel_path}", flush=True)
+                    print(f"[default]   ✓ Added {rel_path}", file=sys.stderr, flush=True)
                     # Track for RAG: generate source_id for new file
                     new_source_id = generate_source_id(abs_path, str(self._project_root))
                     track_changed_source(rel_path, new_source_id)
                 except Exception as e:
                     # Log error but continue with other files (don't re-raise)
                     error_msg = f"Error loading {rel_path}: {type(e).__name__}: {e}"
-                    print(f"[default]   ✗ {error_msg}", flush=True)
+                    print(f"[default]   ✗ {error_msg}", file=sys.stderr, flush=True)
                     errors.append(error_msg)
             else:
                 old_md5, old_source_id = existing_sources[rel_path]
                 if old_md5 != current_md5:
                     # Modified file - forget and reload
                     debug_log(f"[default] MD5 MISMATCH: {rel_path} old={old_md5[:8]}... new={current_md5[:8]}...")
-                    print(f"[default] Reloading modified file: {rel_path}", flush=True)
+                    print(f"[default] Reloading modified file: {rel_path}", file=sys.stderr, flush=True)
                     try:
                         reter.forget_source(old_source_id)
                         self._load_code_file(reter, abs_path, rel_path)
                         modified_count += 1
-                        print(f"[default]   ✓ Reloaded {rel_path}", flush=True)
+                        print(f"[default]   ✓ Reloaded {rel_path}", file=sys.stderr, flush=True)
                         # Track for RAG: old source deleted, new source added
                         track_deleted_source(rel_path, old_source_id)
                         new_source_id = generate_source_id(abs_path, str(self._project_root))
@@ -672,33 +673,33 @@ class DefaultInstanceManager:
                     except Exception as e:
                         # Log error but continue with other files (don't re-raise)
                         error_msg = f"Error reloading {rel_path}: {type(e).__name__}: {e}"
-                        print(f"[default]   ✗ {error_msg}", flush=True)
+                        print(f"[default]   ✗ {error_msg}", file=sys.stderr, flush=True)
                         errors.append(error_msg)
 
         # Find deleted files
         for rel_path, (old_md5, old_source_id) in existing_sources.items():
             if rel_path not in current_files:
                 # Deleted file - forget it
-                print(f"[default] Forgetting deleted file: {rel_path}", flush=True)
+                print(f"[default] Forgetting deleted file: {rel_path}", file=sys.stderr, flush=True)
                 try:
                     reter.forget_source(old_source_id)
                     deleted_count += 1
-                    print(f"[default]   ✓ Forgot {rel_path}", flush=True)
+                    print(f"[default]   ✓ Forgot {rel_path}", file=sys.stderr, flush=True)
                     # Track for RAG
                     track_deleted_source(rel_path, old_source_id)
                 except Exception as e:
                     # Log error but continue with other files (don't re-raise)
                     error_msg = f"Error forgetting {rel_path}: {type(e).__name__}: {e}"
-                    print(f"[default]   ✗ {error_msg}", flush=True)
+                    print(f"[default]   ✗ {error_msg}", file=sys.stderr, flush=True)
                     errors.append(error_msg)
 
         if errors:
-            print(f"[default] Sync completed with {len(errors)} errors", flush=True)
+            print(f"[default] Sync completed with {len(errors)} errors", file=sys.stderr, flush=True)
 
         changes_made = added_count > 0 or modified_count > 0 or deleted_count > 0
 
         if changes_made:
-            print(f"[default] Sync complete: +{added_count} ~{modified_count} -{deleted_count}")
+            print(f"[default] Sync complete: +{added_count} ~{modified_count} -{deleted_count}", file=sys.stderr)
 
         # Sync with RAG index if configured
         # NOTE: RAG sync is skipped during initial load to avoid slowing down startup.
@@ -712,7 +713,7 @@ class DefaultInstanceManager:
                 changed_cpp_sources or deleted_cpp_sources
             )
             if has_changes:
-                print(f"[default] Syncing RAG index...", flush=True)
+                print(f"[default] Syncing RAG index...", file=sys.stderr, flush=True)
                 try:
                     rag_stats = self._rag_manager.sync(
                         reter=reter,
@@ -741,7 +742,7 @@ class DefaultInstanceManager:
                         flush=True
                     )
                 except Exception as e:
-                    print(f"[default] RAG sync error: {e}", flush=True)
+                    print(f"[default] RAG sync error: {e}", file=sys.stderr, flush=True)
 
         # Track modifications for compaction (only forget operations cause bloat)
         modification_ops = modified_count + deleted_count
@@ -773,7 +774,7 @@ class DefaultInstanceManager:
         """
         import time
         start = time.time()
-        print(f"[default] Force rebuilding to compact RETE network ({self._modification_count} modifications accumulated)...", flush=True)
+        print(f"[default] Force rebuilding to compact RETE network ({self._modification_count} modifications accumulated)...", file=sys.stderr, flush=True)
 
         # Create fresh ReterWrapper with new RETE network
         fresh_reter = ReterWrapper()
@@ -787,14 +788,14 @@ class DefaultInstanceManager:
                 loaded += 1
             except Exception as e:
                 error_msg = f"Error loading {rel_path}: {type(e).__name__}: {e}"
-                print(f"[default]   ✗ {error_msg}", flush=True)
+                print(f"[default]   ✗ {error_msg}", file=sys.stderr, flush=True)
                 errors.append(error_msg)
 
         # Reset modification count
         self._modification_count = 0
 
-        print(f"[default] Rebuild complete: loaded {loaded} files in {time.time()-start:.2f}s", flush=True)
+        print(f"[default] Rebuild complete: loaded {loaded} files in {time.time()-start:.2f}s", file=sys.stderr, flush=True)
         if errors:
-            print(f"[default] Rebuild had {len(errors)} errors", flush=True)
+            print(f"[default] Rebuild had {len(errors)} errors", file=sys.stderr, flush=True)
 
         return fresh_reter

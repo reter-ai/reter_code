@@ -10,6 +10,7 @@ Implements automated detection for:
 Created as part of Phase 1 implementation of Chapter 6 refactoring patterns.
 """
 
+import sys
 from typing import Dict, Any, List, Set, Tuple
 from collections import defaultdict
 import time
@@ -2860,7 +2861,7 @@ class RefactoringOpportunityDetector(AdvancedToolsBase):
         Example:
             # BEFORE (bad - unstructured dict)
             person = {"name": "John", "age": 30, "email": "john@example.com"}
-            print(person["name"])
+            print(person["name"], file=sys.stderr)
 
             # AFTER (good - encapsulated in class)
             @dataclass
@@ -2870,7 +2871,7 @@ class RefactoringOpportunityDetector(AdvancedToolsBase):
                 email: str
 
             person = Person("John", 30, "john@example.com")
-            print(person.name)
+            print(person.name, file=sys.stderr)
         """
         start_time = time.time()
 
