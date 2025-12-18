@@ -4,32 +4,21 @@ AI-powered code reasoning MCP server.
 
 ## Installation
 
-### Step 1: Add to Claude Code
+### Step 1: Pre-cache dependencies (run once, takes ~2 min)
+
+```bash
+uvx --from git+https://github.com/codeine-ai/codeine --find-links https://raw.githubusercontent.com/codeine-ai/reter/main/reter_core/index.html codeine --help
+```
+
+Wait for it to complete. This downloads ~400MB of dependencies.
+
+### Step 2: Add to Claude Code
 
 ```bash
 claude mcp add codeine -s user -e ANTHROPIC_API_KEY=your-api-key -- uvx --from git+https://github.com/codeine-ai/codeine --find-links https://raw.githubusercontent.com/codeine-ai/reter/main/reter_core/index.html codeine
 ```
 
-### Step 2: First Run (with timeout for dependency download)
-
-First startup downloads ~400MB of dependencies. Set timeout to allow this:
-
-**Linux / macOS:**
-```bash
-MCP_TIMEOUT=120000 claude
-```
-
-**Windows (PowerShell):**
-```powershell
-$env:MCP_TIMEOUT=120000; claude
-```
-
-**Windows (CMD):**
-```cmd
-set MCP_TIMEOUT=120000 && claude
-```
-
-After first run, dependencies are cached and no timeout is needed.
+Now Claude starts fast because everything is cached.
 
 ---
 
