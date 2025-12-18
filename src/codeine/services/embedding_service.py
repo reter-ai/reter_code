@@ -16,31 +16,19 @@ from typing import List, Dict, Optional, Any
 from collections import OrderedDict
 
 import numpy as np
+from sentence_transformers import SentenceTransformer
 
 from ..logging_config import configure_logger_for_debug_trace
 logger = configure_logger_for_debug_trace(__name__)
 
-# Provider availability - checked lazily to avoid slow imports at startup
-# sentence-transformers alone takes ~12s to import!
-_SENTENCE_TRANSFORMERS_AVAILABLE: Optional[bool] = None
+# Provider availability
+_SENTENCE_TRANSFORMERS_AVAILABLE = True  # Imported eagerly above
 _VOYAGE_AVAILABLE: Optional[bool] = None
 _OPENAI_AVAILABLE: Optional[bool] = None
 
 
 def _check_sentence_transformers() -> bool:
-    """Lazy check for sentence-transformers availability."""
-    global _SENTENCE_TRANSFORMERS_AVAILABLE
-    if _SENTENCE_TRANSFORMERS_AVAILABLE is None:
-        import time
-        logger.info("[Embedding] _check_sentence_transformers: Starting import...")
-        start = time.time()
-        try:
-            import sentence_transformers  # noqa: F401
-            _SENTENCE_TRANSFORMERS_AVAILABLE = True
-            logger.info(f"[Embedding] _check_sentence_transformers: Import succeeded in {time.time()-start:.2f}s")
-        except ImportError as e:
-            _SENTENCE_TRANSFORMERS_AVAILABLE = False
-            logger.warning(f"[Embedding] _check_sentence_transformers: Import failed: {e}")
+    """Check for sentence-transformers availability."""
     return _SENTENCE_TRANSFORMERS_AVAILABLE
 
 
@@ -202,18 +190,6 @@ class EmbeddingService:
             return
 
         log("_init_local: Starting fresh load...")
-
-        # Import directly - skip availability check to avoid double import
-        log("_init_local: Importing sentence_transformers (this may take 10-15s)...")
-        import_start = time.time()
-        try:
-            from sentence_transformers import SentenceTransformer
-        except ImportError:
-            raise ImportError(
-                "sentence-transformers is required for local embeddings. "
-                "Install with: pip install sentence-transformers"
-            )
-        log(f"_init_local: Import completed in {time.time() - import_start:.2f}s")
 
         # Normalize model name for sentence-transformers
         st_model_name = self.model_name
