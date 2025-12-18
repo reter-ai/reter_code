@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 
 from fastmcp import FastMCP  # Use fastmcp, not mcp.server.fastmcp, for proper Context injection
+from fastmcp.server.dependencies import Progress
 
 from .logging_config import configure_logger_for_debug_trace
 logger = configure_logger_for_debug_trace(__name__)
@@ -217,20 +218,24 @@ Always use the `thinking` tool when analyzing problems or making decisions.""",
     # All RETER operations, state persistence, and instance management methods
     # have been extracted to service classes (God Class refactoring)
 
-    def _start_background_initialization(self):
+    async def _async_initialize(self, mcp_progress: Optional[Progress] = None) -> dict:
         """
-        Start background thread for combined initialization.
+        Async initialization with FastMCP Progress reporting.
 
-        This thread:
+        This method:
         1. Sets _initialization_in_progress = True (allows internal RETER access)
         2. Loads embedding model (if RAG enabled)
         3. Initializes default RETER instance (loads Python files)
         4. Initializes RAG index (indexes code for semantic search)
         5. Sets _initialization_complete = True, _initialization_in_progress = False
 
-        All MCP tool calls are BLOCKED until this completes (via check_initialization()).
+        Args:
+            mcp_progress: FastMCP Progress dependency for MCP task progress reporting
+
+        Returns:
+            dict with initialization status and statistics
         """
-        import threading
+        import asyncio
         import time
 
         from .reter_wrapper import (
@@ -245,148 +250,202 @@ Always use the `thinking` tool when analyzing problems or making decisions.""",
             InitPhase
         )
 
-        def _background_init():
-            progress = get_instance_progress()
-            components = get_component_readiness()
-            try:
-                init_start = time.time()
+        internal_progress = get_instance_progress()
+        components = get_component_readiness()
+        stats = {"files_loaded": 0, "vectors_indexed": 0, "status": "unknown"}
 
-                # SQLite/persistence is ready - mark component as ready
-                components.set_sql_ready(True)
-                logger.info("SQLite/persistence layer ready")
+        try:
+            init_start = time.time()
 
-                # CRITICAL: Set flag to allow internal RETER access during init
-                set_initialization_in_progress(True)
-                progress.update(
-                    init_status=InitStatus.INITIALIZING,
-                    init_phase=InitPhase.PENDING,
-                    init_started_at=datetime.now(),
-                    init_message="Starting initialization..."
+            # SQLite/persistence is ready - mark component as ready
+            components.set_sql_ready(True)
+            logger.info("SQLite/persistence layer ready")
+
+            # CRITICAL: Set flag to allow internal RETER access during init
+            set_initialization_in_progress(True)
+            internal_progress.update(
+                init_status=InitStatus.INITIALIZING,
+                init_phase=InitPhase.PENDING,
+                init_started_at=datetime.now(),
+                init_message="Starting initialization..."
+            )
+            if mcp_progress:
+                await mcp_progress.set_message("Starting initialization...")
+            logger.info("Background initialization started...")
+
+            # Step 1: Initialize default RETER instance (loads Python files)
+            # This must happen FIRST so code_inspection tools work while embedding loads
+            if self.default_manager.is_configured():
+                msg = f"Loading Python files from {self.default_manager._project_root}..."
+                internal_progress.update(
+                    init_phase=InitPhase.LOADING_PYTHON,
+                    init_message=msg
                 )
-                logger.info("Background initialization started...")
+                if mcp_progress:
+                    await mcp_progress.set_message(msg)
+                logger.info("Loading Python files from %s...", self.default_manager._project_root)
+                reter_start = time.time()
 
-                # Step 1: Initialize default RETER instance (loads Python files)
-                # This must happen FIRST so code_inspection tools work while embedding loads
-                if self.default_manager.is_configured():
-                    progress.update(
-                        init_phase=InitPhase.LOADING_PYTHON,
-                        init_message=f"Loading Python files from {self.default_manager._project_root}..."
-                    )
-                    logger.info("Loading Python files from %s...", self.default_manager._project_root)
-                    reter_start = time.time()
-                    try:
-                        # This triggers full initialization including Python file loading
+                # Yield to event loop to keep server responsive
+                await asyncio.sleep(0)
+
+                try:
+                    # This triggers full initialization including Python file loading
+                    reter = self.instance_manager.get_or_create_instance("default")
+                    if reter:
+                        # Sync to load any new/changed files
+                        rebuilt = self.default_manager.ensure_default_instance_synced(reter)
+                        if rebuilt is not None:
+                            # Instance was rebuilt from scratch to compact RETE network
+                            # Update the instance manager's cache
+                            self.instance_manager._instances["default"] = rebuilt
+                            reter = rebuilt
+                        # Mark RETER as ready - Python files are loaded
+                        # code_inspection tools can now be used!
+                        components.set_reter_ready(True)
+                        stats["files_loaded"] = len(reter.get_all_sources()) if hasattr(reter, 'get_all_sources') else 0
+                        logger.info("RETER instance initialized in %.1fs", time.time() - reter_start)
+                except Exception as e:
+                    components.set_reter_ready(False, error=str(e))
+                    logger.warning("RETER initialization failed: %s", e)
+                    logger.exception("RETER initialization traceback")
+            else:
+                # No default instance configured - mark as ready anyway
+                components.set_reter_ready(True)
+
+            # Yield to event loop
+            await asyncio.sleep(0)
+
+            # Step 2: Load embedding model (if RAG enabled)
+            # This can take time but doesn't block code_inspection tools
+            if self.rag_manager is not None and self._rag_config.get("rag_enabled", True):
+                model_name = self._rag_config.get('rag_embedding_model', 'all-MiniLM-L6-v2')
+                msg = f"Loading embedding model '{model_name}'..."
+                internal_progress.update(
+                    init_phase=InitPhase.BUILDING_RAG_INDEX,
+                    init_message=msg
+                )
+                if mcp_progress:
+                    await mcp_progress.set_message(msg)
+                logger.info("Loading embedding model '%s'...", model_name)
+                model_start = time.time()
+
+                # Yield to event loop
+                await asyncio.sleep(0)
+
+                try:
+                    cache_dir = os.environ.get('TRANSFORMERS_CACHE', None)
+                    preloaded_model = SentenceTransformer(model_name, cache_folder=cache_dir)
+                    self.rag_manager.set_preloaded_model(preloaded_model)
+                    # Mark embedding model as ready
+                    components.set_embedding_ready(True)
+                    logger.info("Embedding model loaded in %.1fs", time.time() - model_start)
+                except Exception as e:
+                    logger.warning("Embedding model loading failed: %s", e)
+
+            # Yield to event loop
+            await asyncio.sleep(0)
+
+            # Step 3: Initialize RAG index (if enabled and model loaded)
+            if self.rag_manager is not None and self.rag_manager.is_model_loaded:
+                msg = "Building RAG code index..."
+                internal_progress.update(
+                    init_phase=InitPhase.BUILDING_RAG_INDEX,
+                    init_message=msg
+                )
+                if mcp_progress:
+                    await mcp_progress.set_message(msg)
+                logger.info("Building RAG index...")
+                rag_start = time.time()
+
+                # Yield to event loop
+                await asyncio.sleep(0)
+
+                try:
+                    self.rag_manager.initialize(self.default_manager._project_root)
+                    # Sync RAG with RETER to index all Python entities
+                    if self.default_manager.is_configured():
                         reter = self.instance_manager.get_or_create_instance("default")
                         if reter:
-                            # Sync to load any new/changed files
-                            rebuilt = self.default_manager.ensure_default_instance_synced(reter)
-                            if rebuilt is not None:
-                                # Instance was rebuilt from scratch to compact RETE network
-                                # Update the instance manager's cache
-                                self.instance_manager._instances["default"] = rebuilt
-                                reter = rebuilt
-                            # Mark RETER as ready - Python files are loaded
-                            # code_inspection tools can now be used!
-                            components.set_reter_ready(True)
-                            logger.info("RETER instance initialized in %.1fs", time.time() - reter_start)
-                    except Exception as e:
-                        components.set_reter_ready(False, error=str(e))
-                        logger.warning("RETER initialization failed: %s", e)
-                        logger.exception("RETER initialization traceback")
-                else:
-                    # No default instance configured - mark as ready anyway
-                    components.set_reter_ready(True)
-
-                # Step 2: Load embedding model (if RAG enabled)
-                # This can take time but doesn't block code_inspection tools
-                if self.rag_manager is not None and self._rag_config.get("rag_enabled", True):
-                    model_name = self._rag_config.get('rag_embedding_model', 'all-MiniLM-L6-v2')
-                    progress.update(
-                        init_phase=InitPhase.BUILDING_RAG_INDEX,
-                        init_message=f"Loading embedding model '{model_name}'..."
-                    )
-                    logger.info("Loading embedding model '%s'...", model_name)
-                    model_start = time.time()
-                    try:
-                        cache_dir = os.environ.get('TRANSFORMERS_CACHE', None)
-                        preloaded_model = SentenceTransformer(model_name, cache_folder=cache_dir)
-                        self.rag_manager.set_preloaded_model(preloaded_model)
-                        # Mark embedding model as ready
-                        components.set_embedding_ready(True)
-                        logger.info("Embedding model loaded in %.1fs", time.time() - model_start)
-                    except Exception as e:
-                        logger.warning("Embedding model loading failed: %s", e)
-
-                # Step 3: Initialize RAG index (if enabled and model loaded)
-                if self.rag_manager is not None and self.rag_manager.is_model_loaded:
-                    progress.update(
-                        init_phase=InitPhase.BUILDING_RAG_INDEX,
-                        init_message="Building RAG code index..."
-                    )
-                    logger.info("Building RAG index...")
-                    rag_start = time.time()
-                    try:
-                        self.rag_manager.initialize(self.default_manager._project_root)
-                        # Sync RAG with RETER to index all Python entities
-                        if self.default_manager.is_configured():
-                            reter = self.instance_manager.get_or_create_instance("default")
-                            if reter:
-                                self.rag_manager.sync_sources(
-                                    reter=reter,
-                                    project_root=self.default_manager._project_root
-                                )
-                        # Mark RAG code index as ready
-                        components.set_rag_code_ready(True)
-                        logger.info("RAG code index built in %.1fs", time.time() - rag_start)
-
-                        # Step 4: Index Markdown documents
-                        progress.update(
-                            init_message="Indexing Markdown documents..."
-                        )
-                        # Markdown indexing happens during sync() above - mark as ready
-                        components.set_rag_docs_ready(True)
-                        logger.info("RAG document index ready")
-
-                    except Exception as e:
-                        components.set_rag_code_ready(False, error=str(e))
-                        components.set_rag_docs_ready(False, error=str(e))
-                        logger.warning("RAG indexing failed: %s", e)
-                        logger.exception("RAG indexing traceback")
-                else:
-                    # RAG not enabled - mark as ready so tools don't block
+                            rag_stats = self.rag_manager.sync_sources(
+                                reter=reter,
+                                project_root=self.default_manager._project_root
+                            )
+                            if rag_stats:
+                                stats["vectors_indexed"] = rag_stats.get('total_vectors', 0)
+                    # Mark RAG code index as ready
                     components.set_rag_code_ready(True)
+                    logger.info("RAG code index built in %.1fs", time.time() - rag_start)
+
+                    # Step 4: Index Markdown documents
+                    msg = "Indexing Markdown documents..."
+                    internal_progress.update(init_message=msg)
+                    if mcp_progress:
+                        await mcp_progress.set_message(msg)
+                    # Markdown indexing happens during sync() above - mark as ready
                     components.set_rag_docs_ready(True)
+                    logger.info("RAG document index ready")
 
-                # CRITICAL: Mark initialization as complete
-                set_initialization_complete(True)
-                set_initialization_in_progress(False)
-                progress.update(
-                    init_status=InitStatus.READY,
-                    init_phase=InitPhase.COMPLETE,
-                    init_progress=1.0,
-                    init_message="Initialization complete",
-                    init_completed_at=datetime.now()
-                )
+                except Exception as e:
+                    components.set_rag_code_ready(False, error=str(e))
+                    components.set_rag_docs_ready(False, error=str(e))
+                    logger.warning("RAG indexing failed: %s", e)
+                    logger.exception("RAG indexing traceback")
+            else:
+                # RAG not enabled - mark as ready so tools don't block
+                components.set_rag_code_ready(True)
+                components.set_rag_docs_ready(True)
 
-                total_time = time.time() - init_start
-                logger.info("Background initialization complete in %.1fs - all tools ready", total_time)
+            # CRITICAL: Mark initialization as complete
+            set_initialization_complete(True)
+            set_initialization_in_progress(False)
+            internal_progress.update(
+                init_status=InitStatus.READY,
+                init_phase=InitPhase.COMPLETE,
+                init_progress=1.0,
+                init_message="Initialization complete",
+                init_completed_at=datetime.now()
+            )
+            if mcp_progress:
+                await mcp_progress.set_message("Initialization complete")
 
-            except Exception as e:
-                logger.error("Background initialization failed: %s", e)
-                logger.exception("Background initialization traceback")
-                # Still mark as complete so tools don't hang forever
-                set_initialization_complete(True)
-                set_initialization_in_progress(False)
-                progress.update(
-                    init_status=InitStatus.ERROR,
-                    init_error=str(e),
-                    init_completed_at=datetime.now()
-                )
+            total_time = time.time() - init_start
+            stats["status"] = "ready"
+            stats["init_time_seconds"] = round(total_time, 1)
+            logger.info("Background initialization complete in %.1fs - all tools ready", total_time)
 
-        # Start the background thread
-        logger.info("Background initialization thread started...")
-        init_thread = threading.Thread(target=_background_init, daemon=True, name="reter-init")
-        init_thread.start()
+            return stats
+
+        except Exception as e:
+            logger.error("Background initialization failed: %s", e)
+            logger.exception("Background initialization traceback")
+            # Still mark as complete so tools don't hang forever
+            set_initialization_complete(True)
+            set_initialization_in_progress(False)
+            internal_progress.update(
+                init_status=InitStatus.ERROR,
+                init_error=str(e),
+                init_completed_at=datetime.now()
+            )
+            stats["status"] = "error"
+            stats["error"] = str(e)
+            return stats
+
+    def _register_initialization_tool(self):
+        """Register the initialize_project tool with background task support."""
+
+        @self.app.tool(task=True)
+        async def initialize_project(progress: Progress = Progress()) -> dict:
+            """
+            Initialize or re-initialize the default project instance.
+
+            This tool runs as a background task and reports progress.
+            It loads Python files into RETER and builds the RAG semantic index.
+
+            Returns:
+                dict with initialization status and statistics
+            """
+            return await self._async_initialize(mcp_progress=progress)
 
     def run(self):
         """
@@ -394,6 +453,9 @@ Always use the `thinking` tool when analyzing problems or making decisions.""",
 
         Handles SIGINT (Ctrl+C) and SIGTERM to ensure state is saved on exit.
         """
+        import asyncio
+        import threading
+
         def signal_handler(signum, frame):
             """Handle shutdown signals gracefully"""
             sig_name = signal.Signals(signum).name
@@ -414,7 +476,7 @@ Always use the `thinking` tool when analyzing problems or making decisions.""",
             import time as _time
             _init_start = _time.time()
 
-            logger.info("RETER Logical Thinking Server starting... (total: %.3fs)", _time.time() - _init_start)
+            logger.info("Codeine MCP Server starting... (total: %.3fs)", _time.time() - _init_start)
 
             # Discover available snapshots (lazy loading - will load on first use)
             explicit_snapshots = os.getenv("RETER_SNAPSHOTS_DIR")
@@ -426,7 +488,7 @@ Always use the `thinking` tool when analyzing problems or making decisions.""",
             if available:
                 logger.info("Discovered %d snapshot(s) (will load on first use)", len(available))
 
-            # Report default instance configuration and start background initialization
+            # Report default instance configuration and schedule background initialization
             if self.default_manager.is_configured():
                 explicit_root = os.getenv('RETER_PROJECT_ROOT')
                 if explicit_root:
@@ -440,10 +502,10 @@ Always use the `thinking` tool when analyzing problems or making decisions.""",
 
                 # Schedule background initialization to start 2 seconds after MCP server starts
                 # This allows the MCP server to be responsive immediately
-                import threading
                 def delayed_init():
                     logger.info("Starting delayed background initialization...")
-                    self._start_background_initialization()
+                    # Run async initialization in a new event loop (since we're in a thread)
+                    asyncio.run(self._async_initialize(mcp_progress=None))
                 init_timer = threading.Timer(2.0, delayed_init)
                 init_timer.daemon = True
                 init_timer.start()
@@ -458,8 +520,11 @@ Always use the `thinking` tool when analyzing problems or making decisions.""",
             _t = _time.time()
             self.resource_registrar.register_all_resources(self.app)
             self.tool_registrar.register_all_tools(self.app)
-            logger.info("[TIMING] Tools registered in %.3fs", _time.time() - _t)
 
+            # Register the initialize_project background task tool
+            self._register_initialization_tool()
+
+            logger.info("[TIMING] Tools registered in %.3fs", _time.time() - _t)
             logger.info("All tools registered successfully (total init: %.3fs)", _time.time() - _init_start)
 
             # Run the FastMCP app (blocking)
