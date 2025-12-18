@@ -66,9 +66,16 @@ def _create_file_handler(log_filename: str) -> Optional[logging.FileHandler]:
         return None
 
 
+class FlushingStreamHandler(logging.StreamHandler):
+    """StreamHandler that flushes after every emit."""
+    def emit(self, record):
+        super().emit(record)
+        self.flush()
+
+
 def _create_stderr_handler() -> logging.StreamHandler:
-    """Create a stderr handler for console output."""
-    handler = logging.StreamHandler(sys.stderr)
+    """Create a stderr handler for console output with auto-flush."""
+    handler = FlushingStreamHandler(sys.stderr)
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
