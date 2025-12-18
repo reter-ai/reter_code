@@ -486,10 +486,46 @@ def create_server():
     return CodeineServer()
 
 
+def sync_only():
+    """Sync default instance and exit (for pre-warming cache)."""
+    import time
+    print("[codeine] Sync-only mode - syncing default instance...", file=sys.stderr)
+    start = time.time()
+
+    # Initialize just enough to sync
+    load_config()
+    instance_manager = InstanceManager()
+    persistence = StatePersistenceService(instance_manager)
+    instance_manager.set_persistence_service(persistence)
+    default_manager = DefaultInstanceManager(persistence)
+    instance_manager.set_default_manager(default_manager)
+
+    # Get or create the default instance and sync it
+    if default_manager.is_configured:
+        reter = instance_manager.get_or_create_instance("default")
+        if reter:
+            default_manager.ensure_default_instance_synced(reter)
+            print(f"[codeine] Sync complete in {time.time() - start:.2f}s", file=sys.stderr)
+        else:
+            print("[codeine] Failed to create default instance", file=sys.stderr)
+    else:
+        print("[codeine] No project root configured (set RETER_PROJECT_ROOT or run from project dir)", file=sys.stderr)
+
+
 def main():
-    """Main entry point"""
-    server = create_server()
-    server.run()
+    """Main entry point.
+
+    Behavior:
+    - If stdin is a TTY (interactive terminal): sync default instance and exit
+    - If stdin is piped (MCP mode): run the MCP server normally
+    """
+    if sys.stdin.isatty():
+        # Interactive mode - sync and exit
+        sync_only()
+    else:
+        # MCP mode - run server
+        server = create_server()
+        server.run()
 
 
 if __name__ == "__main__":
