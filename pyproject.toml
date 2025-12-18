@@ -30,6 +30,7 @@ dependencies = [
     "reter @ git+https://github.com/codeine-ai/reter.git",
     "pyarrow>=10.0.0",
     "sentence-transformers>=2.0.0",
+    "faiss-cpu>=1.7.0",
 ]
 
 [project.optional-dependencies]
