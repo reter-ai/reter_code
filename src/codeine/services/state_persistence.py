@@ -49,22 +49,22 @@ class StatePersistenceService:
         self.instance_manager = instance_manager
         # Snapshot directory priority:
         # 1. RETER_SNAPSHOTS_DIR env var (explicit override)
-        # 2. RETER_PROJECT_ROOT/.reter (if project root is explicitly set)
-        # 3. CWD/.reter (auto-detection - Claude Code sets CWD to project root)
+        # 2. RETER_PROJECT_ROOT/.codeine (if project root is explicitly set)
+        # 3. CWD/.codeine (auto-detection - Claude Code sets CWD to project root)
         snapshots_dir = os.getenv("RETER_SNAPSHOTS_DIR")
         if not snapshots_dir:
             project_root = os.getenv("RETER_PROJECT_ROOT")
             if project_root:
-                snapshots_dir = str(Path(project_root) / ".reter")
+                snapshots_dir = str(Path(project_root) / ".codeine")
             else:
-                snapshots_dir = str(Path.cwd() / ".reter")
+                snapshots_dir = str(Path.cwd() / ".codeine")
         self.snapshots_dir = Path(snapshots_dir)
         # Track available snapshots (discovered but not yet loaded)
         self._available_snapshots: Dict[str, Path] = {}
 
     def save_all_instances(self) -> None:
         """
-        Save all RETER instances to .reter/ directory as snapshots.
+        Save all RETER instances to .codeine/ directory as snapshots.
         Called automatically on server shutdown.
         Only saves instances that have unsaved changes (dirty flag).
         Also shuts down instance resources (executors, queues).

@@ -11,7 +11,7 @@ The reter-logical-thinking MCP server now automatically persists all RETER insta
 ## Key Features
 
 ### 1. Automatic Persistence
-- **On Shutdown**: All instances saved to `.reter/` directory
+- **On Shutdown**: All instances saved to `.codeine/` directory
 - **On Startup**: All snapshots automatically loaded
 - **Zero Configuration**: No manual save/load needed
 - **Thread-Safe**: Uses existing per-instance locks
@@ -19,7 +19,7 @@ The reter-logical-thinking MCP server now automatically persists all RETER insta
 ### 2. Snapshot Location
 
 ```
-.reter/                          # Configurable via RETER_SNAPSHOTS_DIR env var
+.codeine/                        # Configurable via RETER_SNAPSHOTS_DIR env var
 ├── main.reter                   # Snapshot of "main" instance
 ├── project_a.reter              # Snapshot of "project_a" instance
 ├── experiment.reter             # Snapshot of "experiment" instance
@@ -28,13 +28,13 @@ The reter-logical-thinking MCP server now automatically persists all RETER insta
 
 **Location Configuration:**
 - **Environment Variable**: `RETER_SNAPSHOTS_DIR` - Full path to snapshots directory
-- **Default**: `.reter` in current working directory (where server is started)
-- **Recommended**: Set to your project root (e.g., `/path/to/your/project/.reter`)
+- **Default**: `.codeine` in current working directory (where server is started)
+- **Recommended**: Set to your project root (e.g., `/path/to/your/project/.codeine`)
 
 **Example Configuration:**
 ```bash
 # In your MCP settings or shell
-export RETER_SNAPSHOTS_DIR="/path/to/your/project/.reter"
+export RETER_SNAPSHOTS_DIR="/path/to/your/project/.codeine"
 
 # Or in Claude Desktop MCP config
 {
@@ -43,7 +43,7 @@ export RETER_SNAPSHOTS_DIR="/path/to/your/project/.reter"
       "command": "uv",
       "args": ["--directory", "/path/to/reter-logical-thinking-server", "run", "reter-logical-thinking-server"],
       "env": {
-        "RETER_SNAPSHOTS_DIR": "/path/to/your/project/.reter"
+        "RETER_SNAPSHOTS_DIR": "/path/to/your/project/.codeine"
       }
     }
   }
@@ -60,7 +60,7 @@ export RETER_SNAPSHOTS_DIR="/path/to/your/project/.reter"
 ```python
 class LogicalThinkingServer:
     # Snapshots directory - configurable via environment variable
-    SNAPSHOTS_DIR = Path(os.getenv("RETER_SNAPSHOTS_DIR", Path.cwd() / ".reter"))
+    SNAPSHOTS_DIR = Path(os.getenv("RETER_SNAPSHOTS_DIR", Path.cwd() / ".codeine"))
 
     def __init__(self):
         @asynccontextmanager
@@ -87,7 +87,7 @@ class LogicalThinkingServer:
 ```
 1. Server starts
    │
-   ├─→ Check if .reter/ directory exists
+   ├─→ Check if .codeine/ directory exists
    │   │
    │   ├─→ If NOT exists: Print info, continue (will create on shutdown)
    │   │
@@ -108,10 +108,10 @@ class LogicalThinkingServer:
 **Output Example:**
 ```
 🚀 Logical Thinking Server starting...
-📁 Snapshots directory: D:\ROOT\reter\.reter
-  ✅ Loaded 'main' ← D:\ROOT\reter\.reter\main.reter
-  ✅ Loaded 'project_a' ← D:\ROOT\reter\.reter\project_a.reter
-  ✅ Loaded 'experiment' ← D:\ROOT\reter\.reter\experiment.reter
+📁 Snapshots directory: D:\ROOT\reter\.codeine
+  ✅ Loaded 'main' ← D:\ROOT\reter\.codeine\main.reter
+  ✅ Loaded 'project_a' ← D:\ROOT\reter\.codeine\project_a.reter
+  ✅ Loaded 'experiment' ← D:\ROOT\reter\.codeine\experiment.reter
   📊 Loaded 3/3 instances
 ```
 
@@ -120,7 +120,7 @@ class LogicalThinkingServer:
 ```
 1. Shutdown signal received
    │
-   ├─→ Create .reter/ directory (if doesn't exist)
+   ├─→ Create .codeine/ directory (if doesn't exist)
    │
    ├─→ For each instance:
    │   ├─→ Acquire instance lock
@@ -133,9 +133,9 @@ class LogicalThinkingServer:
 **Output Example:**
 ```
 💾 Saving all RETER instances...
-  ✅ Saved 'main' → D:\ROOT\reter\.reter\main.reter
-  ✅ Saved 'project_a' → D:\ROOT\reter\.reter\project_a.reter
-  ✅ Saved 'experiment' → D:\ROOT\reter\.reter\experiment.reter
+  ✅ Saved 'main' → D:\ROOT\reter\.codeine\main.reter
+  ✅ Saved 'project_a' → D:\ROOT\reter\.codeine\project_a.reter
+  ✅ Saved 'experiment' → D:\ROOT\reter\.codeine\experiment.reter
   📊 Saved 3/3 instances
 🛑 Logical Thinking Server shutdown complete
 ```
@@ -153,10 +153,10 @@ add_knowledge(
 )
 
 # Server shutdown (automatic save)
-# → main.reter created in .reter/
+# → main.reter created in .codeine/
 
 # Day 2: Restart server (automatic load)
-# → main.reter loaded from .reter/
+# → main.reter loaded from .codeine/
 
 # Query without re-adding knowledge!
 result = quick_query(
@@ -204,7 +204,7 @@ add_knowledge(instance_name="experiment", source="new_rules.reol")
 ```python
 async def _save_all_instances(self) -> None:
     """
-    Save all RETER instances to .reter/ directory as snapshots.
+    Save all RETER instances to .codeine/ directory as snapshots.
     Called automatically on server shutdown.
     """
     try:
@@ -252,7 +252,7 @@ async def _save_all_instances(self) -> None:
 ```python
 async def _load_all_instances(self) -> None:
     """
-    Load all RETER instances from .reter/ directory snapshots.
+    Load all RETER instances from .codeine/ directory snapshots.
     Called automatically on server startup.
     """
     try:
@@ -325,7 +325,7 @@ async def _load_all_instances(self) -> None:
 
 **No Snapshots:**
 ```
-  ℹ️  No snapshots found in D:\ROOT\reter\.reter
+  ℹ️  No snapshots found in D:\ROOT\reter\.codeine
 ```
 → Continue normally, fresh start
 
@@ -381,11 +381,11 @@ add_knowledge(instance_name="test123", ...)
 
 ```bash
 # View current snapshots
-ls .reter/
+ls .codeine/
 
 # Remove obsolete snapshots manually
-rm .reter/old_experiment.reter
-rm .reter/temp_test.reter
+rm .codeine/old_experiment.reter
+rm .codeine/temp_test.reter
 ```
 
 **Note:** Currently no `delete_instance()` tool - manual cleanup required.
@@ -394,7 +394,7 @@ rm .reter/temp_test.reter
 
 ```gitignore
 # .gitignore
-.reter/          # Don't commit RETER snapshots (binary, potentially large)
+.codeine/          # Don't commit RETER snapshots (binary, potentially large)
 ```
 
 **Reason:**
@@ -406,20 +406,20 @@ rm .reter/temp_test.reter
 
 ```bash
 # Backup before risky experiments
-cp -r .reter/ .reter.backup/
+cp -r .codeine/ .reter.backup/
 
 # Or backup specific instance
-cp .reter/production.reter .reter/production_backup_2025_11_11.reter
+cp .codeine/production.reter .codeine/production_backup_2025_11_11.reter
 ```
 
 ### 5. Monitor Snapshot Directory Size
 
 ```bash
 # Check total size
-du -sh .reter/
+du -sh .codeine/
 
 # Check individual snapshots
-ls -lh .reter/
+ls -lh .codeine/
 ```
 
 **Typical sizes:**
@@ -465,7 +465,7 @@ query(instance_name="main", ...)
 
 **Changes:**
 1. Added `from contextlib import asynccontextmanager` import
-2. Added `SNAPSHOTS_DIR = Path.cwd() / ".reter"` class variable
+2. Added `SNAPSHOTS_DIR = Path.cwd() / ".codeine"` class variable
 3. Added lifespan context manager in `__init__`
 4. Modified FastMCP initialization: `FastMCP("reter-logical-thinking", lifespan=lifespan)`
 5. Added `_save_all_instances()` async method (~40 lines)
@@ -503,7 +503,7 @@ python -m py_compile src/logical_thinking_server/server.py
 **Test 1: First Run (No Snapshots)**
 ```
 🚀 Logical Thinking Server starting...
-📁 Snapshots directory: D:\ROOT\reter\.reter
+📁 Snapshots directory: D:\ROOT\reter\.codeine
   ℹ️  No snapshots directory found (will be created on first save)
 ```
 
@@ -514,7 +514,7 @@ add_knowledge(instance_name="test", source="Cat is_a Animal")
 ```
 ```
 💾 Saving all RETER instances...
-  ✅ Saved 'test' → D:\ROOT\reter\.reter\test.reter
+  ✅ Saved 'test' → D:\ROOT\reter\.codeine\test.reter
   📊 Saved 1/1 instances
 🛑 Logical Thinking Server shutdown complete
 ```
@@ -522,8 +522,8 @@ add_knowledge(instance_name="test", source="Cat is_a Animal")
 **Test 3: Restart + Auto-Load**
 ```
 🚀 Logical Thinking Server starting...
-📁 Snapshots directory: D:\ROOT\reter\.reter
-  ✅ Loaded 'test' ← D:\ROOT\reter\.reter\test.reter
+📁 Snapshots directory: D:\ROOT\reter\.codeine
+  ✅ Loaded 'test' ← D:\ROOT\reter\.codeine\test.reter
   📊 Loaded 1/1 instances
 ```
 
@@ -544,21 +544,21 @@ result = quick_query(
 
 **Symptoms:**
 ```
-  ℹ️  No snapshots found in D:\ROOT\reter\.reter
+  ℹ️  No snapshots found in D:\ROOT\reter\.codeine
 ```
 
 **Diagnosis:**
-1. Check if `.reter/` directory exists
+1. Check if `.codeine/` directory exists
 2. Check if `*.reter` files exist in directory
 3. Verify working directory is correct
 
 **Solution:**
 ```bash
 # Check directory
-ls .reter/
+ls .codeine/
 
 # Verify files
-ls -la .reter/*.reter
+ls -la .codeine/*.reter
 
 # Check working directory
 pwd
@@ -579,7 +579,7 @@ pwd
 
 **Solution:**
 1. Check disk space: `df -h`
-2. Check permissions: `ls -la .reter/`
+2. Check permissions: `ls -la .codeine/`
 3. Try manual save: `save_state(instance_name="main", filename="test.reter")`
 4. Check server logs for detailed errors
 
@@ -593,7 +593,7 @@ pwd
 **Solution:**
 1. Always shutdown gracefully (Ctrl+C, not kill -9)
 2. Check shutdown logs for save confirmation
-3. Verify `.reter/` directory after shutdown
+3. Verify `.codeine/` directory after shutdown
 
 ## Performance Impact
 
@@ -625,7 +625,7 @@ pwd
 
 ```bash
 # Option 1: In your shell/terminal
-export RETER_SNAPSHOTS_DIR="/path/to/your/project/.reter"
+export RETER_SNAPSHOTS_DIR="/path/to/your/project/.codeine"
 
 # Option 2: In Claude Desktop MCP settings
 {
@@ -634,19 +634,19 @@ export RETER_SNAPSHOTS_DIR="/path/to/your/project/.reter"
       "command": "uv",
       "args": ["--directory", "/path/to/reter-logical-thinking-server", "run", "reter-logical-thinking-server"],
       "env": {
-        "RETER_SNAPSHOTS_DIR": "/path/to/your/project/.reter"
+        "RETER_SNAPSHOTS_DIR": "/path/to/your/project/.codeine"
       }
     }
   }
 }
 
 # Option 3: Relative path (from where server starts)
-export RETER_SNAPSHOTS_DIR="../../my-project/.reter"
+export RETER_SNAPSHOTS_DIR="../../my-project/.codeine"
 ```
 
 **Why This Matters:**
 - ✅ Keeps snapshots with your project files
-- ✅ Easier to version control (add `.reter/` to `.gitignore`)
+- ✅ Easier to version control (add `.codeine/` to `.gitignore`)
 - ✅ Different projects can have isolated RETER instances
 - ✅ Avoids mixing project data with server installation
 
@@ -661,7 +661,7 @@ export RETER_SNAPSHOTS_DIR="../../my-project/.reter"
 
 2. **Versioned Snapshots**
    ```
-   .reter/
+   .codeine/
    ├── main.reter              # Current
    ├── main.reter.1            # Previous
    └── main.reter.2            # Older

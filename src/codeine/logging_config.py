@@ -13,17 +13,17 @@ from typing import Optional
 
 # Snapshot directory priority:
 # 1. RETER_SNAPSHOTS_DIR (explicit)
-# 2. RETER_PROJECT_ROOT/.reter (if set)
-# 3. CWD/.reter (auto-detection from Claude Code)
+# 2. RETER_PROJECT_ROOT/.codeine (if set)
+# 3. CWD/.codeine (auto-detection from Claude Code)
 def _get_log_directory() -> Path:
     """Get the log directory path."""
     log_dir = os.getenv("RETER_SNAPSHOTS_DIR")
     if not log_dir:
         project_root = os.getenv("RETER_PROJECT_ROOT")
         if project_root:
-            log_dir = os.path.join(project_root, ".reter")
+            log_dir = os.path.join(project_root, ".codeine")
         else:
-            log_dir = os.path.join(os.getcwd(), ".reter")
+            log_dir = os.path.join(os.getcwd(), ".codeine")
     return Path(log_dir)
 
 
@@ -88,7 +88,7 @@ def get_debug_trace_logger() -> logging.Logger:
     Get the debug trace logger for RETER wrapper operations.
 
     This logger is used for tracing C++ calls and debugging hangs.
-    Output goes to .reter/debug_trace.log and stderr
+    Output goes to .codeine/debug_trace.log and stderr
 
     Returns:
         Configured logger instance
@@ -117,7 +117,7 @@ def get_nlq_debug_logger() -> logging.Logger:
     Get the NLQ debug logger for natural language query operations.
 
     This logger is used for tracing NLQ query generation and execution.
-    Output goes to .reter/nlq_debug.log
+    Output goes to .codeine/nlq_debug.log
 
     Returns:
         Configured logger instance

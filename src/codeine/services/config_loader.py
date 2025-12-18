@@ -1,14 +1,14 @@
 """
 Configuration Loader Service
 
-Loads RETER configuration from reter.json in the project root.
+Loads RETER configuration from codeine.json in the project root.
 Environment variables always take precedence over config file values.
 
 Config file location (in order of precedence):
-1. RETER_PROJECT_ROOT/reter.json (if RETER_PROJECT_ROOT is set)
-2. CWD/reter.json (auto-detection from Claude Code)
+1. RETER_PROJECT_ROOT/codeine.json (if RETER_PROJECT_ROOT is set)
+2. CWD/codeine.json (auto-detection from Claude Code)
 
-Supported settings in reter.json:
+Supported settings in codeine.json:
 {
     "project_include": "src/*,lib/*",      // -> RETER_PROJECT_INCLUDE
     "project_exclude": "test_*.py,**/__pycache__/*",  // -> RETER_PROJECT_EXCLUDE
@@ -36,12 +36,12 @@ from typing import Dict, Any, Optional
 
 class ConfigLoader:
     """
-    Loads configuration from reter.json file.
+    Loads configuration from codeine.json file.
 
-    Priority: Environment variables > reter.json > defaults
+    Priority: Environment variables > codeine.json > defaults
     """
 
-    # Mapping from reter.json keys to environment variable names
+    # Mapping from codeine.json keys to environment variable names
     CONFIG_KEY_TO_ENV = {
         "project_include": "RETER_PROJECT_INCLUDE",
         "project_exclude": "RETER_PROJECT_EXCLUDE",
@@ -83,7 +83,7 @@ class ConfigLoader:
 
     def load(self, project_root: Optional[Path] = None) -> bool:
         """
-        Load configuration from reter.json.
+        Load configuration from codeine.json.
 
         Args:
             project_root: Project root directory. If None, uses RETER_PROJECT_ROOT or CWD.
@@ -102,8 +102,8 @@ class ConfigLoader:
             else:
                 project_root = Path.cwd()
 
-        # Look for reter.json
-        config_path = project_root / "reter.json"
+        # Look for codeine.json
+        config_path = project_root / "codeine.json"
         if config_path.exists():
             try:
                 with open(config_path, 'r', encoding='utf-8') as f:
@@ -138,7 +138,7 @@ class ConfigLoader:
                         value = ",".join(str(v) for v in value)
 
                     os.environ[env_var] = value
-                    print(f"   {env_var}={value} (from reter.json)", file=sys.stderr, flush=True)
+                    print(f"   {env_var}={value} (from codeine.json)", file=sys.stderr, flush=True)
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get a config value."""
@@ -204,7 +204,7 @@ def get_config_loader() -> ConfigLoader:
 
 def load_config(project_root: Optional[Path] = None) -> bool:
     """
-    Load configuration from reter.json.
+    Load configuration from codeine.json.
 
     This should be called early in server startup, before other services
     read environment variables.

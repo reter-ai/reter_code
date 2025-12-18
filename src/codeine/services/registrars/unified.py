@@ -39,7 +39,7 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
             if self.persistence:
                 db_path = Path(self.persistence.snapshots_dir) / ".unified.sqlite"
             else:
-                db_path = Path.cwd() / ".reter" / ".unified.sqlite"
+                db_path = Path.cwd() / ".codeine" / ".unified.sqlite"
 
             db_path.parent.mkdir(parents=True, exist_ok=True)
             store = UnifiedStore(str(db_path))

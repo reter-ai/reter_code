@@ -32,7 +32,7 @@ def temp_project(tmp_path):
     # Create project structure
     src_dir = tmp_path / "src"
     docs_dir = tmp_path / "docs"
-    reter_dir = tmp_path / ".reter"
+    reter_dir = tmp_path / ".codeine"
 
     src_dir.mkdir()
     docs_dir.mkdir()
@@ -214,7 +214,7 @@ class TestRAGManagerIntegration:
         from codeine.services.instance_manager import InstanceManager
 
         # Set env var to control snapshots directory
-        os.environ["RETER_SNAPSHOTS_DIR"] = str(temp_project / ".reter")
+        os.environ["RETER_SNAPSHOTS_DIR"] = str(temp_project / ".codeine")
         persistence = StatePersistenceService(InstanceManager())
         yield persistence
         # Cleanup
@@ -408,7 +408,7 @@ class TestRAGPersistence:
         from codeine.services.state_persistence import StatePersistenceService
         from codeine.services.instance_manager import InstanceManager
 
-        os.environ["RETER_SNAPSHOTS_DIR"] = str(temp_project / ".reter")
+        os.environ["RETER_SNAPSHOTS_DIR"] = str(temp_project / ".codeine")
         persistence = StatePersistenceService(InstanceManager())
         yield persistence
         if "RETER_SNAPSHOTS_DIR" in os.environ:
@@ -468,7 +468,7 @@ class TestRAGToolsIntegration:
         from codeine.services.state_persistence import StatePersistenceService
         from codeine.services.instance_manager import InstanceManager
 
-        os.environ["RETER_SNAPSHOTS_DIR"] = str(temp_project / ".reter")
+        os.environ["RETER_SNAPSHOTS_DIR"] = str(temp_project / ".codeine")
         persistence = StatePersistenceService(InstanceManager())
         yield persistence
         if "RETER_SNAPSHOTS_DIR" in os.environ:
@@ -521,7 +521,7 @@ class TestEndToEndFlow:
         from codeine.services.state_persistence import StatePersistenceService
         from codeine.services.instance_manager import InstanceManager
 
-        os.environ["RETER_SNAPSHOTS_DIR"] = str(temp_project / ".reter")
+        os.environ["RETER_SNAPSHOTS_DIR"] = str(temp_project / ".codeine")
         persistence = StatePersistenceService(InstanceManager())
         yield persistence
         if "RETER_SNAPSHOTS_DIR" in os.environ:
