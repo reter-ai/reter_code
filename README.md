@@ -4,13 +4,18 @@ AI-powered code reasoning MCP server.
 
 ## Installation
 
-### Step 1: Pre-cache dependencies (run once, takes ~2 min)
+### Step 1: Pre-cache dependencies and sync project (run from your project directory)
 
 ```bash
-uvx --from git+https://github.com/codeine-ai/codeine --find-links https://raw.githubusercontent.com/codeine-ai/reter/main/reter_core/index.html codeine --help
+uvx --from git+https://github.com/codeine-ai/codeine --find-links https://raw.githubusercontent.com/codeine-ai/reter/main/reter_core/index.html codeine
 ```
 
-Wait for it to complete. This downloads ~400MB of dependencies.
+This will:
+1. Download dependencies (~400MB, cached for future runs)
+2. Sync your project files to the RETER index
+3. Exit automatically
+
+Run this from your project root directory.
 
 ### Step 2: Add to Claude Code
 
