@@ -487,29 +487,45 @@ def create_server():
 
 
 def sync_only():
-    """Sync default instance and exit (for pre-warming cache)."""
+    """Sync default instance and exit (for pre-warming cache).
+
+    Runs synchronously in the main thread - sets initialization flags
+    to allow RETER operations without the background init thread.
+    """
     import time
+    from .reter_wrapper import set_initialization_in_progress, set_initialization_complete
+
     print("[codeine] Sync-only mode - syncing default instance...", file=sys.stderr)
     start = time.time()
 
-    # Initialize just enough to sync
-    load_config()
-    instance_manager = InstanceManager()
-    persistence = StatePersistenceService(instance_manager)
-    instance_manager.set_persistence_service(persistence)
-    default_manager = DefaultInstanceManager(persistence)
-    instance_manager.set_default_manager(default_manager)
+    # CRITICAL: Set initialization flag to allow RETER operations in main thread
+    # This bypasses the check_initialization() guard that normally blocks
+    # until background init completes
+    set_initialization_in_progress(True)
 
-    # Get or create the default instance and sync it
-    if default_manager.is_configured:
-        reter = instance_manager.get_or_create_instance("default")
-        if reter:
-            default_manager.ensure_default_instance_synced(reter)
-            print(f"[codeine] Sync complete in {time.time() - start:.2f}s", file=sys.stderr)
+    try:
+        # Initialize just enough to sync
+        load_config()
+        instance_manager = InstanceManager()
+        persistence = StatePersistenceService(instance_manager)
+        instance_manager.set_persistence_service(persistence)
+        default_manager = DefaultInstanceManager(persistence)
+        instance_manager.set_default_manager(default_manager)
+
+        # Get or create the default instance and sync it
+        if default_manager.is_configured():
+            reter = instance_manager.get_or_create_instance("default")
+            if reter:
+                default_manager.ensure_default_instance_synced(reter)
+                print(f"[codeine] Sync complete in {time.time() - start:.2f}s", file=sys.stderr)
+            else:
+                print("[codeine] Failed to create default instance", file=sys.stderr)
         else:
-            print("[codeine] Failed to create default instance", file=sys.stderr)
-    else:
-        print("[codeine] No project root configured (set RETER_PROJECT_ROOT or run from project dir)", file=sys.stderr)
+            print("[codeine] No project root configured (set RETER_PROJECT_ROOT or run from project dir)", file=sys.stderr)
+    finally:
+        # Mark initialization complete (sync finished)
+        set_initialization_in_progress(False)
+        set_initialization_complete(True)
 
 
 def main():
