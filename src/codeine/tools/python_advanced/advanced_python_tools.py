@@ -1016,7 +1016,7 @@ class AdvancedPythonTools(AdvancedToolsBase):
                 WHERE {{
                     ?module type {module_concept} .
                     ?module name ?name .
-                    ?module sourceFile ?file
+                    ?module inFile ?file
                 }}
             """
             queries.append(module_query.strip())

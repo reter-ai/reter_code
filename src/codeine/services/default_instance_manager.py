@@ -27,7 +27,7 @@ import os
 import hashlib
 from pathlib import Path
 from typing import Dict, List, Set, Optional, Tuple, Any, TYPE_CHECKING
-from ..reter_wrapper import ReterWrapper, generate_source_id, debug_log
+from ..reter_wrapper import ReterWrapper, debug_log
 from .gitignore_parser import GitignoreParser
 
 if TYPE_CHECKING:
@@ -647,8 +647,8 @@ class DefaultInstanceManager:
                     self._load_code_file(reter, abs_path, rel_path)
                     added_count += 1
                     print(f"[default]   ✓ Added {rel_path}", file=sys.stderr, flush=True)
-                    # Track for RAG: generate source_id for new file
-                    new_source_id = generate_source_id(abs_path, str(self._project_root))
+                    # Track for RAG: construct source_id from md5 and rel_path
+                    new_source_id = f"{current_md5}|{rel_path}"
                     track_changed_source(rel_path, new_source_id)
                 except Exception as e:
                     # Log error but continue with other files (don't re-raise)
@@ -668,7 +668,7 @@ class DefaultInstanceManager:
                         print(f"[default]   ✓ Reloaded {rel_path}", file=sys.stderr, flush=True)
                         # Track for RAG: old source deleted, new source added
                         track_deleted_source(rel_path, old_source_id)
-                        new_source_id = generate_source_id(abs_path, str(self._project_root))
+                        new_source_id = f"{current_md5}|{rel_path}"
                         track_changed_source(rel_path, new_source_id)
                     except Exception as e:
                         # Log error but continue with other files (don't re-raise)
