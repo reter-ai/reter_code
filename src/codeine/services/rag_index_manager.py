@@ -670,9 +670,11 @@ class RAGIndexManager:
                 logger.error(f"Error collecting Python {source_id}: {e}")
                 stats["errors"].append(f"Python: {source_id}: {e}")
 
-        # 3b. Collect Python literals (bulk query)
+        # 3b. Collect Python literals (only from changed sources)
         if changed_python_sources:
-            literal_texts, literal_metadata = self._collect_all_python_literals_bulk(reter, project_root)
+            literal_texts, literal_metadata = self._collect_all_python_literals_bulk(
+                reter, project_root, changed_sources=changed_python_sources
+            )
             if literal_texts:
                 source_tracking.append(("python_literals_bulk", "python_literal", len(all_texts), len(literal_texts)))
                 all_texts.extend(literal_texts)
@@ -1252,9 +1254,13 @@ class RAGIndexManager:
                     debug_log(f"[RAG] sync_sources: Traceback: {traceback.format_exc()}")
                     stats["errors"].append(f"Python: {source_id}: {e}")
 
-            # Collect Python literals (bulk query)
+            # Collect Python literals (only from files being added/modified)
             debug_log("[RAG] sync_sources: Collecting Python string literals...")
-            literal_texts, literal_metadata = self._collect_all_python_literals_bulk(reter, project_root)
+            # Extract source_ids from python_to_add for filtering
+            changed_source_ids = [source_id for source_id, _, _ in python_to_add]
+            literal_texts, literal_metadata = self._collect_all_python_literals_bulk(
+                reter, project_root, changed_sources=changed_source_ids
+            )
             if literal_texts:
                 source_tracking.append(("python_literals_bulk", "python_literal", len(all_texts), len(literal_texts)))
                 all_texts.extend(literal_texts)
@@ -1968,14 +1974,42 @@ class RAGIndexManager:
         self,
         reter: "ReterWrapper",
         project_root: Path,
-        min_length: int = 32
+        min_length: int = 32,
+        changed_sources: Optional[List[str]] = None
     ) -> Tuple[List[str], List[Dict[str, Any]]]:
         """
-        Collect all Python string literals for batched indexing (without generating embeddings).
+        Collect Python string literals for batched indexing (without generating embeddings).
+
+        Args:
+            reter: RETER wrapper instance
+            project_root: Project root path
+            min_length: Minimum literal length to include
+            changed_sources: If provided, only collect literals from these sources (format: md5|rel_path)
+                           If None, collect ALL literals (for full reindex)
 
         Returns:
             Tuple of (texts, literal_metadata)
         """
+        # Convert source_ids to module names for filtering
+        changed_modules: Optional[set] = None
+        if changed_sources:
+            changed_modules = set()
+            for source_id in changed_sources:
+                if "|" in source_id:
+                    _, rel_path = source_id.split("|", 1)
+                else:
+                    rel_path = source_id
+                # Convert path to module name: src/codeine/foo/bar.py -> codeine.foo.bar
+                rel_path = rel_path.replace("\\", "/")
+                if rel_path.endswith(".py"):
+                    rel_path = rel_path[:-3]
+                # Remove common prefixes like src/
+                if rel_path.startswith("src/"):
+                    rel_path = rel_path[4:]
+                module_name = rel_path.replace("/", ".")
+                changed_modules.add(module_name)
+            debug_log(f"[RAG] _collect_all_python_literals_bulk: filtering by {len(changed_modules)} modules: {list(changed_modules)[:5]}...")
+
         try:
             query = """
                 SELECT DISTINCT ?entity ?literal ?module ?line
@@ -2000,6 +2034,10 @@ class RAGIndexManager:
 
         for row in rows:
             entity, literal, module, line = row
+
+            # Filter by changed modules if specified
+            if changed_modules is not None and module not in changed_modules:
+                continue
 
             # Clean literal
             clean = literal.strip().strip('"\'')
