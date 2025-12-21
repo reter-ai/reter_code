@@ -94,9 +94,8 @@ class DefaultInstanceManager:
             cwd = Path.cwd()
             # Only auto-detect if CWD looks like a Python project
             # (has .py files, pyproject.toml, setup.py, or .git)
-            if self._looks_like_python_project(cwd):
-                root = str(cwd)
-                print(f"[default] Auto-detected project root from CWD: {root}", file=sys.stderr, flush=True)
+            root = str(cwd)
+            print(f"[default] Auto-detected project root from CWD: {root}", file=sys.stderr, flush=True)
 
         if root:
             self._project_root = Path(root).resolve()
@@ -105,12 +104,12 @@ class DefaultInstanceManager:
             if not self._project_root.is_dir():
                 raise ValueError(f"RETER_PROJECT_ROOT is not a directory: {self._project_root}")
 
-            # Initialize gitignore parser if .gitignore exists
-            gitignore_path = self._project_root / ".gitignore"
-            if gitignore_path.exists():
-                self._gitignore_parser = GitignoreParser(self._project_root)
-                pattern_count = self._gitignore_parser.get_pattern_count()
-                debug_log(f"[default] Loaded .gitignore with {pattern_count} patterns")
+            # Always initialize gitignore parser to handle nested .gitignore files
+            # even if there's no root .gitignore - nested ones will be discovered during scan
+            self._gitignore_parser = GitignoreParser(self._project_root)
+            pattern_count = self._gitignore_parser.get_pattern_count()
+            if pattern_count > 0:
+                debug_log(f"[default] Loaded root .gitignore with {pattern_count} patterns")
 
         include = os.getenv("RETER_PROJECT_INCLUDE", "")
         if include:

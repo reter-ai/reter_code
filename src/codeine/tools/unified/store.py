@@ -216,7 +216,7 @@ class UnifiedStore:
         if db_path is None:
             # Default: .reter/.unified.sqlite in project root or CWD
             project_root = os.getenv("RETER_PROJECT_ROOT", os.getcwd())
-            reter_dir = os.path.join(project_root, ".reter")
+            reter_dir = os.path.join(project_root, ".codeine")
             os.makedirs(reter_dir, exist_ok=True)
             db_path = os.path.join(reter_dir, ".unified.sqlite")
 

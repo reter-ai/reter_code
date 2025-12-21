@@ -1,0 +1,1 @@
+set PYTHONPATH=%CD%\..\reter\src

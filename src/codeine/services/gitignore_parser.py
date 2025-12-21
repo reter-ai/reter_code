@@ -103,13 +103,17 @@ class GitignorePattern:
 
         return re.compile(result)
 
-    def matches(self, path: str, is_dir: bool = False) -> bool:
+    def matches(self, path: str, is_dir: bool = False, project_root: Path = None) -> bool:
         """
         Check if path matches this pattern.
 
+        Patterns from nested .gitignore files only apply to files within
+        their directory subtree.
+
         Args:
-            path: Relative path to check (forward slashes)
+            path: Relative path to check (forward slashes, relative to project root)
             is_dir: Whether the path is a directory
+            project_root: Project root directory (required for scoping nested patterns)
 
         Returns:
             True if path matches pattern
@@ -117,6 +121,23 @@ class GitignorePattern:
         # Directory-only patterns only match directories
         if self.directory_only and not is_dir:
             return False
+
+        # Scope nested .gitignore patterns to their base directory
+        # Patterns from a .gitignore only apply to files in that directory or subdirectories
+        if project_root is not None:
+            try:
+                base_rel = self.base_dir.relative_to(project_root)
+                base_prefix = str(base_rel).replace('\\', '/')
+                if base_prefix and base_prefix != '.':
+                    # This pattern is from a nested .gitignore
+                    # Check if path is under the base directory
+                    if not path.startswith(base_prefix + '/') and path != base_prefix:
+                        return False
+                    # Strip base prefix for matching
+                    path = path[len(base_prefix) + 1:] if path.startswith(base_prefix + '/') else ''
+            except ValueError:
+                # base_dir is not under project_root, shouldn't happen
+                pass
 
         return bool(self._regex.search(path))
 
@@ -161,6 +182,15 @@ class GitignoreParser:
             return
 
         self._loaded_gitignores.add(gitignore_path)
+
+        # Log when nested .gitignore files are discovered
+        try:
+            rel_dir = directory.relative_to(self.project_root)
+            if str(rel_dir) != '.':
+                import sys
+                print(f"[gitignore] Loaded nested .gitignore from: {rel_dir}", file=sys.stderr, flush=True)
+        except ValueError:
+            pass
 
         try:
             with open(gitignore_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -250,7 +280,7 @@ class GitignoreParser:
         # Check patterns in order (last match wins)
         ignored = False
         for pattern in self._patterns:
-            if pattern.matches(path_str, is_dir):
+            if pattern.matches(path_str, is_dir, self.project_root):
                 ignored = not pattern.negation
 
         return ignored

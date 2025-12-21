@@ -51,7 +51,7 @@ class SQLiteSessionStore:
         if db_path is None:
             snapshots_dir = os.getenv(
                 "RETER_SNAPSHOTS_DIR",
-                os.path.join(os.getcwd(), ".reter")
+                os.path.join(os.getcwd(), ".codeine")
             )
             self._db_path = Path(snapshots_dir) / self.DEFAULT_DB_NAME
         else:
