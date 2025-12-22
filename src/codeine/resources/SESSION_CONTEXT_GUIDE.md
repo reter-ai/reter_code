@@ -10,7 +10,7 @@ The `session` tool with `action="context"` provides session continuity for RETER
 2. **After every context compactification** (by Claude Code)
 3. **When resuming work after any interruption**
 
-This restores: thoughts, requirements, recommendations, project status, and suggestions.
+This restores: **design doc sections**, **tasks with categories**, **project health**, **milestones**, and **suggestions**.
 
 ## Quick Start
 
@@ -39,32 +39,42 @@ session(action="context")
     "status": "active",
     "created_at": "2025-11-29T10:00:00"
   },
-  "thoughts": {
+  "design_doc": {
     "total": 15,
-    "by_type": {"reasoning": 8, "analysis": 4, "decision": 3}
+    "by_section": {"context": 2, "goals": 1, "design": 3, "tasks": 2},
+    "sections": {
+      "context": [{"id": "...", "num": 1, "summary": "..."}],
+      "goals": [...],
+      "design": [...]
+    },
+    "latest_chain": [...]
   },
-  "requirements": {
-    "total": 5,
-    "by_status": {"verified": 2, "pending": 3}
+  "tasks": {
+    "total": 10,
+    "completed": 6,
+    "in_progress": 2,
+    "pending": 2,
+    "progress_percent": 60,
+    "by_category": {"feature": {...}, "bug": {...}},
+    "by_priority": {"critical": 1, "high": 3, "medium": 6}
   },
-  "recommendations": {
-    "total": 47,
-    "completed": 32,
-    "in_progress": 4,
-    "pending": 11,
-    "progress_percent": 68.1
+  "project_health": {
+    "percent_complete": 60,
+    "timeline": {"days_remaining": 14, "on_track": true},
+    "overdue_count": 0
   },
-  "project": {
-    "tasks": {"total": 10, "completed": 6},
-    "milestones": [...]
-  },
+  "milestones": [
+    {"id": "MS-001", "name": "MVP", "target_date": "2025-02-01", "days_until": 14}
+  ],
   "suggestions": [
-    "Continue work - 11 recommendations pending (68.1% complete)",
-    "4 tasks in progress"
+    "Continue thought chain from #15",
+    "2 pending tasks to address"
   ],
   "mcp_guide": {
-    "tools": [...],
-    "resources": [...]
+    "tools": {...},
+    "design_doc_sections": {...},
+    "task_categories": [...],
+    "recommended_workflow": [...]
   }
 }
 ```
@@ -117,63 +127,92 @@ After calling `session(action="context")`, you have access to:
 | `code_inspection` | Python code analysis (26 actions) |
 | `recommender` | refactoring, test_coverage |
 
-## Using the `thinking` Tool
+## Using the `thinking` Tool - Design Docs Approach
 
-After restoring context, use `thinking` for all reasoning:
+After restoring context, use `thinking` with **design doc sections**:
 
 ```python
+# Document context/problem
 thinking(
-    thought="Analyzing the authentication module for security issues",
+    thought="The auth module needs OAuth support...",
     thought_number=1,
     total_thoughts=5,
-    thought_type="analysis",
+    section="context"
+)
+
+# Define goals
+thinking(
+    thought="Goals: 1) Add OAuth 2) Keep existing login",
+    thought_number=2,
+    total_thoughts=5,
+    section="goals"
+)
+
+# Document design decision
+thinking(
+    thought="Using NextAuth.js for OAuth integration",
+    thought_number=3,
+    total_thoughts=5,
+    section="design",
+    thought_type="decision"
+)
+
+# Create tasks with categories
+thinking(
+    thought="Breaking down implementation",
+    thought_number=4,
+    total_thoughts=5,
+    section="tasks",
     operations={
-        "requirement": {"text": "System shall validate all user inputs"},
-        "traces": ["auth_module.py"]
+        "task": {"name": "Add NextAuth.js", "category": "feature", "priority": "high"},
+        "milestone": {"name": "OAuth Ready", "date": "2025-01-15"}
     }
 )
 ```
 
-**Operations in `thinking`:**
-- Create: `requirement`, `recommendation`, `task`, `milestone`, `decision`
-- Relate: `traces`, `satisfies`, `implements`, `depends_on`, `affects`
-- Update: `update_item`, `update_task`, `complete_task`
-- RETER: `assert`, `query`, `python_file`, `forget_source`
+**Design Doc Sections:** `context`, `goals`, `non_goals`, `design`, `alternatives`, `risks`, `implementation`, `tasks`
 
-## Example Workflow
+**Task Categories:** `feature`, `bug`, `refactor`, `test`, `docs`, `research`
+
+**Operations in `thinking`:**
+- Create: `task` (with category), `milestone`
+- Relate: `traces`, `implements`, `depends_on`, `affects`
+- Update: `update_task`, `complete_task`
+- RETER: `assert`, `query`
+
+## Example Workflow - Design Docs
 
 ```python
 # 1. Always start with context
 session(action="context")
 
-# 2. Start reasoning with thinking tool
+# 2. Document the problem
+thinking(thought="Need to refactor auth...", thought_number=1, total_thoughts=5, section="context")
+
+# 3. Define goals
+thinking(thought="Goals: 1) Simplify 2) Add OAuth", thought_number=2, total_thoughts=5, section="goals")
+
+# 4. Analyze code
+code_inspection(action="describe_class", target="AuthService")
+
+# 5. Document design decision
+thinking(thought="Will use Strategy pattern", thought_number=3, total_thoughts=5, section="design")
+
+# 6. Create tasks
 thinking(
-    thought="Reviewing codebase structure",
-    thought_number=1,
-    total_thoughts=3,
-    thought_type="planning"
-)
-
-# 3. Analyze code
-code_inspection(action="list_classes")
-
-# 4. Find issues
-recommender("refactoring")
-
-# 5. Track progress
-thinking(
-    thought="Found god class pattern in UserService",
-    thought_number=2,
-    total_thoughts=3,
+    thought="Implementation tasks",
+    thought_number=4,
+    total_thoughts=5,
+    section="tasks",
     operations={
-        "recommendation": {
-            "text": "Split UserService into smaller classes",
-            "severity": "high"
-        }
+        "task": {"name": "Refactor AuthService", "category": "refactor", "priority": "high"}
     }
 )
 
-# 6. When done
+# 7. Visualize design doc
+diagram(diagram_type="design_doc")
+
+# 8. When done
 session(action="end")
 ```
 

@@ -57,15 +57,25 @@ class AdvancedPythonTools(AdvancedToolsBase):
     # CODE QUALITY (CodeQualityTools)
     # =========================================================================
 
-    def find_large_classes(self, instance_name: str, threshold: int = 20,
-                           limit: int = 100, offset: int = 0) -> Dict[str, Any]:
+    def find_large_classes(
+        self, instance_name: str, threshold: int = 20,
+        exclude_patterns: list = None, exclude_test_files: bool = True,
+        limit: int = 100, offset: int = 0
+    ) -> Dict[str, Any]:
         """Find classes with too many methods (God classes)."""
-        return self._code_quality.find_large_classes(instance_name, threshold)
+        return self._code_quality.find_large_classes(
+            instance_name, threshold, exclude_patterns, exclude_test_files
+        )
 
-    def find_long_parameter_lists(self, instance_name: str, threshold: int = 5,
-                                   limit: int = 100, offset: int = 0) -> Dict[str, Any]:
+    def find_long_parameter_lists(
+        self, instance_name: str, threshold: int = 5,
+        exclude_patterns: list = None, exclude_test_files: bool = True,
+        limit: int = 100, offset: int = 0
+    ) -> Dict[str, Any]:
         """Find functions/methods with too many parameters."""
-        return self._code_quality.find_long_parameter_lists(instance_name, threshold)
+        return self._code_quality.find_long_parameter_lists(
+            instance_name, threshold, exclude_patterns, exclude_test_files
+        )
 
     def find_magic_numbers(self, instance_name: str, exclude_common: bool = True,
                            min_occurrences: int = 1, limit: int = 100,

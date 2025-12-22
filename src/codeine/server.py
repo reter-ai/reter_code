@@ -199,17 +199,17 @@ class CodeineServer:
 CRITICAL: Call `session(action="context")` at the START of every conversation to restore your reasoning state.
 
 Key tools:
-- `thinking` - Record reasoning steps, analysis, decisions (primary tool)
+- `thinking` - Record reasoning steps with design doc sections (context, goals, design, alternatives, risks, implementation, tasks)
 - `session` - Manage reasoning sessions (start, context, end)
-- `items` - Query thoughts, requirements, tasks
-- `project` - Analytics (health, critical path, impact)
+- `diagram` - Generate UML diagrams (gantt, class, sequence)
 - `code_inspection` - Python/JS/C#/C++ code analysis
 - `recommender` - Refactoring and test coverage recommendations
-- `diagram` - Generate UML diagrams
-- `semantic_search` - Find code by meaning, not just keywords
-- `natural_language_query` - Query codebase in plain English
-- `find_similar_clusters` - Detect similar/duplicate code patterns
-- `add_knowledge` - Add external context (URLs, files, directories)
+
+Design doc workflow:
+1. thinking(section="context") - Document problem/background
+2. thinking(section="goals") - Define objectives
+3. thinking(section="design") - Propose solution
+4. thinking(section="tasks", operations={task:{...}}) - Create work items
 
 Always use the `thinking` tool when analyzing problems or making decisions.""",
             website_url="https://codeine.ai",

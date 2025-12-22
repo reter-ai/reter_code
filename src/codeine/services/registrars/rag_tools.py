@@ -37,8 +37,9 @@ class RAGToolsRegistrar(ToolRegistrarBase):
         self._register_semantic_search(app)
         self._register_rag_status(app)
         self._register_rag_reindex(app)
-        self._register_find_similar_clusters(app)
-        self._register_find_duplicate_candidates(app)
+        # Moved to recommender tool:
+        # - find_similar_clusters, find_duplicate_candidates -> recommender("redundancy_reduction")
+        # - analyze_documentation_relevance -> recommender("documentation_maintenance", "relevance_analysis")
 
     def _get_rag_manager(self):
         """Get the RAG manager from the default instance manager."""

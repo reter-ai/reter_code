@@ -1,11 +1,10 @@
 """
 Unified Tools Registrar
 
-Registers the 5 unified MCP tools:
+Registers the 4 unified MCP tools:
 - thinking: Main thinking tool with operations
 - session: Session lifecycle (start, context, end, clear)
 - items: Query and manage items
-- project: Project analytics
 - diagram: Generate diagrams
 """
 
@@ -80,6 +79,8 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
             query_params["phase"] = filters.phase
         if filters.category:
             query_params["category"] = filters.category
+        if filters.source_tool:
+            query_params["source_tool"] = filters.source_tool
 
         items_list = store.get_items(session_id, **query_params)
 
@@ -112,7 +113,6 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
         self._register_thinking_tool(app)
         self._register_session_tool(app)
         self._register_items_tool(app)
-        self._register_project_tool(app)
         self._register_diagram_tool(app)
 
     def _register_thinking_tool(self, app: FastMCP) -> None:
@@ -125,6 +125,7 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
             total_thoughts: int,
             instance_name: str = "default",
             thought_type: str = "reasoning",
+            section: Optional[str] = None,
             next_thought_needed: bool = True,
             branch_id: Optional[str] = None,
             branch_from: Optional[int] = None,
@@ -134,13 +135,13 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
             operations: Optional[Dict[str, Any]] = None
         ) -> Dict[str, Any]:
             """
-            Unified thinking tool with integrated operations.
+            Design doc thinking tool with integrated operations.
 
             **See: guide://logical-thinking/usage for complete documentation**
 
-            Creates a thought and optionally executes operations:
-            - Create items: requirement, recommendation, task, milestone, decision
-            - Create relations: traces, satisfies, implements, depends_on, affects
+            Creates a thought (optionally in a design doc section) and executes operations:
+            - Create items: task (with category), milestone
+            - Create relations: traces, implements, depends_on, affects
             - Update items: update_item, update_task, complete_task
             - RETER: assert, query, python_file, forget_source
 
@@ -150,6 +151,7 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
                 total_thoughts: Estimated total steps
                 instance_name: Session instance name (default: "default")
                 thought_type: reasoning, analysis, decision, planning, verification
+                section: Design doc section (context, goals, non_goals, design, alternatives, risks, implementation, tasks)
                 next_thought_needed: Whether more thoughts are needed
                 branch_id: ID for branching
                 branch_from: Thought number to branch from
@@ -159,9 +161,9 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
                 operations: Dict of operations to execute (see examples)
 
             Operations examples:
-                {"requirement": {"text": "System shall...", "risk": "medium"}}
-                {"task": {"name": "Implement X", "start_date": "2024-01-15", "duration_days": 5}}
-                {"traces": ["REQ-001"], "affects": ["module.py"]}
+                {"task": {"name": "Implement X", "category": "feature", "priority": "high"}}
+                {"milestone": {"name": "MVP Release", "date": "2024-03-01"}}
+                {"traces": ["TASK-001"], "affects": ["module.py"]}
                 {"complete_task": "TASK-001"}
 
             Returns:
@@ -180,6 +182,7 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
                 thought_number=thought_number,
                 total_thoughts=total_thoughts,
                 thought_type=thought_type,
+                section=section,
                 next_thought_needed=next_thought_needed,
                 branch_id=branch_id,
                 branch_from=branch_from,
@@ -223,7 +226,7 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
 
             Returns:
                 For start: {session_id, goal, status, created_at}
-                For context: {session, thoughts, requirements, recommendations, project, suggestions, mcp_guide}
+                For context: {session, design_doc, tasks, project_health, milestones, suggestions, mcp_guide}
                 For end: {session_id, status, summary}
                 For clear: {success, items_deleted}
             """
@@ -279,7 +282,7 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
             offset: int = 0
         ) -> Dict[str, Any]:
             """
-            Query and manage items (requirements, tasks, recommendations, etc.).
+            Query and manage items (thoughts, tasks, milestones).
 
             Actions:
             - list: Query items with filters
@@ -337,6 +340,7 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
                     priority=priority,
                     phase=phase,
                     category=category,
+                    source_tool=source_tool,
                     traces_to=traces_to,
                     traced_by=traced_by,
                     depends_on=depends_on,
@@ -420,64 +424,6 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
             else:
                 return {"success": False, "error": f"Unknown action: {action}"}
 
-    def _register_project_tool(self, app: FastMCP) -> None:
-        """Register project analytics tool."""
-
-        @app.tool()
-        def project(
-            action: str,
-            instance_name: str = "default",
-            task_id: Optional[str] = None,
-            delay_days: Optional[int] = None,
-            start_date: Optional[str] = None,
-            end_date: Optional[str] = None
-        ) -> Dict[str, Any]:
-            """
-            Project management and analytics.
-
-            Actions:
-            - health: Overall project status and metrics
-            - critical_path: Tasks on critical path (zero float)
-            - overdue: Tasks past end_date
-            - impact: Impact analysis for task delay
-
-            Args:
-                action: health, critical_path, overdue, impact
-                instance_name: Session instance name
-                task_id: Task ID (for impact action)
-                delay_days: Number of days delay (for impact action)
-                start_date: Start date for timeline filter
-                end_date: End date for timeline filter
-
-            Returns:
-                For health: {tasks: {...}, timeline: {...}, milestones: [...], recommendations: {...}}
-                For critical_path: {critical_tasks: [...], total_duration}
-                For overdue: {overdue_tasks: [...], total_overdue}
-                For impact: {delayed_task: {...}, affected_tasks: [...], affected_milestones: [...]}
-            """
-            # Project only requires SQLite to be ready
-            try:
-                require_sql()
-            except ComponentNotReadyError as e:
-                return e.to_response()
-
-            sess = self._get_session(instance_name)
-
-            if action == "health":
-                return sess.get_project_health(instance_name)
-            elif action == "critical_path":
-                return sess.get_critical_path(instance_name)
-            elif action == "overdue":
-                return sess.get_overdue_tasks(instance_name)
-            elif action == "impact":
-                if not task_id:
-                    return {"success": False, "error": "task_id required for impact action"}
-                if delay_days is None:
-                    return {"success": False, "error": "delay_days required for impact action"}
-                return sess.analyze_impact(instance_name, task_id, delay_days)
-            else:
-                return {"success": False, "error": f"Unknown action: {action}"}
-
     def _register_diagram_tool(self, app: FastMCP) -> None:
         """Register diagram generation tool."""
         instance_manager = self.instance_manager
@@ -508,8 +454,8 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
             **Session/Project Diagrams:**
             - gantt: Gantt chart for tasks and milestones
             - thought_chain: Reasoning chain with branches
-            - traceability: Requirements traceability matrix
-            - requirements: Requirement hierarchy
+            - design_doc: Design doc structure with sections (context, goals, design, etc.)
+            - traceability: Task traceability matrix
 
             **UML/Code Diagrams:**
             - class_hierarchy: Class inheritance hierarchy (target=root_class, optional)
@@ -538,7 +484,7 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
                 {success: True, diagram: "...", format: "mermaid", ...}
             """
             # Session diagrams only need SQLite, UML diagrams need RETER
-            if diagram_type in ("gantt", "thought_chain", "traceability", "requirements"):
+            if diagram_type in ("gantt", "thought_chain", "traceability", "design_doc"):
                 try:
                     require_sql()
                 except ComponentNotReadyError as e:
@@ -550,7 +496,7 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
                     return e.to_response()
 
             # Session/Project diagrams
-            if diagram_type in ("gantt", "thought_chain", "traceability", "requirements"):
+            if diagram_type in ("gantt", "thought_chain", "traceability", "design_doc"):
                 sess = self._get_session(instance_name)
                 store = sess.store
                 session_id = store.get_or_create_session(instance_name)
@@ -561,8 +507,8 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
                     return self._generate_thought_chain_diagram(store, session_id, format)
                 elif diagram_type == "traceability":
                     return self._generate_traceability_diagram(store, session_id, format)
-                elif diagram_type == "requirements":
-                    return self._generate_requirements_diagram(store, session_id, root_id, format)
+                elif diagram_type == "design_doc":
+                    return self._generate_design_doc_diagram(store, session_id, format)
 
             # UML/Code diagrams - delegate to UMLTool
             if diagram_type in ("class_hierarchy", "class_diagram", "sequence", "dependencies", "call_graph", "coupling"):
@@ -726,106 +672,99 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
         return {"success": False, "error": f"Format {format} not supported for thought_chain"}
 
     def _generate_traceability_diagram(self, store, session_id, format):
-        """Generate traceability matrix."""
-        requirements = store.get_items(session_id, item_type="requirement")
-        recommendations = store.get_items(session_id, item_type="recommendation")
+        """Generate traceability matrix.
+
+        Shows tasks grouped by category (Design Docs approach).
+        """
         tasks = store.get_items(session_id, item_type="task")
+        thoughts = store.get_items(session_id, item_type="thought")
+
+        # Group tasks by category
+        tasks_by_category = {}
+        for task in tasks:
+            cat = task.get("category") or "uncategorized"
+            if cat not in tasks_by_category:
+                tasks_by_category[cat] = []
+            tasks_by_category[cat].append(task)
 
         if format == "mermaid":
             lines = ["flowchart LR"]
 
-            # Define subgraphs for each type
-            if requirements:
-                lines.append("    subgraph Requirements")
-                for req in requirements:
-                    req_id = req["item_id"]
-                    # Sanitize ID for mermaid (replace - with _)
-                    safe_id = req_id.replace("-", "_")
-                    lines.append(f"        {safe_id}[{req_id}]")
-                lines.append("    end")
-
-            if recommendations:
-                lines.append("    subgraph Recommendations")
-                for rec in recommendations:
-                    rec_id = rec["item_id"]
-                    safe_id = rec_id.replace("-", "_")
-                    lines.append(f"        {safe_id}[{rec_id}]")
-                lines.append("    end")
-
-            if tasks:
-                lines.append("    subgraph Tasks")
-                for task in tasks:
+            # Define subgraphs for each category
+            for cat, cat_tasks in tasks_by_category.items():
+                safe_cat = cat.replace("-", "_").replace(" ", "_")
+                lines.append(f"    subgraph {safe_cat}[{cat.title()}]")
+                for task in cat_tasks:
                     task_id = task["item_id"]
                     safe_id = task_id.replace("-", "_")
                     lines.append(f"        {safe_id}[{task_id}]")
                 lines.append("    end")
 
-            # Add relations
+            # Add relations between tasks
             lines.append("")
             lines.append("    %% Traceability links")
 
-            # Requirements -> Recommendations (implements)
-            for req in requirements:
-                req_id = req["item_id"]
-                safe_req = req_id.replace("-", "_")
-                traced = store.get_items_by_relation(req_id, "implements")
-                for t in traced:
-                    if t["item_type"] == "recommendation":
-                        safe_t = t["item_id"].replace("-", "_")
-                        lines.append(f"    {safe_req} -->|implements| {safe_t}")
+            for task in tasks:
+                task_id = task["item_id"]
+                safe_task = task_id.replace("-", "_")
 
-            # Recommendations -> Tasks (traces)
-            for rec in recommendations:
-                rec_id = rec["item_id"]
-                safe_rec = rec_id.replace("-", "_")
-                traced = store.get_items_by_relation(rec_id, "traces")
+                # Task -> Task (depends_on)
+                deps = store.get_items_by_relation(task_id, "depends_on")
+                for dep in deps:
+                    if dep.get("item_type") == "task":
+                        safe_dep = dep["item_id"].replace("-", "_")
+                        lines.append(f"    {safe_dep} -->|blocks| {safe_task}")
+
+                # Task -> Thought (traces)
+                traced = store.get_items_by_relation(task_id, "traces")
                 for t in traced:
-                    if t["item_type"] == "task":
+                    if t.get("item_type") == "thought":
                         safe_t = t["item_id"].replace("-", "_")
-                        lines.append(f"    {safe_rec} -->|traces| {safe_t}")
+                        lines.append(f"    {safe_t} -.->|traces| {safe_task}")
 
             return {
                 "success": True,
                 "diagram": "\n".join(lines),
                 "format": "mermaid",
-                "requirements_count": len(requirements),
-                "recommendations_count": len(recommendations),
-                "tasks_count": len(tasks)
+                "tasks_count": len(tasks),
+                "categories": list(tasks_by_category.keys())
             }
 
         elif format == "markdown":
             lines = ["# Traceability Matrix", ""]
 
-            # Requirements to Recommendations
-            lines.append("## Requirements → Recommendations")
-            lines.append("| Requirement | Recommendations |")
-            lines.append("|-------------|-----------------|")
+            # Tasks by category
+            lines.append("## Tasks by Category")
+            lines.append("| Category | Task | Status | Dependencies |")
+            lines.append("|----------|------|--------|--------------|")
 
-            for req in requirements:
-                req_id = req["item_id"]
-                traced = store.get_items_by_relation(req_id, "implements")
-                traced_ids = [t["item_id"] for t in traced if t["item_type"] == "recommendation"]
-                lines.append(f"| {req_id} | {', '.join(traced_ids) or '-'} |")
+            for cat, cat_tasks in tasks_by_category.items():
+                for task in cat_tasks:
+                    task_id = task["item_id"]
+                    status = task.get("status", "pending")
+                    deps = store.get_items_by_relation(task_id, "depends_on")
+                    dep_ids = [d["item_id"] for d in deps if d.get("item_type") == "task"]
+                    lines.append(f"| {cat} | {task_id} | {status} | {', '.join(dep_ids) or '-'} |")
 
-            # Recommendations to Tasks
+            # Thought to Task traceability
             lines.append("")
-            lines.append("## Recommendations → Tasks")
-            lines.append("| Recommendation | Tasks |")
-            lines.append("|----------------|-------|")
+            lines.append("## Thoughts → Tasks")
+            lines.append("| Thought | Related Tasks |")
+            lines.append("|---------|---------------|")
 
-            for rec in recommendations:
-                rec_id = rec["item_id"]
-                traced = store.get_items_by_relation(rec_id, "traces")
-                traced_ids = [t["item_id"] for t in traced if t["item_type"] == "task"]
-                lines.append(f"| {rec_id} | {', '.join(traced_ids) or '-'} |")
+            for thought in thoughts[:20]:  # Limit to recent thoughts
+                thought_id = thought["item_id"]
+                traced = store.get_items_by_relation(thought_id, "traces")
+                task_ids = [t["item_id"] for t in traced if t.get("item_type") == "task"]
+                if task_ids:
+                    lines.append(f"| {thought_id} | {', '.join(task_ids)} |")
 
             return {
                 "success": True,
                 "diagram": "\n".join(lines),
                 "format": "markdown",
-                "requirements_count": len(requirements),
-                "recommendations_count": len(recommendations),
-                "tasks_count": len(tasks)
+                "tasks_count": len(tasks),
+                "categories": list(tasks_by_category.keys())
             }
 
         return {"success": False, "error": f"Format {format} not supported for traceability"}
@@ -880,3 +819,162 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
             }
 
         return {"success": False, "error": f"Format {format} not supported for requirements"}
+
+    def _generate_design_doc_diagram(self, store, session_id, format):
+        """Generate design doc diagram showing sections and thoughts."""
+        thoughts = store.get_items(session_id, item_type="thought")
+        tasks = store.get_items(session_id, item_type="task")
+
+        # Define section order and colors
+        section_order = ["context", "goals", "non_goals", "design", "alternatives", "risks", "implementation", "tasks"]
+        section_colors = {
+            "context": "#e1f5fe",
+            "goals": "#c8e6c9",
+            "non_goals": "#ffecb3",
+            "design": "#e1bee7",
+            "alternatives": "#ffe0b2",
+            "risks": "#ffcdd2",
+            "implementation": "#b2dfdb",
+            "tasks": "#d1c4e9"
+        }
+
+        # Organize thoughts by section
+        by_section = {s: [] for s in section_order}
+        by_section["other"] = []
+
+        for t in thoughts:
+            section = t.get("section") or "other"
+            if section not in by_section:
+                section = "other"
+            by_section[section].append(t)
+
+        if format == "mermaid":
+            lines = ["flowchart TB"]
+
+            # Add section subgraphs
+            for section in section_order:
+                section_thoughts = by_section.get(section, [])
+                if section_thoughts:
+                    section_title = section.replace("_", " ").title()
+                    lines.append(f"    subgraph {section}[{section_title}]")
+                    for t in section_thoughts:
+                        t_id = t["item_id"].replace("-", "_")
+                        num = t.get("thought_number", 0)
+                        content = t.get("content", "")[:30].replace('"', "'").replace("\n", " ")
+                        lines.append(f'        {t_id}["{num}. {content}..."]')
+                    lines.append("    end")
+                    lines.append("")
+
+            # Add other/unstructured thoughts if any
+            other = by_section.get("other", [])
+            if other:
+                lines.append("    subgraph other[Unstructured]")
+                for t in other:
+                    t_id = t["item_id"].replace("-", "_")
+                    num = t.get("thought_number", 0)
+                    content = t.get("content", "")[:30].replace('"', "'").replace("\n", " ")
+                    lines.append(f'        {t_id}["{num}. {content}..."]')
+                lines.append("    end")
+                lines.append("")
+
+            # Add tasks summary
+            if tasks:
+                # Group by category
+                by_category = {}
+                for task in tasks:
+                    cat = task.get("category") or "uncategorized"
+                    if cat not in by_category:
+                        by_category[cat] = []
+                    by_category[cat].append(task)
+
+                lines.append("    subgraph work[Work Items]")
+                for cat, cat_tasks in by_category.items():
+                    completed = len([t for t in cat_tasks if t.get("status") == "completed"])
+                    total = len(cat_tasks)
+                    cat_id = cat.replace("-", "_")
+                    lines.append(f'        {cat_id}["{cat}: {completed}/{total}"]')
+                lines.append("    end")
+                lines.append("")
+
+            # Add flow between sections (design doc flow)
+            prev_section = None
+            for section in section_order:
+                if by_section.get(section):
+                    if prev_section:
+                        lines.append(f"    {prev_section} --> {section}")
+                    prev_section = section
+
+            # Link tasks section to work items
+            if by_section.get("tasks") and tasks:
+                lines.append("    tasks --> work")
+
+            # Add styles
+            lines.append("")
+            for section, color in section_colors.items():
+                lines.append(f"    style {section} fill:{color}")
+
+            return {
+                "success": True,
+                "diagram": "\n".join(lines),
+                "format": "mermaid",
+                "thoughts_count": len(thoughts),
+                "sections_used": [s for s in section_order if by_section.get(s)],
+                "tasks_count": len(tasks)
+            }
+
+        elif format == "markdown":
+            lines = ["# Design Doc Structure", ""]
+
+            for section in section_order:
+                section_thoughts = by_section.get(section, [])
+                if section_thoughts:
+                    section_title = section.replace("_", " ").title()
+                    lines.append(f"## {section_title}")
+                    lines.append("")
+                    for t in section_thoughts:
+                        num = t.get("thought_number", 0)
+                        content = t.get("content", "")[:100]
+                        lines.append(f"- **#{num}**: {content}...")
+                    lines.append("")
+
+            # Other thoughts
+            other = by_section.get("other", [])
+            if other:
+                lines.append("## Unstructured Thoughts")
+                lines.append("")
+                for t in other:
+                    num = t.get("thought_number", 0)
+                    content = t.get("content", "")[:100]
+                    lines.append(f"- **#{num}**: {content}...")
+                lines.append("")
+
+            # Tasks
+            if tasks:
+                lines.append("## Work Items")
+                lines.append("")
+                lines.append("| Category | Total | Completed | Status |")
+                lines.append("|----------|-------|-----------|--------|")
+
+                by_category = {}
+                for task in tasks:
+                    cat = task.get("category") or "uncategorized"
+                    if cat not in by_category:
+                        by_category[cat] = {"total": 0, "completed": 0}
+                    by_category[cat]["total"] += 1
+                    if task.get("status") == "completed":
+                        by_category[cat]["completed"] += 1
+
+                for cat, stats in by_category.items():
+                    pct = (stats["completed"] / stats["total"] * 100) if stats["total"] > 0 else 0
+                    lines.append(f"| {cat} | {stats['total']} | {stats['completed']} | {pct:.0f}% |")
+
+            return {
+                "success": True,
+                "diagram": "\n".join(lines),
+                "format": "markdown",
+                "thoughts_count": len(thoughts),
+                "sections_used": [s for s in section_order if by_section.get(s)],
+                "tasks_count": len(tasks)
+            }
+
+        return {"success": False, "error": f"Format {format} not supported for design_doc"}

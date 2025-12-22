@@ -30,7 +30,9 @@ class RefactoringToolBase(BaseTool):
         "opportunities", "candidates", "smells", "results",
         "variables", "chains", "hierarchies", "fields",
         "issues", "items", "files", "fixtures", "cycles",
-        "singletons", "pairs", "clusters", "findings"
+        "singletons", "pairs", "clusters", "findings",
+        "magic_numbers", "decorators", "modules", "imports",
+        "undocumented", "numbers", "entries", "matches"
     ]
 
     # Language support for multi-language analysis
@@ -114,12 +116,11 @@ class RefactoringToolBase(BaseTool):
         create_tasks: bool = False
     ) -> Dict[str, int]:
         """
-        Convert detector findings to unified items (recommendations).
+        Convert detector findings to unified items (tasks with category="refactor").
 
-        Each recommendation includes a test-first refactoring workflow:
-        1. Write/verify unit tests first
-        2. Apply the refactoring
-        3. Run tests to verify behavior is preserved
+        Each finding becomes a task with:
+        - category: "refactor" (from TaskCategory)
+        - Includes test-first refactoring workflow in content
 
         Args:
             detector_name: Name of the detector
@@ -128,8 +129,8 @@ class RefactoringToolBase(BaseTool):
             store: UnifiedStore instance
             session_id: Session ID for item creation
             category_prefix: Optional prefix for category (e.g., "pattern:")
-            link_to_thought: Optional thought ID to link recommendations to
-            create_tasks: If True, auto-create tasks for test-first workflow
+            link_to_thought: Optional thought ID to link tasks to
+            create_tasks: If True, create sub-tasks for test-first workflow steps
 
         Returns:
             Dict with items_created, tasks_created, relations_created counts
@@ -143,7 +144,6 @@ class RefactoringToolBase(BaseTool):
         tasks_created = 0
         relations_created = 0
 
-        cat_prefix = category_prefix or ""
         source_tool = f"{self.get_metadata().name}:{detector_name}"
         priority = self._severity_to_priority(detector_info.get("severity", "medium"))
 
@@ -155,17 +155,22 @@ class RefactoringToolBase(BaseTool):
             affected_entities = self._extract_entities(finding)
             workflow_steps = self._build_refactoring_workflow(detector_name, finding)
 
-            # Create recommendation item with full workflow
-            rec_id = store.add_item(
+            # Calculate severity score for sorting (higher = more severe)
+            severity_score = self._calculate_severity_score(finding)
+
+            # Create task item with category="refactor" (Design Docs approach)
+            task_id = store.add_item(
                 session_id=session_id,
-                item_type="recommendation",
+                item_type="task",
                 content=text,
-                category=f"{cat_prefix}{detector_info['category']}",
+                category="refactor",  # Use TaskCategory instead of recommendation type
                 priority=priority,
                 source_tool=source_tool,
+                severity_score=severity_score,
                 metadata={
                     "finding": finding,
                     "detector": detector_name,
+                    "detector_category": detector_info.get("category"),
                     "workflow": workflow_steps
                 }
             )
@@ -173,81 +178,81 @@ class RefactoringToolBase(BaseTool):
 
             # Add file relations (affects)
             for file_path in affected_files:
-                store.add_relation(rec_id, file_path, "file", "affects")
+                store.add_relation(task_id, file_path, "file", "affects")
                 relations_created += 1
 
             # Add entity relations (affects_entity)
             for entity in affected_entities:
-                store.add_relation(rec_id, entity, "entity", "affects")
+                store.add_relation(task_id, entity, "entity", "affects")
                 relations_created += 1
 
             # Link to thought if specified
             if link_to_thought:
-                store.add_relation(rec_id, link_to_thought, "item", "traces")
+                store.add_relation(task_id, link_to_thought, "item", "traces")
                 relations_created += 1
 
-            # Auto-create tasks for test-first workflow
+            # Auto-create sub-tasks for test-first workflow
             if create_tasks and priority in ("critical", "high"):
-                # Task 1: Find existing tests using code_inspection
+                # Sub-task 1: Find existing tests using code_inspection
                 find_tests_task_id = store.add_item(
                     session_id=session_id,
                     item_type="task",
                     content=workflow_steps[0],  # Find existing tests
                     priority=priority,
                     status="pending",
-                    category=f"{cat_prefix}{detector_info['category']}",
+                    category="test",  # Use TaskCategory
                     source_tool=source_tool,
-                    metadata={"step": 1, "phase": "find_tests"}
+                    metadata={"step": 1, "phase": "find_tests", "parent_task": task_id}
                 )
-                store.add_relation(find_tests_task_id, rec_id, "item", "traces")
+                store.add_relation(find_tests_task_id, task_id, "item", "traces")
                 tasks_created += 1
                 relations_created += 1
 
-                # Task 2: Ensure test coverage (depends on find tests task)
+                # Sub-task 2: Ensure test coverage (depends on find tests task)
                 ensure_tests_task_id = store.add_item(
                     session_id=session_id,
                     item_type="task",
                     content=workflow_steps[1],  # Ensure test coverage
                     priority=priority,
                     status="pending",
-                    category=f"{cat_prefix}{detector_info['category']}",
+                    category="test",  # Use TaskCategory
                     source_tool=source_tool,
-                    metadata={"step": 2, "phase": "ensure_coverage"}
+                    metadata={"step": 2, "phase": "ensure_coverage", "parent_task": task_id}
                 )
-                store.add_relation(ensure_tests_task_id, rec_id, "item", "traces")
+                store.add_relation(ensure_tests_task_id, task_id, "item", "traces")
                 store.add_relation(ensure_tests_task_id, find_tests_task_id, "item", "depends_on")
                 tasks_created += 1
                 relations_created += 2
 
-                # Task 3: Apply refactoring (depends on ensure tests task)
-                refactor_task_id = store.add_item(
+                # Sub-task 3: Apply refactoring (depends on ensure tests task)
+                apply_refactor_task_id = store.add_item(
                     session_id=session_id,
                     item_type="task",
                     content=workflow_steps[2],  # Apply refactoring
                     priority=priority,
                     status="pending",
-                    category=f"{cat_prefix}{detector_info['category']}",
+                    category="refactor",  # Use TaskCategory
                     source_tool=source_tool,
-                    metadata={"step": 3, "phase": "refactor"}
+                    metadata={"step": 3, "phase": "refactor", "parent_task": task_id}
                 )
-                store.add_relation(refactor_task_id, rec_id, "item", "traces")
-                store.add_relation(refactor_task_id, ensure_tests_task_id, "item", "depends_on")
+                store.add_relation(apply_refactor_task_id, task_id, "item", "traces")
+                store.add_relation(apply_refactor_task_id, ensure_tests_task_id, "item", "depends_on")
                 tasks_created += 1
                 relations_created += 2
 
-                # Task 4: Verify tests pass (depends on refactor task)
+                # Sub-task 4: Verify tests pass (depends on refactor task)
                 verify_task_id = store.add_item(
                     session_id=session_id,
                     item_type="task",
                     content=workflow_steps[3],  # Verify tests pass
                     priority=priority,
                     status="pending",
-                    category=f"{cat_prefix}{detector_info['category']}",
+                    category="test",  # Use TaskCategory
                     source_tool=source_tool,
-                    metadata={"step": 4, "phase": "verify"}
+                    metadata={"step": 4, "phase": "verify", "parent_task": task_id}
                 )
-                store.add_relation(verify_task_id, rec_id, "item", "traces")
-                store.add_relation(verify_task_id, refactor_task_id, "item", "depends_on")
+                store.add_relation(verify_task_id, task_id, "item", "traces")
+                store.add_relation(verify_task_id, apply_refactor_task_id, "item", "depends_on")
                 tasks_created += 1
                 relations_created += 2
 
@@ -322,7 +327,7 @@ class RefactoringToolBase(BaseTool):
         return batch_result.get("created", 0)
 
     def _finding_to_text(self, detector_name: str, finding: Dict[str, Any]) -> str:
-        """Convert a single finding to recommendation text."""
+        """Convert a single finding to recommendation text with severity metrics."""
         # Extract key information based on detector type
         if "name" in finding and "module" in finding:
             target = f"{finding['name']} in {finding['module']}"
@@ -339,7 +344,81 @@ class RefactoringToolBase(BaseTool):
         else:
             target = str(finding)[:100]
 
+        # Add severity metrics prominently
+        severity_info = self._extract_severity_info(finding)
+        if severity_info:
+            return f"{detector_name}: {target} [{severity_info}]"
         return f"{detector_name}: {target}"
+
+    def _extract_severity_info(self, finding: Dict[str, Any]) -> str:
+        """Extract severity metrics from finding for display."""
+        parts = []
+
+        # Method/class size metrics
+        if "method_count" in finding:
+            parts.append(f"{finding['method_count']} methods")
+        if "parameter_count" in finding:
+            parts.append(f"{finding['parameter_count']} params")
+        if "line_count" in finding:
+            parts.append(f"{finding['line_count']} lines")
+
+        # Similarity metrics
+        if "similarity" in finding:
+            parts.append(f"{finding['similarity']:.0%} similar")
+
+        # Dependency metrics
+        if "cycle_length" in finding:
+            parts.append(f"cycle of {finding['cycle_length']}")
+        if "caller_count" in finding:
+            parts.append(f"{finding['caller_count']} callers")
+
+        # Occurrence metrics
+        if "occurrences" in finding:
+            parts.append(f"{finding['occurrences']} occurrences")
+
+        return ", ".join(parts)
+
+    def _calculate_severity_score(self, finding: Dict[str, Any]) -> int:
+        """
+        Calculate a numeric severity score for sorting findings.
+
+        Higher score = more severe = should be addressed first.
+        Uses metrics from the finding to compute a comparable score.
+
+        Returns:
+            Integer score (0-10000 range typically)
+        """
+        score = 0
+
+        # Method/class size metrics (higher = more severe)
+        if "method_count" in finding:
+            score += int(finding["method_count"]) * 10  # 50 methods = 500 points
+        if "parameter_count" in finding:
+            score += int(finding["parameter_count"]) * 20  # 10 params = 200 points
+        if "line_count" in finding:
+            score += int(finding["line_count"])  # Direct line count
+
+        # Similarity metrics (higher similarity = more severe duplication)
+        if "similarity" in finding:
+            sim = finding["similarity"]
+            if isinstance(sim, (int, float)):
+                score += int(sim * 100)  # 0.95 = 95 points
+
+        # Dependency metrics
+        if "cycle_length" in finding:
+            score += int(finding["cycle_length"]) * 50  # Cycles are serious
+        if "caller_count" in finding:
+            score += int(finding["caller_count"]) * 5
+
+        # Occurrence metrics
+        if "occurrences" in finding:
+            score += int(finding["occurrences"]) * 10
+
+        # Member count for clusters
+        if "member_count" in finding:
+            score += int(finding["member_count"]) * 15
+
+        return score
 
     def _build_refactoring_workflow(
         self, detector_name: str, finding: Dict[str, Any]

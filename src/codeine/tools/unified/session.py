@@ -149,8 +149,8 @@ class ThinkingSession:
             instance_name: RETER instance name
 
         Returns:
-            Complete context including thoughts, requirements, recommendations,
-            project status, artifacts, activities, and suggestions
+            Complete context including design doc sections, tasks, project health,
+            artifacts, activities, and suggestions
         """
         session_id = self.store.get_or_create_session(instance_name)
         session = self.store.get_session(session_id)
@@ -161,7 +161,7 @@ class ThinkingSession:
         # Get session summary
         summary = self.store.get_session_summary(session_id)
 
-        # Build context response
+        # Build context response - Design Docs structure
         context = {
             "success": True,
 
@@ -176,23 +176,20 @@ class ThinkingSession:
                 "project_end": session.get("project_end")
             },
 
-            # Thought chain summary
-            "thoughts": self._get_thoughts_context(session_id, summary),
+            # Design doc sections (thoughts organized by section)
+            "design_doc": self._get_design_doc_context(session_id, summary),
 
-            # Requirements status
-            "requirements": self._get_requirements_context(session_id, summary),
+            # Tasks with categories (unified requirements, features, bugs, etc.)
+            "tasks": self._get_tasks_context(session_id, summary),
 
-            # Recommendations progress
-            "recommendations": self._get_recommendations_context(session_id, summary),
+            # Project health and analytics
+            "project_health": self._get_project_health_context(session_id, session),
 
-            # Project status (tasks/milestones)
-            "project": self._get_project_context(session_id, summary),
+            # Milestones and timeline
+            "milestones": self._get_milestones_context(session_id),
 
             # Artifacts with freshness
             "artifacts": self._get_artifacts_context(session_id),
-
-            # Recent activities
-            "recent_activities": self._get_activities_context(session_id),
 
             # RETER state (if available)
             "reter": self._get_reter_context(instance_name),
@@ -217,6 +214,7 @@ class ThinkingSession:
         thought_number: int,
         total_thoughts: int,
         thought_type: str = "reasoning",
+        section: Optional[str] = None,
         next_thought_needed: bool = True,
         branch_id: Optional[str] = None,
         branch_from: Optional[int] = None,
@@ -234,13 +232,14 @@ class ThinkingSession:
             thought_number: Current thought number (1-indexed)
             total_thoughts: Estimated total thoughts
             thought_type: Type of thought (reasoning, analysis, decision, planning, verification)
+            section: Design doc section (context, goals, non_goals, design, alternatives, risks, implementation, tasks)
             next_thought_needed: Whether more thoughts are needed
             branch_id: ID for branching
             branch_from: Thought number to branch from
             is_revision: Whether this revises a previous thought
             revises_thought: Which thought number is being revised
             needs_more_thoughts: Signal that more analysis is needed
-            operations: Operations dict (requirements, tasks, relations, etc.)
+            operations: Operations dict (tasks, milestones, relations, etc.)
 
         Returns:
             Thought result with created items and relations
@@ -251,6 +250,7 @@ class ThinkingSession:
             thought_number=thought_number,
             total_thoughts=total_thoughts,
             thought_type=thought_type,
+            section=section,
             next_thought_needed=next_thought_needed,
             needs_more_thoughts=needs_more_thoughts,
             branch_id=branch_id,
@@ -286,6 +286,7 @@ class ThinkingSession:
             total_thoughts=thought_input.total_thoughts,
             next_thought_needed=1 if thought_input.next_thought_needed else 0,
             thought_type=thought_input.thought_type,
+            section=thought_input.section,
             is_revision=1 if thought_input.is_revision else 0,
             revises_thought=thought_input.revises_thought,
             branch_from_thought=thought_input.branch_from,
@@ -301,6 +302,7 @@ class ThinkingSession:
             "total_thoughts": thought_input.total_thoughts,
             "next_thought_needed": thought_input.next_thought_needed,
             "thought_type": thought_input.thought_type,
+            "section": thought_input.section,
             "items_created": [],
             "items_updated": [],
             "relations_created": [],
@@ -406,11 +408,17 @@ class ThinkingSession:
                     logger.warning(f"Invalid milestone end_date format '{ms['end_date']}' for {ms['item_id']}: {e}")
             milestones_status.append(status)
 
-        # Get recommendations progress
-        recommendations = self.store.get_items(session_id, item_type="recommendation")
-        rec_pending = len([r for r in recommendations if r.get("status") == "pending"])
-        rec_completed = len([r for r in recommendations if r.get("status") == "completed"])
-        rec_total = len(recommendations)
+        # Count tasks by category (replaces old recommendations tracking)
+        by_category = {}
+        for t in tasks:
+            cat = t.get("category") or "uncategorized"
+            if cat not in by_category:
+                by_category[cat] = {"total": 0, "completed": 0, "pending": 0}
+            by_category[cat]["total"] += 1
+            if t.get("status") == "completed":
+                by_category[cat]["completed"] += 1
+            else:
+                by_category[cat]["pending"] += 1
 
         return {
             "success": True,
@@ -420,7 +428,8 @@ class ThinkingSession:
                 "in_progress": in_progress,
                 "blocked": blocked,
                 "pending": pending,
-                "percent_complete": round(percent_complete, 1)
+                "percent_complete": round(percent_complete, 1),
+                "by_category": by_category
             },
             "timeline": {
                 "project_start": project_start,
@@ -429,13 +438,7 @@ class ThinkingSession:
                 "on_track": on_track
             },
             "overdue": overdue,
-            "milestones": milestones_status,
-            "recommendations": {
-                "total": rec_total,
-                "pending": rec_pending,
-                "completed": rec_completed,
-                "progress_percent": round((rec_completed / rec_total * 100) if rec_total > 0 else 0, 1)
-            }
+            "milestones": milestones_status
         }
 
     def get_critical_path(self, instance_name: str) -> Dict[str, Any]:
@@ -702,162 +705,206 @@ class ThinkingSession:
         }
 
     # =========================================================================
-    # Context Generation Helpers
+    # Context Generation Helpers - Design Docs Structure
     # =========================================================================
 
-    def _get_thoughts_context(
+    def _get_design_doc_context(
         self,
         session_id: str,
         summary: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Get thought chain context."""
-        chain = self.store.get_thought_chain(session_id)
-        thought_count = summary.get("by_type", {}).get("thought", 0)
+        """Get design doc context - thoughts organized by section."""
+        thoughts = self.store.get_items(session_id, item_type="thought")
+        thought_count = len(thoughts)
 
-        # Get last 3 thoughts as summary
+        # Organize by section
+        by_section = {
+            "context": [],
+            "goals": [],
+            "non_goals": [],
+            "design": [],
+            "alternatives": [],
+            "risks": [],
+            "implementation": [],
+            "tasks": [],
+            "other": []  # Unstructured thoughts
+        }
+
+        for t in thoughts:
+            section = t.get("section") or "other"
+            if section not in by_section:
+                section = "other"
+            by_section[section].append({
+                "id": t["item_id"],
+                "num": t.get("thought_number"),
+                "type": t.get("thought_type", "reasoning"),
+                "summary": t.get("content", "")[:100] + ("..." if len(t.get("content", "")) > 100 else "")
+            })
+
+        # Get latest thoughts for quick reference
+        chain = self.store.get_thought_chain(session_id)
         latest = []
         for t in chain[-3:]:
             latest.append({
                 "num": t.get("thought_number"),
                 "type": t.get("thought_type", "reasoning"),
-                "summary": t.get("content", "")[:100] + "..." if len(t.get("content", "")) > 100 else t.get("content", "")
+                "section": t.get("section"),
+                "summary": t.get("content", "")[:100] + ("..." if len(t.get("content", "")) > 100 else "")
             })
 
-        # Get decisions
-        decisions = self.store.get_items(session_id, item_type="decision")
-        key_decisions = [
-            {
-                "id": d["item_id"],
-                "text": d["content"][:100],
-                "created_at": d.get("created_at")
-            }
-            for d in decisions[:5]
-        ]
+        # Count by section
+        section_counts = {k: len(v) for k, v in by_section.items() if v}
 
         return {
             "total": thought_count,
             "max_number": summary.get("thought_chain", {}).get("max_number", 0),
-            "latest_chain": latest,
-            "key_decisions": key_decisions
+            "by_section": section_counts,
+            "sections": {k: v for k, v in by_section.items() if v},  # Only non-empty sections
+            "latest_chain": latest
         }
 
-    def _get_requirements_context(
+    def _get_tasks_context(
         self,
         session_id: str,
         summary: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Get requirements context."""
-        requirements = self.store.get_items(session_id, item_type="requirement")
+        """Get tasks context - organized by category and status."""
+        tasks = self.store.get_items(session_id, item_type="task")
 
-        verified = len([r for r in requirements if r.get("status") == "verified"])
-        pending = len([r for r in requirements if r.get("status") in ("pending", "active")])
+        total = len(tasks)
+        completed = len([t for t in tasks if t.get("status") == "completed"])
+        in_progress = len([t for t in tasks if t.get("status") == "in_progress"])
+        blocked = len([t for t in tasks if t.get("status") == "blocked"])
+        pending = len([t for t in tasks if t.get("status") == "pending"])
 
-        items = [
-            {
-                "id": r["item_id"],
-                "text": r["content"][:100],
-                "status": r.get("status", "pending"),
-                "risk": r.get("risk", "medium")
-            }
-            for r in requirements[:10]
-        ]
-
-        return {
-            "total": len(requirements),
-            "verified": verified,
-            "pending_verification": pending,
-            "items": items
-        }
-
-    def _get_recommendations_context(
-        self,
-        session_id: str,
-        summary: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Get recommendations context."""
-        recommendations = self.store.get_items(session_id, item_type="recommendation")
-
-        total = len(recommendations)
-        completed = len([r for r in recommendations if r.get("status") == "completed"])
-        in_progress = len([r for r in recommendations if r.get("status") == "in_progress"])
-        pending = len([r for r in recommendations if r.get("status") == "pending"])
+        # Count by category
+        by_category = {}
+        for t in tasks:
+            cat = t.get("category") or "uncategorized"
+            if cat not in by_category:
+                by_category[cat] = {"total": 0, "completed": 0, "pending": 0}
+            by_category[cat]["total"] += 1
+            if t.get("status") == "completed":
+                by_category[cat]["completed"] += 1
+            elif t.get("status") in ("pending", "planned"):
+                by_category[cat]["pending"] += 1
 
         # Count by priority
         by_priority = {"critical": 0, "high": 0, "medium": 0, "low": 0}
-        for r in recommendations:
-            p = r.get("priority", "medium")
+        for t in tasks:
+            p = t.get("priority", "medium")
             if p in by_priority:
                 by_priority[p] += 1
 
-        # Get highest priority pending
-        highest = [
+        # Get high priority pending tasks
+        urgent = [
             {
-                "id": r["item_id"],
-                "text": r["content"][:100],
-                "priority": r.get("priority", "medium")
+                "id": t["item_id"],
+                "text": t["content"][:100],
+                "category": t.get("category"),
+                "priority": t.get("priority", "medium")
             }
-            for r in recommendations
-            if r.get("status") == "pending" and r.get("priority") in ("critical", "high")
+            for t in tasks
+            if t.get("status") in ("pending", "planned") and t.get("priority") in ("critical", "high")
+        ][:5]
+
+        # Get blocked tasks
+        blocked_tasks = [
+            {
+                "id": t["item_id"],
+                "text": t["content"][:100]
+            }
+            for t in tasks
+            if t.get("status") == "blocked"
         ][:5]
 
         return {
             "total": total,
             "completed": completed,
             "in_progress": in_progress,
+            "blocked": blocked,
             "pending": pending,
             "progress_percent": round((completed / total * 100) if total > 0 else 0, 1),
+            "by_category": by_category,
             "by_priority": by_priority,
-            "highest_priority": highest
+            "urgent": urgent,
+            "blocked_tasks": blocked_tasks
         }
 
-    def _get_project_context(
+    def _get_project_health_context(
         self,
         session_id: str,
-        summary: Dict[str, Any]
+        session: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Get project/task context."""
+        """Get project health analytics."""
         tasks = self.store.get_items(session_id, item_type="task")
-        milestones = self.store.get_items(session_id, item_type="milestone")
 
-        total = len(tasks)
+        # Calculate metrics
+        total_tasks = len(tasks)
         completed = len([t for t in tasks if t.get("status") == "completed"])
-        in_progress = len([t for t in tasks if t.get("status") == "in_progress"])
-        blocked = len([t for t in tasks if t.get("status") == "blocked"])
+        percent_complete = (completed / total_tasks * 100) if total_tasks > 0 else 0
 
-        # Get overdue
+        # Timeline
+        project_start = session.get("project_start")
+        project_end = session.get("project_end")
+        days_remaining = None
+        on_track = True
+
+        if project_end:
+            try:
+                end_date = datetime.strptime(project_end, "%Y-%m-%d")
+                days_remaining = (end_date - datetime.now()).days
+                on_track = days_remaining >= 0
+            except ValueError as e:
+                logger.warning(f"Invalid project_end date format '{project_end}': {e}")
+
+        # Get overdue tasks
         overdue = []
         today = datetime.now().strftime("%Y-%m-%d")
         for task in tasks:
             if task.get("end_date") and task.get("end_date") < today and task.get("status") != "completed":
-                overdue.append(task["item_id"])
-
-        # Get upcoming milestones
-        upcoming = []
-        for ms in milestones:
-            if ms.get("end_date") and ms.get("status") != "completed":
-                try:
-                    target = datetime.strptime(ms["end_date"], "%Y-%m-%d")
-                    days = (target - datetime.now()).days
-                    if days >= 0:
-                        upcoming.append({
-                            "id": ms["item_id"],
-                            "name": ms["content"],
-                            "target": ms["end_date"],
-                            "days_until": days
-                        })
-                except ValueError as e:
-                    logger.warning(f"Invalid milestone end_date format '{ms['end_date']}' for {ms['item_id']}: {e}")
-        upcoming.sort(key=lambda x: x["days_until"])
+                overdue.append({
+                    "id": task["item_id"],
+                    "name": task["content"][:50],
+                    "days_overdue": (datetime.now() - datetime.strptime(task["end_date"], "%Y-%m-%d")).days
+                })
 
         return {
-            "total_tasks": total,
-            "completed": completed,
-            "in_progress": in_progress,
-            "blocked": blocked,
-            "percent_complete": round((completed / total * 100) if total > 0 else 0, 1),
-            "overdue": overdue,
-            "upcoming_milestones": upcoming[:3]
+            "percent_complete": round(percent_complete, 1),
+            "timeline": {
+                "project_start": project_start,
+                "project_end": project_end,
+                "days_remaining": days_remaining,
+                "on_track": on_track
+            },
+            "overdue_count": len(overdue),
+            "overdue_tasks": overdue[:5]  # Top 5 overdue
         }
+
+    def _get_milestones_context(self, session_id: str) -> List[Dict[str, Any]]:
+        """Get milestones with status and timeline."""
+        milestones = self.store.get_items(session_id, item_type="milestone")
+
+        result = []
+        for ms in milestones:
+            item = {
+                "id": ms["item_id"],
+                "name": ms["content"],
+                "status": ms.get("status", "pending"),
+                "target_date": ms.get("end_date")
+            }
+            if ms.get("end_date"):
+                try:
+                    target = datetime.strptime(ms["end_date"], "%Y-%m-%d")
+                    item["days_until"] = (target - datetime.now()).days
+                except ValueError:
+                    pass
+            result.append(item)
+
+        # Sort by target date
+        result.sort(key=lambda x: x.get("target_date") or "9999-99-99")
+
+        return result
 
     def _get_artifacts_context(self, session_id: str) -> List[Dict[str, Any]]:
         """Get artifacts with freshness."""
@@ -870,23 +917,6 @@ class ThinkingSession:
                 "type": a.get("artifact_type"),
                 "created_at": a.get("created_at"),
                 "fresh": True  # Would need file checking for real freshness
-            })
-
-        return result
-
-    def _get_activities_context(self, session_id: str) -> List[Dict[str, Any]]:
-        """Get recent activities."""
-        activities = self.store.get_items(session_id, item_type="activity")
-
-        # Sort by created_at descending and take last 5
-        activities.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-
-        result = []
-        for a in activities[:5]:
-            result.append({
-                "tool": a.get("source_tool"),
-                "content": a.get("content"),
-                "time": a.get("created_at")
             })
 
         return result
@@ -915,13 +945,15 @@ class ThinkingSession:
         if max_thought > 0:
             suggestions.append(f"Continue thought chain from #{max_thought}")
 
-        # Pending recommendations
-        rec_pending = summary.get("by_status", {}).get("pending", 0)
-        if rec_pending > 0:
-            suggestions.append(f"{rec_pending} pending items to address")
+        # Get tasks for analysis
+        tasks = self.store.get_items(session_id, item_type="task")
+
+        # Pending tasks
+        pending = [t for t in tasks if t.get("status") in ("pending", "planned")]
+        if pending:
+            suggestions.append(f"{len(pending)} pending task(s) to address")
 
         # Blocked tasks
-        tasks = self.store.get_items(session_id, item_type="task")
         blocked = [t for t in tasks if t.get("status") == "blocked"]
         if blocked:
             suggestions.append(f"{len(blocked)} task(s) blocked - resolve dependencies")
@@ -932,11 +964,10 @@ class ThinkingSession:
         if overdue:
             suggestions.append(f"{len(overdue)} task(s) overdue - update or complete")
 
-        # Requirements needing verification
-        requirements = self.store.get_items(session_id, item_type="requirement")
-        unverified = [r for r in requirements if r.get("status") not in ("verified", "rejected")]
-        if unverified:
-            suggestions.append(f"{len(unverified)} requirement(s) need verification")
+        # High priority tasks
+        urgent = [t for t in tasks if t.get("priority") in ("critical", "high") and t.get("status") != "completed"]
+        if urgent:
+            suggestions.append(f"{len(urgent)} high-priority task(s) need attention")
 
         if not suggestions:
             suggestions.append("Session is up to date - continue reasoning")
@@ -947,29 +978,31 @@ class ThinkingSession:
         """Get MCP usage guide with resource references."""
         return {
             "tools": {
-                "thinking": "PRIMARY - Create thoughts with operations (requirements, tasks, traces)",
-                "session": "Lifecycle: start, context, end, clear",
-                "items": "Query/manage: list, get, delete, update",
-                "project": "Analytics: health, critical_path, overdue, impact",
-                "diagram": "Visualize: gantt, class_hierarchy, sequence, traceability",
-                "code_inspection": "Python analysis (26 actions)",
+                "session": "Lifecycle + context: start, context (includes project health), end, clear",
+                "thinking": "PRIMARY - Create thoughts with sections (context, goals, design, alternatives) and operations",
+                "diagram": "Visualize: gantt, class_hierarchy, sequence, design_doc",
+                "code_inspection": "Python/JS/C#/C++ analysis",
                 "recommender": "Code quality: refactoring, test_coverage",
                 "natural_language_query": "RECOMMENDED - Plain English queries",
                 "instance_manager": "Manage instances/sources"
             },
-            "resources": {
-                "guide://logical-thinking/usage": "Complete AI Agent Usage Guide",
-                "guide://reter/session-context": "Session Context (CRITICAL)",
-                "python://reter/tools": "Python Analysis Tools Reference",
-                "recipe://refactoring/index": "Refactoring Recipes Index",
-                "reference://reter/syntax-quick": "Syntax Quick Reference"
+            "design_doc_sections": {
+                "context": "Problem statement, background",
+                "goals": "What we want to achieve",
+                "non_goals": "Explicitly out of scope",
+                "design": "Technical approach",
+                "alternatives": "Options considered and rejected",
+                "risks": "What could go wrong",
+                "implementation": "Implementation details",
+                "tasks": "Task breakdown"
             },
+            "task_categories": ["requirement", "feature", "bug", "refactor", "test", "docs", "research"],
             "recommended_workflow": [
-                "1. session(action='context') - restore context (YOU ARE HERE)",
-                "2. thinking(...) - continue reasoning chain",
-                "3. code_inspection/natural_language_query - analyze code",
-                "4. recommender('refactoring'/'test_coverage') - find issues",
-                "5. thinking(..., operations={...}) - record findings",
+                "1. session(action='context') - restore context with project health (YOU ARE HERE)",
+                "2. thinking(section='context') - document problem/background",
+                "3. thinking(section='goals') - define objectives",
+                "4. thinking(section='design') - propose solution",
+                "5. thinking(section='tasks', operations={tasks:[...]}) - create work items",
                 "6. session(action='end') - archive when done"
             ]
         }

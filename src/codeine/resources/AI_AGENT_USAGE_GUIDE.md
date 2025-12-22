@@ -1,7 +1,7 @@
 # AI Agent Guide: Using RETER MCP Effectively
 
 **Target Audience:** AI Agents (Claude Code, etc.) using RETER for semantic reasoning
-**Goal:** Master incremental semantic reasoning for maximum effectiveness
+**Goal:** Master the Design Docs approach for structured reasoning
 
 ---
 
@@ -14,23 +14,54 @@
 session(action="context")
 ```
 
-This restores: thoughts, requirements, recommendations, project status, and suggestions.
+This restores: **design doc sections**, **tasks with categories**, **project health**, **milestones**, and **suggestions**.
 
 Call this:
 1. At the START of every new session
 2. After every context compactification
 3. When resuming work after any interruption
 
-### 2. Use `thinking` for All Reasoning
+### 2. Use `thinking` with Design Doc Sections
 
 ```python
+# Document the problem/context
 thinking(
-    thought="Analyzing the codebase structure",
+    thought="We need to add OAuth to the auth module...",
     thought_number=1,
-    total_thoughts=3,
-    thought_type="analysis"
+    total_thoughts=5,
+    section="context"
+)
+
+# Define goals
+thinking(
+    thought="Goals: 1) Add OAuth 2) Keep existing login",
+    thought_number=2,
+    total_thoughts=5,
+    section="goals"
+)
+
+# Document design decision
+thinking(
+    thought="Using NextAuth.js for OAuth integration",
+    thought_number=3,
+    total_thoughts=5,
+    section="design",
+    thought_type="decision"
 )
 ```
+
+### Design Doc Sections
+
+| Section | Purpose |
+|---------|---------|
+| `context` | Problem statement, background |
+| `goals` | What we want to achieve |
+| `non_goals` | Explicitly out of scope |
+| `design` | Technical approach |
+| `alternatives` | Options considered and rejected |
+| `risks` | What could go wrong |
+| `implementation` | Implementation details |
+| `tasks` | Task breakdown |
 
 ---
 
@@ -160,16 +191,30 @@ recommender("test_coverage", "untested_classes")
 
 ## The `thinking` Tool Operations
 
-### Create Items
+### Create Tasks with Categories
 ```python
 operations={
-    "requirement": {"text": "System shall...", "priority": "high"},
-    "recommendation": {"text": "Refactor to...", "severity": "medium"},
-    "task": {"name": "Implement X", "start_date": "2024-01-15", "duration_days": 5},
-    "milestone": {"name": "Release v1.0", "end_date": "2024-02-01"},
-    "decision": {"text": "Use Strategy pattern", "rationale": "..."}
+    "task": {
+        "name": "Implement OAuth",
+        "category": "feature",  # feature, bug, refactor, test, docs, research
+        "priority": "high",     # critical, high, medium, low
+        "start_date": "2024-01-15",
+        "duration_days": 5
+    },
+    "milestone": {"name": "OAuth Ready", "date": "2024-02-01"}
 }
 ```
+
+### Task Categories
+
+| Category | Use For |
+|----------|---------|
+| `feature` | New functionality |
+| `bug` | Bug fixes |
+| `refactor` | Code refactoring |
+| `test` | Test creation |
+| `docs` | Documentation |
+| `research` | Research/investigation |
 
 ### Create Relations
 ```python

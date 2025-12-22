@@ -4,12 +4,14 @@ Recommender Tools Registrar
 Generic recommender tool that dispatches to specific recommender types.
 
 Usage:
-- recommender("refactoring") - lists all refactoring detectors
+- recommender() - queues tasks for all 4 recommender types
+- recommender("refactoring") - queues tasks for all refactoring detectors
 - recommender("refactoring", "god_class") - runs specific detector
-- recommender("test_coverage") - lists all test coverage detectors
-- recommender("test_coverage", "untested_classes") - runs specific detector
-- recommender("documentation_maintenance") - lists all documentation detectors
-- recommender("documentation_maintenance", "orphaned_sections") - runs specific detector
+
+Available types: refactoring, test_coverage, documentation_maintenance, redundancy_reduction
+
+Queue mode creates tasks in SQL storage that can be viewed with:
+  items(action='list', source_tool='recommender')
 """
 
 from typing import Dict, Any, Optional, List
@@ -24,7 +26,7 @@ from ..initialization_progress import (
 
 
 # Available recommender types
-RECOMMENDER_TYPES = ["refactoring", "test_coverage", "documentation_maintenance"]
+RECOMMENDER_TYPES = ["refactoring", "test_coverage", "documentation_maintenance", "redundancy_reduction"]
 
 
 class RecommenderToolsRegistrar(ToolRegistrarBase):
@@ -42,6 +44,9 @@ class RecommenderToolsRegistrar(ToolRegistrarBase):
         from ...tools.documentation_maintenance.tool import (
             DocumentationMaintenanceTool, DETECTORS as DOC_MAINTENANCE_DETECTORS
         )
+        from ...tools.redundancy_reduction.tool import (
+            RedundancyReductionTool, DETECTORS as REDUNDANCY_DETECTORS
+        )
 
         improving_tool = RefactoringTool(self.instance_manager)
         patterns_tool = RefactoringToPatternsTool(self.instance_manager)
@@ -49,11 +54,14 @@ class RecommenderToolsRegistrar(ToolRegistrarBase):
         doc_maintenance_tool = DocumentationMaintenanceTool(
             self.instance_manager, self._default_manager
         )
+        redundancy_tool = RedundancyReductionTool(
+            self.instance_manager, self._default_manager
+        )
 
         @app.tool()
         @truncate_mcp_response
         def recommender(
-            recommender_type: str,
+            recommender_type: Optional[str] = None,
             detector_name: Optional[str] = None,
             instance_name: str = "default",
             session_instance: str = "default",
@@ -69,14 +77,15 @@ class RecommenderToolsRegistrar(ToolRegistrarBase):
 
             **See: recipe://refactoring/index for refactoring recipes**
 
-            **recommender("refactoring")**: Lists all refactoring detectors
+            **recommender()**: Queues tasks for each recommender type
+            **recommender("refactoring")**: Queues tasks for all detectors
             **recommender("refactoring", "god_class")**: Runs specific detector
 
             Args:
-                recommender_type: Type of recommender ("refactoring", "test_coverage", "documentation_maintenance")
-                detector_name: Specific detector to run. If None, lists available.
+                recommender_type: Type of recommender. If None, queues tasks for all types.
+                detector_name: Specific detector to run. If None, queues all detectors as tasks.
                 instance_name: RETER instance to analyze
-                session_instance: Session instance for storing recommendations
+                session_instance: Session instance for storing tasks
                 categories: Filter detectors by category
                 severities: Filter by severity: low, medium, high
                 detector_type: "all", "improving", or "patterns" (refactoring only)
@@ -85,7 +94,8 @@ class RecommenderToolsRegistrar(ToolRegistrarBase):
                 link_to_thought: Link recommendations to a thought ID
 
             Returns:
-                Without detector_name: List of available detectors
+                Without recommender_type: Tasks created for each recommender type
+                Without detector_name: Tasks created for each detector
                 With detector_name: Detection results and recommendations
             """
             # Recommender requires RETER to be ready
@@ -93,6 +103,44 @@ class RecommenderToolsRegistrar(ToolRegistrarBase):
                 require_default_instance()
             except ComponentNotReadyError as e:
                 return e.to_response()
+
+            # NO TYPE: Queue tasks for each recommender type
+            if recommender_type is None:
+                from ...tools.unified.store import UnifiedStore
+                store = UnifiedStore()
+                session_id = store.get_or_create_session(session_instance)
+
+                results = {
+                    "success": True,
+                    "mode": "queue_types",
+                    "tasks_created": [],
+                    "total_tasks": 0,
+                    "session_instance": session_instance,
+                    "_tip": "Run items(action='list', source_tool='recommender') to see queued tasks",
+                }
+
+                for rtype in RECOMMENDER_TYPES:
+                    task_id = store.add_item(
+                        session_id=session_id,
+                        item_type="task",
+                        content=f"Run {rtype} recommender",
+                        category="research",
+                        priority="medium",
+                        status="pending",
+                        source_tool=f"recommender:{rtype}",
+                        metadata={
+                            "recommender_type": rtype,
+                            "command": f"recommender('{rtype}')"
+                        }
+                    )
+                    results["tasks_created"].append({
+                        "task_id": task_id,
+                        "recommender_type": rtype,
+                        "command": f"recommender('{rtype}')"
+                    })
+                    results["total_tasks"] += 1
+
+                return results
 
             # Validate recommender type
             if recommender_type not in RECOMMENDER_TYPES:
@@ -150,6 +198,21 @@ class RecommenderToolsRegistrar(ToolRegistrarBase):
                     link_to_thought=link_to_thought
                 )
 
+            # REDUNDANCY REDUCTION RECOMMENDER
+            if recommender_type == "redundancy_reduction":
+                return _run_redundancy_reduction_recommender(
+                    tool=redundancy_tool,
+                    detectors=REDUNDANCY_DETECTORS,
+                    detector_name=detector_name,
+                    instance_name=instance_name,
+                    session_instance=session_instance,
+                    categories=categories,
+                    severities=severities,
+                    params=params,
+                    create_tasks=create_tasks,
+                    link_to_thought=link_to_thought
+                )
+
             # Future recommender types go here
             return {"success": False, "error": f"Recommender '{recommender_type}' not implemented"}
 
@@ -171,60 +234,99 @@ def _run_refactoring_recommender(
 ) -> Dict[str, Any]:
     """Run the refactoring recommender."""
 
-    # PREPARE MODE: List available detectors
+    # QUEUE MODE: Create tasks for each detector when no specific detector given
     if detector_name is None:
+        store = improving_tool._get_unified_store()
+        if not store:
+            return {"success": False, "error": "Could not access unified store"}
+
+        session_id = improving_tool._get_or_create_session(store, session_instance)
+        if not session_id:
+            return {"success": False, "error": "Could not create session"}
+
+        # Mark parent task as completed (created by recommender())
+        _complete_recommender_task(store, session_id, "refactoring")
+
         results = {
             "success": True,
             "recommender_type": "refactoring",
-            "mode": "prepare",
+            "mode": "queue",
             "detector_type": detector_type,
-            "improving": None,
-            "patterns": None,
-            "total_detectors": 0,
-            "total_recommendations": 0,
+            "tasks_created": [],
+            "total_tasks": 0,
             "session_instance": session_instance,
+            "_tip": "Run items(action='list', source_tool='recommender:refactoring') to see queued tasks",
             "_resources": {
                 "recipe://refactoring/index": "Refactoring Recipes Index",
                 "recipe://refactoring/chapter-03": "Bad Smells in Code"
             }
         }
 
-        # Get improving detectors
+        # Queue improving detectors
         if detector_type in ("all", "improving"):
-            improving_result = improving_tool.prepare(
-                instance_name=instance_name,
-                categories=categories,
-                severities=severities,
-                session_instance=session_instance
-            )
-            results["improving"] = {
-                "detectors": improving_result.get("detectors", []),
-                "count": improving_result.get("detector_count", 0),
-                "recommendations_created": improving_result.get("recommendations_created", 0)
-            }
-            results["total_detectors"] += results["improving"]["count"]
-            results["total_recommendations"] += results["improving"]["recommendations_created"]
+            for det_name, det_info in detectors.items():
+                task_id = store.add_item(
+                    session_id=session_id,
+                    item_type="task",
+                    content=f"Run {det_name} detector: {det_info.get('description', '')}",
+                    category="research",
+                    priority="medium",
+                    status="pending",
+                    source_tool=f"recommender:refactoring:{det_name}",
+                    metadata={
+                        "recommender_type": "refactoring",
+                        "detector_name": det_name,
+                        "detector_type": "improving",
+                        "instance_name": instance_name,
+                        "command": f"recommender('refactoring', '{det_name}')"
+                    }
+                )
+                results["tasks_created"].append({
+                    "task_id": task_id,
+                    "detector": det_name,
+                    "type": "improving",
+                    "description": det_info.get("description", "")
+                })
+                results["total_tasks"] += 1
 
-        # Get pattern detectors
+        # Queue pattern detectors
         if detector_type in ("all", "patterns"):
-            patterns_result = patterns_tool.prepare(
-                instance_name=instance_name,
-                categories=categories,
-                severities=severities,
-                session_instance=session_instance
-            )
-            results["patterns"] = {
-                "detectors": patterns_result.get("detectors", []),
-                "count": patterns_result.get("detector_count", 0),
-                "recommendations_created": patterns_result.get("recommendations_created", 0)
-            }
-            results["total_detectors"] += results["patterns"]["count"]
-            results["total_recommendations"] += results["patterns"]["recommendations_created"]
+            for det_name, det_info in pattern_detectors.items():
+                task_id = store.add_item(
+                    session_id=session_id,
+                    item_type="task",
+                    content=f"Run {det_name} detector: {det_info.get('description', '')}",
+                    category="research",
+                    priority="medium",
+                    status="pending",
+                    source_tool=f"recommender:refactoring:{det_name}",
+                    metadata={
+                        "recommender_type": "refactoring",
+                        "detector_name": det_name,
+                        "detector_type": "patterns",
+                        "instance_name": instance_name,
+                        "command": f"recommender('refactoring', '{det_name}')"
+                    }
+                )
+                results["tasks_created"].append({
+                    "task_id": task_id,
+                    "detector": det_name,
+                    "type": "patterns",
+                    "description": det_info.get("description", "")
+                })
+                results["total_tasks"] += 1
 
         return results
 
     # DETECTOR MODE: Run specific detector
     if detector_name in detectors:
+        # Mark detector task as completed
+        store = improving_tool._get_unified_store()
+        if store:
+            session_id = improving_tool._get_or_create_session(store, session_instance)
+            if session_id:
+                _complete_detector_task(store, session_id, "refactoring", detector_name)
+
         return improving_tool.detector(
             detector_name=detector_name,
             instance_name=instance_name,
@@ -234,6 +336,13 @@ def _run_refactoring_recommender(
             link_to_thought=link_to_thought
         )
     elif detector_name in pattern_detectors:
+        # Mark detector task as completed
+        store = patterns_tool._get_unified_store()
+        if store:
+            session_id = patterns_tool._get_or_create_session(store, session_instance)
+            if session_id:
+                _complete_detector_task(store, session_id, "refactoring", detector_name)
+
         return patterns_tool.detector(
             detector_name=detector_name,
             instance_name=instance_name,
@@ -267,25 +376,67 @@ def _run_test_coverage_recommender(
 ) -> Dict[str, Any]:
     """Run the test coverage recommender."""
 
-    # PREPARE MODE: List available detectors
+    # QUEUE MODE: Create tasks for each detector when no specific detector given
     if detector_name is None:
-        result = tool.prepare(
-            instance_name=instance_name,
-            categories=categories,
-            severities=severities,
-            session_instance=session_instance
-        )
-        result["recommender_type"] = "test_coverage"
-        result["mode"] = "prepare"
-        result["_resources"] = {
-            "python://reter/tools": "Python Analysis Tools Reference",
-            "recipe://refactoring/chapter-04": "Building Tests"
+        store = tool._get_unified_store()
+        if not store:
+            return {"success": False, "error": "Could not access unified store"}
+
+        session_id = tool._get_or_create_session(store, session_instance)
+        if not session_id:
+            return {"success": False, "error": "Could not create session"}
+
+        # Mark parent task as completed (created by recommender())
+        _complete_recommender_task(store, session_id, "test_coverage")
+
+        results = {
+            "success": True,
+            "recommender_type": "test_coverage",
+            "mode": "queue",
+            "tasks_created": [],
+            "total_tasks": 0,
+            "session_instance": session_instance,
+            "_tip": "Run items(action='list', source_tool='recommender:test_coverage') to see queued tasks",
+            "_resources": {
+                "python://reter/tools": "Python Analysis Tools Reference",
+                "recipe://refactoring/chapter-04": "Building Tests"
+            }
         }
-        result["_tip"] = "Use code_inspection(action='find_tests', target='entity_name') to find existing tests"
-        return result
+
+        for det_name, det_info in detectors.items():
+            task_id = store.add_item(
+                session_id=session_id,
+                item_type="task",
+                content=f"Run {det_name} detector: {det_info.get('description', '')}",
+                category="research",
+                priority="medium",
+                status="pending",
+                source_tool=f"recommender:test_coverage:{det_name}",
+                metadata={
+                    "recommender_type": "test_coverage",
+                    "detector_name": det_name,
+                    "instance_name": instance_name,
+                    "command": f"recommender('test_coverage', '{det_name}')"
+                }
+            )
+            results["tasks_created"].append({
+                "task_id": task_id,
+                "detector": det_name,
+                "description": det_info.get("description", "")
+            })
+            results["total_tasks"] += 1
+
+        return results
 
     # DETECTOR MODE: Run specific detector
     if detector_name in detectors:
+        # Mark detector task as completed
+        store = tool._get_unified_store()
+        if store:
+            session_id = tool._get_or_create_session(store, session_instance)
+            if session_id:
+                _complete_detector_task(store, session_id, "test_coverage", detector_name)
+
         result = tool.detector(
             detector_name=detector_name,
             instance_name=instance_name,
@@ -319,24 +470,66 @@ def _run_documentation_maintenance_recommender(
 ) -> Dict[str, Any]:
     """Run the documentation maintenance recommender."""
 
-    # PREPARE MODE: List available detectors
+    # QUEUE MODE: Create tasks for each detector when no specific detector given
     if detector_name is None:
-        result = tool.prepare(
-            instance_name=instance_name,
-            categories=categories,
-            severities=severities,
-            session_instance=session_instance
-        )
-        result["recommender_type"] = "documentation_maintenance"
-        result["mode"] = "prepare"
-        result["_resources"] = {
-            "python://reter/tools": "Python Analysis Tools Reference",
+        store = tool._get_unified_store()
+        if not store:
+            return {"success": False, "error": "Could not access unified store"}
+
+        session_id = tool._get_or_create_session(store, session_instance)
+        if not session_id:
+            return {"success": False, "error": "Could not create session"}
+
+        # Mark parent task as completed (created by recommender())
+        _complete_recommender_task(store, session_id, "documentation_maintenance")
+
+        results = {
+            "success": True,
+            "recommender_type": "documentation_maintenance",
+            "mode": "queue",
+            "tasks_created": [],
+            "total_tasks": 0,
+            "session_instance": session_instance,
+            "_tip": "Run items(action='list', source_tool='recommender:documentation_maintenance') to see queued tasks",
+            "_resources": {
+                "python://reter/tools": "Python Analysis Tools Reference",
+            }
         }
-        result["_tip"] = "Use analyze_documentation_relevance() for detailed analysis"
-        return result
+
+        for det_name, det_info in detectors.items():
+            task_id = store.add_item(
+                session_id=session_id,
+                item_type="task",
+                content=f"Run {det_name} detector: {det_info.get('description', '')}",
+                category="research",
+                priority="medium",
+                status="pending",
+                source_tool=f"recommender:documentation_maintenance:{det_name}",
+                metadata={
+                    "recommender_type": "documentation_maintenance",
+                    "detector_name": det_name,
+                    "instance_name": instance_name,
+                    "command": f"recommender('documentation_maintenance', '{det_name}')"
+                }
+            )
+            results["tasks_created"].append({
+                "task_id": task_id,
+                "detector": det_name,
+                "description": det_info.get("description", "")
+            })
+            results["total_tasks"] += 1
+
+        return results
 
     # DETECTOR MODE: Run specific detector
     if detector_name in detectors:
+        # Mark detector task as completed
+        store = tool._get_unified_store()
+        if store:
+            session_id = tool._get_or_create_session(store, session_instance)
+            if session_id:
+                _complete_detector_task(store, session_id, "documentation_maintenance", detector_name)
+
         result = tool.detector(
             detector_name=detector_name,
             instance_name=instance_name,
@@ -354,3 +547,142 @@ def _run_documentation_maintenance_recommender(
             "available_detectors": list(detectors.keys()),
             "hint": "Call recommender('documentation_maintenance') to see all available detectors"
         }
+
+
+def _run_redundancy_reduction_recommender(
+    tool,
+    detectors,
+    detector_name: Optional[str],
+    instance_name: str,
+    session_instance: str,
+    categories: Optional[List[str]],
+    severities: Optional[List[str]],
+    params: Optional[Dict[str, Any]],
+    create_tasks: bool,
+    link_to_thought: Optional[str]
+) -> Dict[str, Any]:
+    """Run the redundancy reduction recommender."""
+
+    # QUEUE MODE: Create tasks for each detector when no specific detector given
+    if detector_name is None:
+        store = tool._get_unified_store()
+        if not store:
+            return {"success": False, "error": "Could not access unified store"}
+
+        session_id = tool._get_or_create_session(store, session_instance)
+        if not session_id:
+            return {"success": False, "error": "Could not create session"}
+
+        # Mark parent task as completed (created by recommender())
+        _complete_recommender_task(store, session_id, "redundancy_reduction")
+
+        results = {
+            "success": True,
+            "recommender_type": "redundancy_reduction",
+            "mode": "queue",
+            "tasks_created": [],
+            "total_tasks": 0,
+            "session_instance": session_instance,
+            "_tip": "Run items(action='list', source_tool='recommender:redundancy_reduction') to see queued tasks",
+            "_resources": {
+                "python://reter/tools": "Python Analysis Tools Reference",
+            }
+        }
+
+        for det_name, det_info in detectors.items():
+            task_id = store.add_item(
+                session_id=session_id,
+                item_type="task",
+                content=f"Run {det_name} detector: {det_info.get('description', '')}",
+                category="research",
+                priority="medium",
+                status="pending",
+                source_tool=f"recommender:redundancy_reduction:{det_name}",
+                metadata={
+                    "recommender_type": "redundancy_reduction",
+                    "detector_name": det_name,
+                    "instance_name": instance_name,
+                    "command": f"recommender('redundancy_reduction', '{det_name}')"
+                }
+            )
+            results["tasks_created"].append({
+                "task_id": task_id,
+                "detector": det_name,
+                "description": det_info.get("description", "")
+            })
+            results["total_tasks"] += 1
+
+        return results
+
+    # DETECTOR MODE: Run specific detector
+    if detector_name in detectors:
+        # Mark detector task as completed
+        store = tool._get_unified_store()
+        if store:
+            session_id = tool._get_or_create_session(store, session_instance)
+            if session_id:
+                _complete_detector_task(store, session_id, "redundancy_reduction", detector_name)
+
+        result = tool.detector(
+            detector_name=detector_name,
+            instance_name=instance_name,
+            params=params,
+            session_instance=session_instance,
+            create_tasks=create_tasks,
+            link_to_thought=link_to_thought
+        )
+        result["recommender_type"] = "redundancy_reduction"
+        return result
+    else:
+        return {
+            "success": False,
+            "error": f"Unknown detector: '{detector_name}'",
+            "available_detectors": list(detectors.keys()),
+            "hint": "Call recommender('redundancy_reduction') to see all available detectors"
+        }
+
+
+def _complete_recommender_task(store, session_id: str, recommender_type: str) -> bool:
+    """Mark the parent recommender task as completed.
+
+    When recommender("refactoring") is called, find and complete the task
+    "Run refactoring recommender" that was created by recommender().
+    """
+    try:
+        # Find task with source_tool="recommender:{type}" and status="pending"
+        items = store.get_items(
+            session_id=session_id,
+            item_type="task",
+            status="pending",
+            source_tool=f"recommender:{recommender_type}",
+            limit=1
+        )
+        if items:
+            store.update_item(items[0]["item_id"], status="completed")
+            return True
+        return False
+    except Exception:
+        return False
+
+
+def _complete_detector_task(store, session_id: str, recommender_type: str, detector_name: str) -> bool:
+    """Mark the detector task as completed.
+
+    When recommender("refactoring", "find_large_classes") is called, find and complete
+    the task "Run find_large_classes detector" that was created by recommender("refactoring").
+    """
+    try:
+        # Find task with source_tool="recommender:{type}:{detector}" and status="pending"
+        items = store.get_items(
+            session_id=session_id,
+            item_type="task",
+            status="pending",
+            source_tool=f"recommender:{recommender_type}:{detector_name}",
+            limit=1
+        )
+        if items:
+            store.update_item(items[0]["item_id"], status="completed")
+            return True
+        return False
+    except Exception:
+        return False

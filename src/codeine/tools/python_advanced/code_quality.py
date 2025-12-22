@@ -12,10 +12,22 @@ from .base import AdvancedToolsBase
 class CodeQualityTools(AdvancedToolsBase):
     """Code quality analysis tools."""
 
+    # Default patterns to exclude from refactoring analysis
+    DEFAULT_EXCLUDE_PATTERNS = [
+        # Test files and classes
+        "**/test_*", "**/*_test.py", "**/tests/**",
+        "Test*",  # Test class names
+        # Known large-by-design patterns
+        "*Visitor*", "*FactExtraction*",  # AST visitors are expected to be large
+        "*ParserBase*", "*LexerBase*",  # Parser/Lexer base classes
+    ]
+
     def find_large_classes(
         self,
         instance_name: str,
-        threshold: int = 20
+        threshold: int = 20,
+        exclude_patterns: List[str] = None,
+        exclude_test_files: bool = True
     ) -> Dict[str, Any]:
         """
         Find classes with too many methods (God classes).
@@ -23,12 +35,24 @@ class CodeQualityTools(AdvancedToolsBase):
         Args:
             instance_name: RETER instance name
             threshold: Minimum number of methods (default: 20)
+            exclude_patterns: Glob patterns to exclude (files/classes)
+            exclude_test_files: Exclude test files and classes (default: True)
 
         Returns:
             dict with success, classes list, count, queries
         """
+        import fnmatch
         start_time = time.time()
         queries = []
+
+        # Build exclusion patterns
+        patterns = list(exclude_patterns or [])
+        if exclude_test_files:
+            patterns.extend([
+                "**/test_*", "**/*_test.py", "**/tests/**",
+                "Test*", "*Test", "*Tests"
+            ])
+
         try:
             class_concept = self._concept('Class')
             method_concept = self._concept('Method')
@@ -51,21 +75,36 @@ class CodeQualityTools(AdvancedToolsBase):
             result = self.reter.reql(query)
             rows = self._query_to_list(result)
 
-            classes = [
-                {
-                    "qualified_name": row[0],
-                    "name": row[1],
-                    "file": row[2],  # Use file (works for all languages)
-                    "method_count": int(row[3]) if row[3] else 0
-                }
-                for row in rows
-            ]
+            classes = []
+            excluded_count = 0
+            for row in rows:
+                qualified_name = row[0]
+                name = row[1]
+                file_path = row[2]
+                method_count = int(row[3]) if row[3] else 0
+
+                # Check exclusion patterns
+                excluded = False
+                for pattern in patterns:
+                    if fnmatch.fnmatch(file_path, pattern) or fnmatch.fnmatch(name, pattern):
+                        excluded = True
+                        excluded_count += 1
+                        break
+
+                if not excluded:
+                    classes.append({
+                        "qualified_name": qualified_name,
+                        "name": name,
+                        "file": file_path,
+                        "method_count": method_count
+                    })
 
             time_ms = (time.time() - start_time) * 1000
             return {
                 "success": True,
                 "classes": classes,
                 "count": len(classes),
+                "excluded_count": excluded_count,
                 "threshold": threshold,
                 "queries": queries,
                 "time_ms": time_ms
@@ -84,7 +123,9 @@ class CodeQualityTools(AdvancedToolsBase):
     def find_long_parameter_lists(
         self,
         instance_name: str,
-        threshold: int = 5
+        threshold: int = 5,
+        exclude_patterns: List[str] = None,
+        exclude_test_files: bool = True
     ) -> Dict[str, Any]:
         """
         Find functions/methods with too many parameters.
@@ -92,26 +133,39 @@ class CodeQualityTools(AdvancedToolsBase):
         Args:
             instance_name: RETER instance name
             threshold: Maximum acceptable parameter count (default: 5)
+            exclude_patterns: Glob patterns to exclude (files/functions)
+            exclude_test_files: Exclude test files and functions (default: True)
 
         Returns:
             dict with success, functions list, count, queries
         """
+        import fnmatch
         start_time = time.time()
         queries = []
+
+        # Build exclusion patterns
+        patterns = list(exclude_patterns or [])
+        if exclude_test_files:
+            patterns.extend([
+                "**/test_*", "**/*_test.py", "**/tests/**",
+                "test_*", "Test*"
+            ])
+
         try:
             param_concept = self._concept('Parameter')
             func_concept = self._concept('Function')
             method_concept = self._concept('Method')
             query = f"""
-                SELECT ?func ?name ?type (COUNT(?param) AS ?param_count)
+                SELECT ?func ?name ?type ?file (COUNT(?param) AS ?param_count)
                 WHERE {{
                     ?func type ?type .
                     ?func name ?name .
+                    ?func inFile ?file .
                     ?param type {param_concept} .
                     ?param ofFunction ?func .
                     FILTER(?type = {func_concept} || ?type = {method_concept})
                 }}
-                GROUP BY ?func ?name ?type
+                GROUP BY ?func ?name ?type ?file
                 HAVING (?param_count > {threshold})
                 ORDER BY DESC(?param_count)
             """
@@ -120,21 +174,38 @@ class CodeQualityTools(AdvancedToolsBase):
             result = self.reter.reql(query)
             rows = self._query_to_list(result)
 
-            functions = [
-                {
-                    "qualified_name": row[0],
-                    "name": row[1],
-                    "type": row[2],
-                    "parameter_count": int(row[3]) if row[3] else 0
-                }
-                for row in rows
-            ]
+            functions = []
+            excluded_count = 0
+            for row in rows:
+                qualified_name = row[0]
+                name = row[1]
+                func_type = row[2]
+                file_path = row[3] if len(row) > 3 else ""
+                param_count = int(row[4]) if len(row) > 4 and row[4] else 0
+
+                # Check exclusion patterns
+                excluded = False
+                for pattern in patterns:
+                    if (file_path and fnmatch.fnmatch(file_path, pattern)) or fnmatch.fnmatch(name, pattern):
+                        excluded = True
+                        excluded_count += 1
+                        break
+
+                if not excluded:
+                    functions.append({
+                        "qualified_name": qualified_name,
+                        "name": name,
+                        "type": func_type,
+                        "file": file_path,
+                        "parameter_count": param_count
+                    })
 
             time_ms = (time.time() - start_time) * 1000
             return {
                 "success": True,
                 "functions": functions,
                 "count": len(functions),
+                "excluded_count": excluded_count,
                 "threshold": threshold,
                 "queries": queries,
                 "time_ms": time_ms

@@ -55,14 +55,22 @@ DETECTORS = {
         "description": "Find classes with too many methods (God classes)",
         "category": "code_smell",
         "severity": "high",
-        "default_params": {"threshold": 20},  # actual param name
+        "default_params": {
+            "threshold": 20,
+            "exclude_test_files": True,
+            "exclude_patterns": ["*Visitor*", "*FactExtraction*", "*ParserBase*", "*LexerBase*"]
+        },
         "source": "advanced"
     },
     "find_long_parameter_lists": {
         "description": "Find functions/methods with too many parameters",
         "category": "code_smell",
         "severity": "medium",
-        "default_params": {"threshold": 5},  # actual param name
+        "default_params": {
+            "threshold": 5,
+            "exclude_test_files": True,
+            "exclude_patterns": []
+        },
         "source": "advanced"
     },
     "find_magic_numbers": {
@@ -72,34 +80,8 @@ DETECTORS = {
         "default_params": {"exclude_common": True, "min_occurrences": 2, "limit": 100, "offset": 0},
         "source": "advanced"
     },
-    "detect_long_functions": {
-        "description": "Find functions exceeding line count threshold",
-        "category": "code_smell",
-        "severity": "medium",
-        "default_params": {"threshold": 20, "limit": 100},  # actual param name
-        "source": "advanced"
-    },
-    "detect_data_classes": {
-        "description": "Detect data classes (classes with only getters/setters)",
-        "category": "code_smell",
-        "severity": "low",
-        "default_params": {"property_ratio": 0.8, "limit": 100},
-        "source": "advanced"
-    },
-    "detect_feature_envy": {
-        "description": "Detect methods calling other classes more than own",
-        "category": "code_smell",
-        "severity": "high",
-        "default_params": {"external_ratio": 1.5, "min_external_calls": 3, "limit": 20, "offset": 0},
-        "source": "advanced"
-    },
-    "detect_refused_bequest": {
-        "description": "Detect subclasses that don't use inherited methods",
-        "category": "code_smell",
-        "severity": "medium",
-        "default_params": {"usage_threshold": 0.5, "min_inherited_methods": 3, "limit": 100},
-        "source": "advanced"
-    },
+    # NOTE: detect_long_functions, detect_data_classes, detect_feature_envy, detect_refused_bequest
+    # were removed - methods don't exist in AdvancedPythonTools. Need to implement or keep removed.
     "find_message_chains": {
         "description": "Find long method call chains",
         "category": "code_smell",
@@ -681,18 +663,19 @@ class RefactoringTool(RefactoringToolBase):
                     f"Execute with: refactoring_detector(detector_name='{detector_name}')"
                 )
 
-                # Create item in unified store
+                # Create task item in unified store (Design Docs approach)
                 item_id = store.add_item(
                     session_id=session_id,
-                    item_type="recommendation",
+                    item_type="task",
                     content=text,
-                    description=description,  # column name is 'description', not 'summary'
-                    category=detector_info["category"],
+                    description=description,
+                    category="refactor",  # Use TaskCategory
                     priority=self._severity_to_priority(detector_info["severity"]),
                     status="pending",
                     source_tool="refactoring_improving:prepare",
                     metadata={
                         "detector_name": detector_name,
+                        "detector_category": detector_info["category"],
                         "run_timestamp": run_timestamp,
                         "default_params": detector_info["default_params"]
                     }
@@ -725,13 +708,13 @@ class RefactoringTool(RefactoringToolBase):
 
             return {
                 "success": True,
-                "message": f"Created {len(created)} detector recommendations",
-                "recommendations_created": len(created),
+                "message": f"Created {len(created)} detector tasks",
+                "tasks_created": len(created),
                 "detector_count": len(created),
                 "detectors": detectors,
                 "by_category": by_category,
                 "session_instance": session_instance,
-                "note": "Call items(item_type='recommendation') to view details"
+                "note": "Call items(item_type='task', category='refactor') to view details"
             }
 
         except Exception as e:
@@ -835,11 +818,11 @@ class RefactoringTool(RefactoringToolBase):
                 create_tasks=create_tasks
             )
 
-            # Mark any pending "Run detector: X" recommendations as completed
+            # Mark any pending "Run detector: X" tasks as completed
             try:
                 pending_items = store.get_items(
                     session_id=session_id,
-                    item_type="recommendation",
+                    item_type="task",
                     status="pending"
                 )
                 for item in pending_items:
@@ -855,12 +838,11 @@ class RefactoringTool(RefactoringToolBase):
                 "detector": detector_name,
                 "params_used": effective_params,
                 "findings_count": self._count_findings(result),
-                "recommendations_created": items_result["items_created"],
-                "tasks_created": items_result["tasks_created"],
+                "tasks_created": items_result["items_created"] + items_result["tasks_created"],
                 "relations_created": items_result["relations_created"],
                 "session_instance": session_instance,
                 "time_ms": result.get("time_ms"),
-                "note": "Call items(item_type='recommendation') to view details"
+                "note": "Call items(item_type='task', category='refactor') to view details"
             }
 
         except Exception as e:

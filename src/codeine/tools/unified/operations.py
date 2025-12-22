@@ -3,9 +3,12 @@ Operations Handler for Unified Thinking System
 
 Handles all operations that can be performed within a thinking step:
 - RETER knowledge operations (assert, query, python_file, forget)
-- Item creation (requirement, recommendation, task, milestone, etc.)
+- Item creation (thought, task, milestone) - Design Docs approach
 - Traceability operations (traces, derives, satisfies, etc.)
 - Activity recording
+
+Note: Legacy item types (requirement, recommendation) are mapped to tasks
+with appropriate categories for backward compatibility.
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -398,18 +401,26 @@ class OperationsHandler:
         thought_id: str,
         data: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Create a recommendation item."""
+        """Create a recommendation as a task with category (Design Docs approach).
+
+        Recommendations are now stored as tasks with appropriate category.
+        This maintains backward compatibility with the 'recommendation' operation.
+        """
         try:
-            item_id = data.get("id") or self.store.generate_id(session_id, "REC")
+            item_id = data.get("id") or self.store.generate_id(session_id, "TASK")
+
+            # Map recommendation to task with category
+            # Use provided category or default to "refactor"
+            category = data.get("category", "refactor")
 
             created_id = self.store.add_item(
                 session_id=session_id,
-                item_type="recommendation",
+                item_type="task",  # Use task instead of recommendation
                 content=data.get("text", ""),
                 item_id=item_id,
                 status="pending",
                 priority=data.get("priority", "medium"),
-                category=data.get("category", "general")
+                category=category
             )
 
             self.store.add_relation(created_id, thought_id, "item", "derives")
@@ -421,9 +432,9 @@ class OperationsHandler:
             for file_path in affects:
                 self.store.add_relation(created_id, file_path, "file", "affects")
 
-            return {"id": created_id, "type": "recommendation"}
+            return {"id": created_id, "type": "task"}
         except Exception as e:
-            return {"error": f"Failed to create recommendation: {str(e)}"}
+            return {"error": f"Failed to create task: {str(e)}"}
 
     # Testing guidance to append to task content
     TASK_TESTING_GUIDANCE = (
@@ -474,6 +485,7 @@ class OperationsHandler:
                 item_id=item_id,
                 status="pending",
                 priority=data.get("priority", "medium"),
+                category=data.get("category"),
                 phase=data.get("phase"),
                 start_date=start_date,
                 end_date=end_date,
@@ -504,6 +516,9 @@ class OperationsHandler:
         try:
             item_id = data.get("id") or self.store.generate_id(session_id, "MS")
 
+            # Support both "date" and "target_date" for flexibility
+            target_date = data.get("date") or data.get("target_date")
+
             created_id = self.store.add_item(
                 session_id=session_id,
                 item_type="milestone",
@@ -511,7 +526,7 @@ class OperationsHandler:
                 item_id=item_id,
                 status="pending",
                 priority="high",
-                end_date=data.get("target_date"),
+                end_date=target_date,
                 duration_days=0
             )
 

@@ -66,28 +66,35 @@ Now Claude starts fast because everything is cached.
 
 ## Tools
 
-### Thinking & Reasoning
+### Design Docs (Core Workflow)
 
 | Tool | Description |
 |------|-------------|
-| `thinking` | Record reasoning steps, analysis, decisions |
-| `session` | Manage reasoning sessions (start, context, end) |
-| `items` | Query and manage thoughts, requirements, tasks |
-| `project` | Project analytics (health, critical path, impact) |
+| `session` | Session lifecycle - **call `context` first to restore state** |
+| `thinking` | Record reasoning with sections (context, goals, design, tasks) |
+| `diagram` | Visualize design docs, Gantt charts, UML diagrams |
 
 ### Code Analysis
 
 | Tool | Description |
 |------|-------------|
-| `code_inspection` | Python code analysis (26 actions) |
+| `code_inspection` | Multi-language code analysis (Python, JS, C#, C++) |
 | `recommender` | Refactoring and test coverage recommendations |
-| `diagram` | Generate UML diagrams (class, sequence, etc.) |
+| `natural_language_query` | Ask questions about code in plain English |
 
-### Instance Management
+### Semantic Search (RAG)
+
+| Tool | Description |
+|------|-------------|
+| `semantic_search` | Find code by meaning, not just keywords |
+| `find_similar_clusters` | Detect code duplication patterns |
+
+### Knowledge Management
 
 | Tool | Description |
 |------|-------------|
 | `instance_manager` | Manage RETER instances and sources |
+| `add_knowledge` | Add external code/ontologies to RETER |
 
 ---
 
@@ -100,13 +107,14 @@ Now Claude starts fast because everything is cached.
 
 ## Features
 
-- Logical reasoning with RETER engine
-- Multi-language code analysis
-- Session-based thinking with persistence
-- Requirements and task tracking
-- UML diagram generation
-- Refactoring recommendations
-- Test coverage analysis
+- **Design Docs Workflow** - Structured reasoning with sections (context, goals, design, alternatives, risks, tasks)
+- **Multi-language Analysis** - Python, JavaScript, C#, C++ code inspection
+- **Session Persistence** - Thoughts, tasks, milestones tracked across conversations
+- **Semantic Search (RAG)** - Find code by meaning with vector similarity
+- **UML Diagrams** - Class hierarchy, sequence, call graphs, dependencies
+- **Gantt Charts** - Task scheduling with critical path analysis
+- **Refactoring Recommendations** - 58 code smell detectors
+- **Test Coverage Analysis** - Find untested code paths
 
 ## License
 

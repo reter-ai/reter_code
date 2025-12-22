@@ -77,40 +77,43 @@ Returns:
         "status": "active",
         "created_at": "2024-01-15T10:00:00Z"
     },
-    "thoughts": {
+    "design_doc": {
         "total": 5,
         "max_number": 5,
-        "latest_chain": [...],
-        "key_decisions": [...]
+        "by_section": {"context": 1, "goals": 1, "design": 2, "tasks": 1},
+        "sections": {
+            "context": [{"id": "...", "num": 1, "summary": "..."}],
+            "goals": [...],
+            "design": [...]
+        },
+        "latest_chain": [...]
     },
-    "requirements": {
-        "total": 3,
-        "verified": 1,
-        "pending_verification": 2,
-        "items": [...]
-    },
-    "recommendations": {
-        "total": 10,
-        "completed": 3,
-        "in_progress": 2,
-        "pending": 5,
-        "progress_percent": 30,
-        "by_priority": {...},
-        "highest_priority": [...]
-    },
-    "project": {
-        "total_tasks": 8,
+    "tasks": {
+        "total": 8,
         "completed": 2,
         "in_progress": 3,
         "blocked": 1,
-        "percent_complete": 25,
-        "overdue": [...],
-        "upcoming_milestones": [...]
+        "pending": 2,
+        "progress_percent": 25,
+        "by_category": {"feature": {...}, "bug": {...}},
+        "by_priority": {"critical": 1, "high": 3, "medium": 4},
+        "urgent": [...],
+        "blocked_tasks": [...]
     },
-    "suggestions": ["Continue with task TASK-003"],
+    "project_health": {
+        "percent_complete": 25,
+        "timeline": {"project_start": "...", "project_end": "...", "days_remaining": 30},
+        "overdue_count": 0,
+        "overdue_tasks": []
+    },
+    "milestones": [
+        {"id": "MS-001", "name": "MVP", "target_date": "2024-02-01", "days_until": 15}
+    ],
+    "suggestions": ["Continue thought chain from #5", "2 pending tasks to address"],
     "mcp_guide": {
         "tools": {...},
-        "resources": {...},
+        "design_doc_sections": {...},
+        "task_categories": [...],
         "recommended_workflow": [...]
     }
 }
@@ -155,13 +158,15 @@ Returns:
 }
 ```
 
-## Workflow
+## Workflow - Design Docs Approach
 
-1. **Start of conversation**: `session(action="context")`
-2. **Record reasoning**: Use `thinking()` tool
-3. **Query items**: Use `items()` tool
-4. **Check progress**: Use `project()` tool
-5. **End of session**: `session(action="end")`
+1. **Start of conversation**: `session(action="context")` - restore state
+2. **Document context**: `thinking(section="context", ...)`
+3. **Define goals**: `thinking(section="goals", ...)`
+4. **Document design**: `thinking(section="design", ...)`
+5. **Create tasks**: `thinking(section="tasks", operations={...})`
+6. **Visualize**: `diagram(diagram_type="design_doc")`
+7. **End of session**: `session(action="end")`
 
 ## Multiple Sessions
 

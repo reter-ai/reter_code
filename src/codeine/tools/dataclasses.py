@@ -125,6 +125,7 @@ class ItemsQueryFilters:
     priority: Optional[str] = None
     phase: Optional[str] = None
     category: Optional[str] = None
+    source_tool: Optional[str] = None  # e.g., 'refactoring_improving:find_large_classes'
 
     # Relation filters
     traces_to: Optional[str] = None
@@ -158,6 +159,7 @@ class ThoughtInput:
 
     # Thought metadata
     thought_type: str = "reasoning"
+    section: Optional[str] = None  # Design doc section: context, goals, design, alternatives, etc.
     next_thought_needed: bool = True
     needs_more_thoughts: bool = False
 

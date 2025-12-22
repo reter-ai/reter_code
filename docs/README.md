@@ -4,17 +4,21 @@ Codeine is an AI-powered MCP (Model Context Protocol) server for code reasoning.
 
 ## Documentation Index
 
-### Architecture
+### Getting Started
+- [Tools Reference](./tools.md) - **Complete reference for all MCP tools**
 - [Architecture Overview](./architecture.md) - System design, components, and patterns
 
-### Tools
-- [Tools Overview](./tools-overview.md) - Summary of all 19+ MCP tools
+### Core Tools (Design Docs Workflow)
 
-#### Session Management
-- [thinking](./tools/thinking.md) - Record reasoning steps with operations
-- [session](./tools/session.md) - Session lifecycle management
+| Tool | Description |
+|------|-------------|
+| [session](./tools/session.md) | Session lifecycle - **call `context` first!** |
+| [thinking](./tools/thinking.md) | Record reasoning with design doc sections |
+| [diagram](./tools/diagram.md) | Visualize design docs, Gantt, UML |
+
+### Additional Tools
 - [items](./tools/items.md) - Query and manage items
-- [project](./tools/project.md) - Project analytics
+- [project](./tools/project.md) - Project analytics (also in session context)
 
 #### Code Analysis
 - [code_inspection](./tools/code-inspection.md) - Python/JS/C#/C++ analysis (26 actions)
@@ -41,33 +45,54 @@ Codeine is an AI-powered MCP (Model Context Protocol) server for code reasoning.
 #### Instance Management
 - [instance_manager](./tools/instance-manager.md) - Manage RETER instances
 
-## Quick Start
+## Quick Start - Design Docs Workflow
 
 ```python
-# 1. Restore session context (CRITICAL - do this first!)
+# 1. CRITICAL: Restore session context first!
 session(action="context")
 
-# 2. Check server readiness
-init_status()
-
-# 3. Analyze your code
-code_inspection(action="list_classes")
-
-# 4. Search semantically
-semantic_search("authentication handling")
-
-# 5. Get refactoring recommendations
-recommender(recommender_type="refactoring", detector_name="find_large_classes")
-
-# 6. Record your reasoning
+# 2. Document the problem/context
 thinking(
-    thought="Analyzing the authentication module",
+    thought="We need to refactor the authentication module...",
     thought_number=1,
-    total_thoughts=3
+    total_thoughts=5,
+    section="context"
 )
 
-# 7. Generate diagrams
-diagram(diagram_type="class_hierarchy", target="BaseTool")
+# 3. Define goals
+thinking(
+    thought="Goals: 1) Simplify login flow 2) Add OAuth support",
+    thought_number=2,
+    total_thoughts=5,
+    section="goals"
+)
+
+# 4. Analyze code structure
+code_inspection(action="describe_class", target="AuthService")
+
+# 5. Document design decision
+thinking(
+    thought="Will use NextAuth.js for OAuth integration because...",
+    thought_number=3,
+    total_thoughts=5,
+    section="design",
+    thought_type="decision"
+)
+
+# 6. Create tasks from design
+thinking(
+    thought="Creating implementation tasks",
+    thought_number=4,
+    total_thoughts=5,
+    section="tasks",
+    operations={
+        "task": {"name": "Add NextAuth.js", "category": "feature", "priority": "high"},
+        "milestone": {"name": "OAuth Ready", "date": "2025-01-15"}
+    }
+)
+
+# 7. Visualize the design doc
+diagram(diagram_type="design_doc", format="mermaid")
 ```
 
 ## Configuration

@@ -16,19 +16,42 @@ from .matcher import TestMatcher
 # DETECTOR REGISTRY
 # =============================================================================
 
+# Default patterns to exclude from test coverage analysis
+DEFAULT_EXCLUDE_PATTERNS = [
+    # Test files
+    "**/test_*", "**/*_test.py", "**/tests/**",
+    # Non-Python files
+    "*.h", "*.cpp", "*.c", "*.hpp",
+    "*.js", "*.ts", "*.jsx", "*.tsx",
+    "*.cs", "*.java", "*.go", "*.rs",
+    # Generated/external code
+    "**/antlr/**", "**/grammars/**", "**/languages/**",
+    "*Visitor*", "*Listener*", "*Parser*", "*Lexer*",
+]
+
 DETECTORS = {
     # Coverage Gaps - Find untested code
     "untested_classes": {
         "description": "Find classes with no corresponding test class",
         "category": "coverage_gaps",
         "severity": "high",
-        "default_params": {"min_methods": 2, "exclude_private": True},
+        "default_params": {
+            "min_methods": 2,
+            "exclude_private": True,
+            "exclude_test_files": True,
+            "exclude_patterns": ["*Visitor*", "*Listener*", "*Parser*", "*Lexer*", "**/tests/**"]
+        },
     },
     "untested_functions": {
         "description": "Find public functions without tests",
         "category": "coverage_gaps",
         "severity": "high",
-        "default_params": {"exclude_private": True, "exclude_dunder": True},
+        "default_params": {
+            "exclude_private": True,
+            "exclude_dunder": True,
+            "exclude_test_files": True,
+            "exclude_patterns": []
+        },
     },
     "untested_methods": {
         "description": "Find public methods without test coverage",
@@ -187,6 +210,13 @@ class TestCoverageTool(BaseTool):
             # OSError: Database file issues
             return None
 
+    def _get_or_create_session(self, store, session_instance: str):
+        """Get or create a session and return its ID."""
+        try:
+            return store.get_or_create_session(session_instance)
+        except Exception:
+            return None
+
     def _get_python_tools(self, instance_name: str):
         """Get PythonAnalysisTools for code inspection."""
         from ..python_basic.python_tools import PythonAnalysisTools
@@ -208,6 +238,17 @@ class TestCoverageTool(BaseTool):
             "low": "low",
         }
         return mapping.get(severity, "medium")
+
+    def _get_module_from_entity(self, entity: Dict[str, Any]) -> str:
+        """Extract module name from entity dict.
+
+        list_classes/list_functions return 'file' and 'qualified_name', not 'module'.
+        This helper extracts module from qualified_name (e.g., 'foo.bar.MyClass' -> 'foo.bar')
+        """
+        qualified_name = entity.get("qualified_name", "")
+        if "." in qualified_name:
+            return ".".join(qualified_name.split(".")[:-1])
+        return ""
 
     # =========================================================================
     # PREPARE - List detectors
@@ -261,13 +302,13 @@ class TestCoverageTool(BaseTool):
                 for det in detectors:
                     store.add_item(
                         session_id=session_id,
-                        item_type="recommendation",
+                        item_type="task",
                         content=f"Run test coverage detector: {det['name']} - {det['description']}",
-                        category=f"test_coverage:{det['category']}",
+                        category="test",
                         priority=self._severity_to_priority(det['severity']),
                         status="pending",
                         source_tool=f"test_coverage:prepare",
-                        metadata={"detector": det['name'], "action": "run_detector"}
+                        metadata={"detector": det['name'], "action": "run_detector", "detector_category": det['category']}
                     )
                     recommendations_created += 1
             except Exception as e:
@@ -411,9 +452,18 @@ class TestCoverageTool(BaseTool):
         instance_name: str,
         python_tools,
         min_methods: int = 2,
-        exclude_private: bool = True
+        exclude_private: bool = True,
+        exclude_test_files: bool = True,
+        exclude_patterns: List[str] = None
     ) -> Dict[str, Any]:
         """Find classes without corresponding test classes."""
+        import fnmatch
+
+        # Build exclusion patterns
+        patterns = list(exclude_patterns or [])
+        if exclude_test_files:
+            patterns.extend(["**/test_*", "**/*_test.py", "**/tests/**", "Test*", "*Test"])
+
         # Get all classes
         result = python_tools.list_classes(instance_name=instance_name, limit=500)
         all_classes = result.get("classes", [])
@@ -425,8 +475,10 @@ class TestCoverageTool(BaseTool):
         matcher = TestMatcher(test_classes)
 
         findings = []
+        excluded_count = 0
         for cls in all_classes:
             name = cls.get("name", "")
+            file_path = cls.get("file", "")
 
             # Skip test classes
             if name.startswith("Test"):
@@ -436,29 +488,45 @@ class TestCoverageTool(BaseTool):
             if exclude_private and name.startswith("_"):
                 continue
 
+            # Check exclusion patterns
+            excluded = False
+            for pattern in patterns:
+                if fnmatch.fnmatch(file_path, pattern) or fnmatch.fnmatch(name, pattern):
+                    excluded = True
+                    excluded_count += 1
+                    break
+            if excluded:
+                continue
+
             # Get method count
             method_count = cls.get("method_count", 0)
             if method_count < min_methods:
                 continue
 
             # Check for test coverage
-            match = matcher.find_test_for_class(name, cls.get("module", ""))
+            # Note: list_classes returns "file" not "module", extract module from qualified_name
+            module = self._get_module_from_entity(cls)
+            match = matcher.find_test_for_class(name, module)
             if not match.is_tested:
                 findings.append({
                     "class_name": name,
-                    "module": cls.get("module", ""),
-                    "file": cls.get("file", ""),
+                    "module": module,
+                    "file": file_path,
                     "method_count": method_count,
-                    "suggested_test_file": matcher.suggest_test_file(cls.get("module", "")),
+                    "suggested_test_file": matcher.suggest_test_file(module),
                     "suggested_test_class": matcher.suggest_test_class(name),
                     "priority": "high" if method_count > 10 else "medium"
                 })
+
+        # Sort by method_count descending (highest priority first)
+        findings.sort(key=lambda x: x.get("method_count", 0), reverse=True)
 
         return {
             "success": True,
             "findings": findings,
             "total_classes": len(all_classes),
-            "test_classes": len(test_classes)
+            "test_classes": len(test_classes),
+            "excluded_count": excluded_count
         }
 
     def _detect_untested_functions(
@@ -466,9 +534,17 @@ class TestCoverageTool(BaseTool):
         instance_name: str,
         python_tools,
         exclude_private: bool = True,
-        exclude_dunder: bool = True
+        exclude_dunder: bool = True,
+        exclude_test_files: bool = True,
+        exclude_patterns: List[str] = None
     ) -> Dict[str, Any]:
         """Find public functions without tests."""
+        import fnmatch
+
+        patterns = list(exclude_patterns or [])
+        if exclude_test_files:
+            patterns.extend(["**/test_*", "**/*_test.py", "**/tests/**"])
+
         result = python_tools.list_functions(instance_name=instance_name, limit=1000)
         all_functions = result.get("functions", [])
 
@@ -478,8 +554,10 @@ class TestCoverageTool(BaseTool):
         matcher = TestMatcher(test_classes, test_functions)
 
         findings = []
+        excluded_count = 0
         for func in all_functions:
             name = func.get("name", "")
+            file_path = func.get("file", "")
 
             # Skip test functions
             if name.startswith("test_"):
@@ -493,13 +571,24 @@ class TestCoverageTool(BaseTool):
             if exclude_dunder and name.startswith("__") and name.endswith("__"):
                 continue
 
+            # Check exclusion patterns
+            excluded = False
+            for pattern in patterns:
+                if fnmatch.fnmatch(file_path, pattern) or fnmatch.fnmatch(name, pattern):
+                    excluded = True
+                    excluded_count += 1
+                    break
+            if excluded:
+                continue
+
             # Check for test coverage
-            match = matcher.find_test_for_function(name, func.get("module", ""))
+            module = self._get_module_from_entity(func)
+            match = matcher.find_test_for_function(name, module)
             if not match.is_tested:
                 findings.append({
                     "function_name": name,
-                    "module": func.get("module", ""),
-                    "file": func.get("file", ""),
+                    "module": module,
+                    "file": file_path,
                     "suggested_test": f"test_{name}",
                     "priority": "medium"
                 })
@@ -508,7 +597,8 @@ class TestCoverageTool(BaseTool):
             "success": True,
             "findings": findings,
             "total_functions": len(all_functions),
-            "test_functions": len(test_functions)
+            "test_functions": len(test_functions),
+            "excluded_count": excluded_count
         }
 
     def _detect_untested_methods(
@@ -563,7 +653,7 @@ class TestCoverageTool(BaseTool):
                     findings.append({
                         "method_name": method_name,
                         "class_name": class_name,
-                        "module": cls.get("module", ""),
+                        "module": self._get_module_from_entity(cls),
                         "suggested_test": f"test_{method_name}",
                         "test_class": class_match.test_name,
                         "priority": "low"
@@ -624,7 +714,7 @@ class TestCoverageTool(BaseTool):
             if 0 < coverage < coverage_threshold:
                 findings.append({
                     "class_name": class_name,
-                    "module": cls.get("module", ""),
+                    "module": self._get_module_from_entity(cls),
                     "coverage": round(coverage, 2),
                     "tested_methods": tested,
                     "total_methods": len(public_methods),
@@ -732,7 +822,7 @@ class TestCoverageTool(BaseTool):
         findings = []
         for cls in all_classes:
             class_name = cls.get("name", "")
-            module = cls.get("module", "").lower()
+            module = self._get_module_from_entity(cls).lower()
 
             if class_name.startswith("Test"):
                 continue
@@ -748,7 +838,7 @@ class TestCoverageTool(BaseTool):
             if not match.is_tested:
                 findings.append({
                     "class_name": class_name,
-                    "module": cls.get("module", ""),
+                    "module": self._get_module_from_entity(cls),
                     "method_count": cls.get("method_count", 0),
                     "suggested_test_class": matcher.suggest_test_class(class_name),
                     "priority": "critical",
@@ -768,11 +858,12 @@ class TestCoverageTool(BaseTool):
         test_functions = self._get_test_functions(instance_name, python_tools)
 
         # Count test methods per test class
+        # Note: Compare by file path since "module" key doesn't exist
         test_method_counts = {}
         for func in test_functions:
-            module = func.get("module", "")
+            func_file = func.get("file", "")
             for tc in test_classes:
-                if tc.get("module", "") == module:
+                if tc.get("file", "") == func_file:
                     tc_name = tc.get("name", "")
                     test_method_counts[tc_name] = test_method_counts.get(tc_name, 0) + 1
                     break
@@ -787,7 +878,7 @@ class TestCoverageTool(BaseTool):
                 source_class = tc_name.replace("Test", "").replace("Tests", "")
                 findings.append({
                     "test_class": tc_name,
-                    "module": tc.get("module", ""),
+                    "module": self._get_module_from_entity(tc),
                     "test_count": count,
                     "min_expected": min_tests_per_class,
                     "source_class": source_class,
@@ -808,12 +899,12 @@ class TestCoverageTool(BaseTool):
         result = python_tools.list_classes(instance_name=instance_name, limit=500)
         all_classes = result.get("classes", [])
 
-        # Group by module
+        # Group by module (derived from qualified_name)
         module_classes = {}
         module_tests = {}
 
         for cls in all_classes:
-            module = cls.get("module", "")
+            module = self._get_module_from_entity(cls)
             name = cls.get("name", "")
 
             if name.startswith("Test"):
@@ -879,42 +970,54 @@ class TestCoverageTool(BaseTool):
         priority = self._severity_to_priority(detector_info.get("severity", "medium"))
 
         for finding in findings:
-            # Build recommendation text
+            # Build task text (Design Docs approach - recommendations are now tasks)
             text = self._finding_to_text(detector_name, finding)
 
-            # Create recommendation
-            rec_id = store.add_item(
+            # Calculate severity score for sorting
+            severity_score = self._calculate_severity_score(finding)
+
+            # Create task (Design Docs approach)
+            task_id = store.add_item(
                 session_id=session_id,
-                item_type="recommendation",
+                item_type="task",
                 content=text,
-                category=f"test_coverage:{detector_info['category']}",
+                category="test",
                 priority=finding.get("priority", priority),
                 status="pending",
                 source_tool=f"test_coverage:{detector_name}",
-                metadata=finding
+                severity_score=severity_score,
+                metadata={**finding, "detector_category": detector_info['category']}
             )
             items_created += 1
 
             # Link to thought if specified
             if link_to_thought:
-                store.add_relation(rec_id, link_to_thought, "item", "traces")
-
-            # Create task for critical/high priority
-            if create_tasks and finding.get("priority", priority) in ("critical", "high"):
-                task_text = f"Write tests: {text}"
-                task_id = store.add_item(
-                    session_id=session_id,
-                    item_type="task",
-                    content=task_text,
-                    category=f"test_coverage:{detector_info['category']}",
-                    priority=finding.get("priority", priority),
-                    status="pending",
-                    source_tool=f"test_coverage:{detector_name}"
-                )
-                store.add_relation(task_id, rec_id, "item", "traces")
-                tasks_created += 1
+                store.add_relation(task_id, link_to_thought, "item", "traces")
 
         return {"items_created": items_created, "tasks_created": tasks_created}
+
+    def _calculate_severity_score(self, finding: Dict[str, Any]) -> int:
+        """Calculate severity score for sorting (higher = more important)."""
+        score = 0
+
+        # Method count is primary metric for untested classes
+        if "method_count" in finding:
+            score += int(finding["method_count"]) * 10
+
+        # Complexity metrics
+        if "calls_count" in finding:
+            score += int(finding["calls_count"]) * 5
+
+        # Coverage ratio (lower = worse = higher score)
+        if "coverage" in finding:
+            score += int((1 - finding["coverage"]) * 100)
+
+        # Test count deficit
+        if "test_count" in finding and "min_expected" in finding:
+            deficit = finding["min_expected"] - finding["test_count"]
+            score += max(0, deficit * 20)
+
+        return score
 
     def _finding_to_text(self, detector_name: str, finding: Dict[str, Any]) -> str:
         """Convert finding to readable text."""

@@ -97,6 +97,18 @@ DETECTORS = {
         },
         "source": "rag",
     },
+    "relevance_analysis": {
+        "description": "Comprehensive analysis of documentation relevance to code",
+        "category": "quality",
+        "severity": "medium",
+        "default_params": {
+            "min_relevance": 0.5,
+            "max_results": 100,
+            "doc_types": ["section", "code_block", "document"],
+            "code_types": ["class", "method", "function"],
+        },
+        "source": "rag",
+    },
 
     # Docstring Maintenance - Stale or missing docstrings
     "missing_docstrings": {
@@ -106,6 +118,10 @@ DETECTORS = {
         "default_params": {
             "include_private": False,
             "entity_types": ["class", "method", "function"],
+            "exclude_test_files": True,
+            "exclude_patterns": ["*Visitor*", "*Listener*", "*Parser*", "*Lexer*", "**/languages/**"],
+            "python_only": True,
+            "limit": 100,
         },
         "source": "reter",
     },
@@ -261,6 +277,13 @@ class DocumentationMaintenanceTool(BaseTool):
         except (ImportError, OSError):
             return None
 
+    def _get_or_create_session(self, store, session_instance: str):
+        """Get or create a session and return its ID."""
+        try:
+            return store.get_or_create_session(session_instance)
+        except Exception:
+            return None
+
     def _severity_to_priority(self, severity: str) -> str:
         """Map detector severity to item priority."""
         mapping = {
@@ -352,13 +375,13 @@ class DocumentationMaintenanceTool(BaseTool):
                 for det in detectors:
                     store.add_item(
                         session_id=session_id,
-                        item_type="recommendation",
+                        item_type="task",
                         content=f"Run documentation detector: {det['name']} - {det['description']}",
-                        category=f"documentation:{det['category']}",
+                        category="docs",
                         priority=self._severity_to_priority(det['severity']),
                         status="pending",
                         source_tool="documentation_maintenance:prepare",
-                        metadata={"detector": det['name'], "action": "run_detector"}
+                        metadata={"detector": det['name'], "action": "run_detector", "detector_category": det['category']}
                     )
                     recommendations_created += 1
             except Exception:
@@ -406,30 +429,35 @@ class DocumentationMaintenanceTool(BaseTool):
                 "available_detectors": list(DETECTORS.keys())
             }
 
-        # Check initialization state first
-        if not is_initialization_complete():
-            return {
-                "success": False,
-                "error": "Server is still initializing. The embedding model and code index are being loaded in the background. Please wait a few seconds and retry.",
-                "status": "initializing",
-            }
-
-        # Check RAG availability
-        rag_manager = self._get_rag_manager()
-        if rag_manager is None:
-            return {
-                "success": False,
-                "error": "RAG is not configured. Set RETER_PROJECT_ROOT to enable.",
-            }
-
-        if not rag_manager.is_initialized:
-            return {
-                "success": False,
-                "error": "RAG index not initialized. Please wait for initialization to complete.",
-                "status": "not_initialized",
-            }
-
         detector_info = DETECTORS[detector_name]
+        detector_source = detector_info.get("source", "rag")
+
+        # Only check RAG initialization for RAG-based detectors
+        rag_manager = None
+        if detector_source == "rag":
+            # Check initialization state first
+            if not is_initialization_complete():
+                return {
+                    "success": False,
+                    "error": "Server is still initializing. The embedding model and code index are being loaded in the background. Please wait a few seconds and retry.",
+                    "status": "initializing",
+                    "recommender_type": "documentation_maintenance",
+                }
+
+            # Check RAG availability
+            rag_manager = self._get_rag_manager()
+            if rag_manager is None:
+                return {
+                    "success": False,
+                    "error": "RAG is not configured. Set RETER_PROJECT_ROOT to enable.",
+                }
+
+            if not rag_manager.is_initialized:
+                return {
+                    "success": False,
+                    "error": "RAG index not initialized. Please wait for initialization to complete.",
+                    "status": "not_initialized",
+                }
         effective_params = dict(detector_info.get("default_params", {}))
         if params:
             effective_params.update(params)
@@ -455,6 +483,10 @@ class DocumentationMaintenanceTool(BaseTool):
             elif detector_name == "undocumented_code":
                 result = self._detect_undocumented_code(
                     rag_manager, instance_name, **effective_params
+                )
+            elif detector_name == "relevance_analysis":
+                result = self._detect_relevance_analysis(
+                    rag_manager, **effective_params
                 )
             # Docstring detectors
             elif detector_name == "missing_docstrings":
@@ -871,44 +903,30 @@ class DocumentationMaintenanceTool(BaseTool):
             priority = self._severity_to_priority(severity)
 
             for finding in findings:
-                # Create recommendation
+                # Create task (Design Docs approach - recommendations are now tasks)
                 content = self._format_finding_content(finding)
                 metadata = {
                     "detector": detector_name,
                     "finding_type": finding.get("type", ""),
                     "file": finding.get("file", ""),
                     "line": finding.get("line", 0),
+                    "detector_category": detector_info['category'],
                 }
 
                 if link_to_thought:
                     metadata["linked_thought"] = link_to_thought
 
-                item_id = store.add_item(
+                task_id = store.add_item(
                     session_id=session_id,
-                    item_type="recommendation",
+                    item_type="task",
                     content=content,
-                    category=f"documentation:{detector_info['category']}",
+                    category="docs",
                     priority=priority,
                     status="pending",
                     source_tool=f"documentation_maintenance:{detector_name}",
                     metadata=metadata
                 )
                 items_created += 1
-
-                # Create task if requested and high severity
-                if create_tasks and severity in ("critical", "high"):
-                    task_content = f"Fix: {finding.get('name', 'documentation issue')}"
-                    store.add_item(
-                        session_id=session_id,
-                        item_type="task",
-                        content=task_content,
-                        category="documentation:fix",
-                        priority=priority,
-                        status="pending",
-                        source_tool=f"documentation_maintenance:{detector_name}",
-                        metadata={"recommendation_id": item_id, **metadata}
-                    )
-                    tasks_created += 1
 
         except Exception:
             pass
@@ -943,6 +961,80 @@ class DocumentationMaintenanceTool(BaseTool):
 
         return " | ".join(parts)
 
+    def _detect_relevance_analysis(
+        self,
+        rag_manager,
+        min_relevance: float = 0.5,
+        max_results: int = 100,
+        doc_types: Optional[List[str]] = None,
+        code_types: Optional[List[str]] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Comprehensive analysis of documentation relevance to code.
+
+        Uses RAG's analyze_documentation_relevance to find:
+        - Documentation that matches code (relevant)
+        - Documentation with no code matches (orphaned/outdated)
+        - Overall relevance statistics
+        """
+        doc_types = doc_types or ["section", "code_block", "document"]
+        code_types = code_types or ["class", "method", "function"]
+
+        result = rag_manager.analyze_documentation_relevance(
+            min_relevance=min_relevance,
+            max_results=max_results,
+            doc_entity_types=doc_types,
+            code_entity_types=code_types,
+        )
+
+        if not result.get("success", False):
+            return result
+
+        findings = []
+
+        # Add orphaned docs as findings
+        for doc in result.get("orphaned_docs", []):
+            findings.append({
+                "type": "orphaned_documentation",
+                "name": doc.get("heading", doc.get("name", "Unknown")),
+                "file": doc.get("file_path", ""),
+                "doc_type": doc.get("doc_type", "unknown"),
+                "max_similarity": doc.get("max_similarity", 0),
+                "recommendation": "Review and update or remove this documentation",
+                "severity_score": int((1 - doc.get("max_similarity", 0)) * 100),
+            })
+
+        # Add low-relevance docs as findings
+        for doc in result.get("relevant_docs", []):
+            similarity = doc.get("similarity", 0)
+            if similarity < 0.7:  # Borderline relevant
+                findings.append({
+                    "type": "low_relevance_documentation",
+                    "name": doc.get("heading", doc.get("name", "Unknown")),
+                    "file": doc.get("file_path", ""),
+                    "doc_type": doc.get("doc_type", "unknown"),
+                    "similarity": similarity,
+                    "matched_code": doc.get("matched_entity", ""),
+                    "recommendation": "Consider improving documentation clarity",
+                    "severity_score": int((0.7 - similarity) * 100),
+                })
+
+        stats = result.get("stats", {})
+
+        return {
+            "success": True,
+            "findings": findings,
+            "count": len(findings),
+            "stats": {
+                "total_docs_analyzed": stats.get("total_docs_analyzed", 0),
+                "relevant_count": stats.get("relevant_count", 0),
+                "orphaned_count": stats.get("orphaned_count", 0),
+                "relevance_rate": stats.get("relevance_rate", 0),
+                "avg_similarity": stats.get("avg_similarity", 0),
+            },
+        }
+
     # =========================================================================
     # DOCSTRING DETECTORS
     # =========================================================================
@@ -952,6 +1044,10 @@ class DocumentationMaintenanceTool(BaseTool):
         instance_name: str,
         include_private: bool = False,
         entity_types: Optional[List[str]] = None,
+        exclude_test_files: bool = True,
+        exclude_patterns: Optional[List[str]] = None,
+        python_only: bool = True,
+        limit: int = 100,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -959,8 +1055,19 @@ class DocumentationMaintenanceTool(BaseTool):
 
         Uses RETER's py:undocumented inference.
         """
+        import fnmatch
+
         entity_types = entity_types or ["class", "method", "function"]
         findings = []
+        excluded_count = 0
+
+        # Build exclusion patterns
+        patterns = list(exclude_patterns or [])
+        if exclude_test_files:
+            patterns.extend(["**/test_*", "**/*_test.py", "**/tests/**", "Test*", "*Test"])
+        if python_only:
+            # Will filter by .py extension
+            pass
 
         try:
             reter = self.instance_manager.get_or_create_instance(instance_name)
@@ -993,27 +1100,52 @@ class DocumentationMaintenanceTool(BaseTool):
                 if result is not None and result.num_rows > 0:
                     for row in result.to_pylist():
                         name = row.get("?name", "")
+                        file_path = row.get("?file", "")
 
                         # Skip private entities unless include_private
                         if not include_private and name.startswith("_"):
+                            continue
+
+                        # Filter by Python files only
+                        if python_only and not file_path.endswith(".py"):
+                            excluded_count += 1
+                            continue
+
+                        # Check exclusion patterns
+                        excluded = False
+                        for pattern in patterns:
+                            if fnmatch.fnmatch(file_path, pattern) or fnmatch.fnmatch(name, pattern):
+                                excluded = True
+                                excluded_count += 1
+                                break
+                        if excluded:
                             continue
 
                         findings.append({
                             "type": "missing_docstring",
                             "name": name,
                             "entity_type": entity_type,
-                            "file": row.get("?file", ""),
+                            "file": file_path,
                             "line": int(row.get("?line", 0)),
                             "recommendation": f"Add docstring to {entity_type} '{name}'",
                         })
+
+                        # Limit results
+                        if len(findings) >= limit:
+                            break
             except Exception:
                 continue
+
+            if len(findings) >= limit:
+                break
 
         return {
             "findings": findings,
             "stats": {
                 "missing_docstrings": len(findings),
                 "entity_types_checked": entity_types,
+                "excluded_count": excluded_count,
+                "limit_applied": limit,
             },
         }
 

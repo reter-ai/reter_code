@@ -2,21 +2,26 @@
 
 **Complete index of all resources and tools for the RETER MCP server.**
 
-This document lists all MCP resources with their URIs and all 12 MCP tools with their capabilities.
+This document lists all MCP resources with their URIs and all MCP tools with their capabilities.
 
 ---
 
-## 🛠️ MCP Tools (12 Total)
+## 🛠️ MCP Tools - Design Docs Approach
 
-### Core Tools (5)
+### Core Tools (Design Docs Workflow)
 
 | Tool | Description | Key Parameters |
 |------|-------------|----------------|
-| `thinking` | **PRIMARY** - Reasoning with operations | thought, operations |
-| `session` | Session lifecycle | action: start, context, end, clear |
+| `session` | Session lifecycle - **call context first!** | action: start, context, end, clear |
+| `thinking` | **PRIMARY** - Reasoning with design doc sections | thought, section, operations |
+| `diagram` | Visualize design docs, Gantt, UML | diagram_type: design_doc, gantt, class_hierarchy |
+
+### Additional Session Tools
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
 | `items` | Query/manage items | action: list, get, delete, update |
 | `project` | Project analytics | action: health, critical_path, overdue, impact |
-| `diagram` | Generate diagrams | diagram_type, format |
 
 ### Knowledge Tools (4)
 
@@ -101,19 +106,23 @@ This document lists all MCP resources with their URIs and all 12 MCP tools with 
 
 ## 🔧 Tool Details
 
-### `thinking` - Primary Reasoning Tool
+### `thinking` - Primary Reasoning Tool (Design Docs)
 
-**Always use this tool for reasoning tasks!**
+**Always use this tool with design doc sections!**
 
 ```
 See: guide://reter/session-context
 ```
 
+**Design Doc Sections:** `context`, `goals`, `non_goals`, `design`, `alternatives`, `risks`, `implementation`, `tasks`
+
+**Task Categories:** `feature`, `bug`, `refactor`, `test`, `docs`, `research`
+
 **Operations:**
-- Create items: `requirement`, `recommendation`, `task`, `milestone`, `decision`
-- Create relations: `traces`, `satisfies`, `implements`, `depends_on`, `affects`
-- Update items: `update_item`, `update_task`, `complete_task`
-- RETER: `assert`, `query`, `python_file`, `forget_source`
+- Create items: `task` (with category), `milestone`
+- Create relations: `traces`, `implements`, `depends_on`, `affects`
+- Update items: `update_task`, `complete_task`
+- RETER: `assert`, `query`
 
 ### `session` - Session Lifecycle
 
@@ -168,11 +177,11 @@ recommender("test_coverage", "untested_classes")
 
 ### `diagram` - Visualizations
 
-**Session/Project Diagrams:**
-- `gantt` - Project schedule
-- `thought_chain` - Reasoning chain
-- `traceability` - Requirements matrix
-- `requirements` - Hierarchy
+**Design Doc Diagrams:**
+- `design_doc` - **Design doc structure with sections** (context, goals, design, etc.)
+- `gantt` - Project schedule with tasks and milestones
+- `thought_chain` - Reasoning chain with branches
+- `traceability` - Task traceability matrix
 
 **UML/Code Diagrams:**
 - `class_hierarchy` - Inheritance tree

@@ -1,9 +1,11 @@
 """
-Unified Store for Thinking System
+Unified Store for Design Docs System
 
 Single SQLite-based storage for all session data:
-- Sessions (thinking sessions with goals and project info)
-- Items (thoughts, requirements, recommendations, tasks, milestones, activities)
+- Sessions (design doc container with goals and timeline)
+- Items (simplified to 3 types: thought, task, milestone)
+  - Thoughts have sections (context, goals, design, alternatives, etc.)
+  - Tasks have categories (requirement, feature, bug, refactor, etc.)
 - Relations (traceability links between items)
 - Artifacts (generated files with freshness tracking)
 """
@@ -20,16 +22,36 @@ from contextlib import contextmanager
 logger = logging.getLogger(__name__)
 
 
-# Item types supported by the unified store
+# Item types - simplified to 3 core types
 ItemType = Literal[
-    "thought",
-    "requirement",
-    "recommendation",
-    "task",
-    "milestone",
-    "activity",
-    "decision",
-    "element"
+    "thought",      # Reasoning step / design doc section
+    "task",         # Actionable item (use category for: requirement, feature, bug, etc.)
+    "milestone"     # Timeline marker
+]
+
+# Design doc sections for thoughts
+Section = Literal[
+    "context",      # Problem statement, background
+    "goals",        # What we want to achieve
+    "non_goals",    # Explicitly out of scope
+    "design",       # Technical approach
+    "alternatives", # Options considered and rejected
+    "risks",        # What could go wrong
+    "implementation", # Implementation details
+    "tasks",        # Task breakdown
+    None            # Unstructured thought (default)
+]
+
+# Task categories (replaces separate requirement/recommendation types)
+TaskCategory = Literal[
+    "requirement",   # Formal requirement
+    "feature",       # New feature
+    "bug",           # Bug fix
+    "refactor",      # Code improvement
+    "test",          # Test to write
+    "docs",          # Documentation
+    "research",      # Investigation needed
+    None             # Uncategorized
 ]
 
 # Relation types for traceability
@@ -82,7 +104,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
 CREATE TABLE IF NOT EXISTS items (
     item_id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
-    item_type TEXT NOT NULL,  -- thought, requirement, recommendation, task, milestone, activity, decision, element
+    item_type TEXT NOT NULL,  -- thought, task, milestone
     content TEXT NOT NULL,
 
     -- Common fields
@@ -96,6 +118,7 @@ CREATE TABLE IF NOT EXISTS items (
     total_thoughts INTEGER,
     next_thought_needed INTEGER,
     thought_type TEXT,
+    section TEXT,            -- Design doc section: context, goals, design, alternatives, etc.
     logic_operation TEXT,    -- JSON
     query_results TEXT,      -- JSON
     inferences TEXT,         -- JSON
@@ -142,6 +165,7 @@ CREATE TABLE IF NOT EXISTS items (
 
     -- Metadata
     metadata TEXT,           -- JSON for extensibility
+    severity_score INTEGER DEFAULT 0,  -- Numeric score for sorting (higher = more severe)
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
 
@@ -154,6 +178,7 @@ CREATE INDEX IF NOT EXISTS idx_items_status ON items(status);
 CREATE INDEX IF NOT EXISTS idx_items_priority ON items(priority);
 CREATE INDEX IF NOT EXISTS idx_items_thought_number ON items(thought_number);
 CREATE INDEX IF NOT EXISTS idx_items_category ON items(category);
+CREATE INDEX IF NOT EXISTS idx_items_severity ON items(severity_score);
 
 -- Relations table for traceability
 CREATE TABLE IF NOT EXISTS relations (
@@ -227,6 +252,20 @@ class UnifiedStore:
         """Initialize the database schema."""
         with self._get_connection() as conn:
             conn.executescript(UNIFIED_SCHEMA)
+            # Migration: Add severity_score column if missing (for existing databases)
+            self._migrate_add_severity_score(conn)
+
+    def _migrate_add_severity_score(self, conn):
+        """Add severity_score column to items table if it doesn't exist."""
+        try:
+            # Check if column exists
+            cursor = conn.execute("PRAGMA table_info(items)")
+            columns = {row[1] for row in cursor.fetchall()}
+            if "severity_score" not in columns:
+                conn.execute("ALTER TABLE items ADD COLUMN severity_score INTEGER DEFAULT 0")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_items_severity ON items(severity_score)")
+        except sqlite3.Error:
+            pass  # Column already exists or other error
 
     @contextmanager
     def _get_connection(self):
@@ -527,11 +566,16 @@ class UnifiedStore:
         priority: Optional[str] = None,
         category: Optional[str] = None,
         phase: Optional[str] = None,
+        source_tool: Optional[str] = None,
         limit: int = 100,
         offset: int = 0
     ) -> List[Dict[str, Any]]:
         """
         Get items with optional filters.
+
+        Args:
+            source_tool: Filter by source tool (e.g., 'refactoring_improving:find_large_classes').
+                         Supports LIKE patterns with '%' wildcards.
         """
         query = "SELECT * FROM items WHERE session_id = ?"
         params = [session_id]
@@ -556,7 +600,23 @@ class UnifiedStore:
             query += " AND phase = ?"
             params.append(phase)
 
-        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        if source_tool:
+            # Support prefix matching - "recommender" matches "recommender:refactoring"
+            # Use explicit % for other LIKE patterns
+            if "%" in source_tool:
+                query += " AND source_tool LIKE ?"
+                params.append(source_tool)
+            elif ":" not in source_tool:
+                # No colon = prefix match (e.g., "recommender" -> "recommender:%")
+                query += " AND source_tool LIKE ?"
+                params.append(f"{source_tool}:%")
+            else:
+                # Exact match for full source_tool paths
+                query += " AND source_tool = ?"
+                params.append(source_tool)
+
+        # Sort by severity_score DESC (highest severity first), then by created_at DESC
+        query += " ORDER BY severity_score DESC, created_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
 
         with self._get_connection() as conn:
@@ -620,7 +680,7 @@ class UnifiedStore:
 
         Args:
             session_id: Session ID
-            item_type: Filter by type (thought, requirement, recommendation, task, etc.)
+            item_type: Filter by type (thought, task, milestone)
             status: Filter by status
             priority: Filter by priority
             category: Filter by category

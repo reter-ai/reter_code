@@ -237,20 +237,21 @@ class RefactoringToPatternsTool(RefactoringToolBase):
                     f"Execute with: refactoring_detector(detector_name='{detector_name}')"
                 )
 
-                # Create item in unified store
+                # Create task in unified store (Design Docs approach)
                 item_id = store.add_item(
                     session_id=session_id,
-                    item_type="recommendation",
+                    item_type="task",
                     content=text,
                     summary=description,
-                    category=f"pattern:{detector_info['category']}",
+                    category="refactor",
                     priority=self._severity_to_priority(detector_info["severity"]),
                     status="pending",
                     source_tool="refactoring_to_patterns:prepare",
                     metadata={
                         "detector_name": detector_name,
                         "run_timestamp": run_timestamp,
-                        "default_params": detector_info["default_params"]
+                        "default_params": detector_info["default_params"],
+                        "pattern_category": detector_info["category"]
                     }
                 )
 
@@ -281,13 +282,13 @@ class RefactoringToPatternsTool(RefactoringToolBase):
 
             return {
                 "success": True,
-                "message": f"Created {len(created)} pattern detector recommendations",
-                "recommendations_created": len(created),
+                "message": f"Created {len(created)} pattern detector tasks",
+                "tasks_created": len(created),
                 "detector_count": len(created),
                 "detectors": detectors,
                 "by_category": by_category,
                 "session_instance": session_instance,
-                "note": "Call items(item_type='recommendation') to view details"
+                "note": "Call items(item_type='task', category='refactor') to view details"
             }
 
         except Exception as e:
@@ -368,11 +369,11 @@ class RefactoringToPatternsTool(RefactoringToolBase):
                 create_tasks=create_tasks
             )
 
-            # Mark any pending "Run pattern detector: X" recommendations as completed
+            # Mark any pending "Run pattern detector: X" tasks as completed
             try:
                 pending_items = store.get_items(
                     session_id=session_id,
-                    item_type="recommendation",
+                    item_type="task",
                     status="pending"
                 )
                 for item in pending_items:
@@ -388,11 +389,10 @@ class RefactoringToPatternsTool(RefactoringToolBase):
                 "detector": detector_name,
                 "params_used": effective_params,
                 "findings_count": self._count_findings(result),
-                "recommendations_created": items_result["items_created"],
-                "tasks_created": items_result["tasks_created"],
+                "tasks_created": items_result["items_created"] + items_result["tasks_created"],
                 "relations_created": items_result["relations_created"],
                 "session_instance": session_instance,
-                "note": "Call items(item_type='recommendation') to view details"
+                "note": "Call items(item_type='task', category='refactor') to view details"
             }
 
         except Exception as e:

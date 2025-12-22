@@ -5,19 +5,49 @@ The primary tool for recording reasoning steps, analysis, and decisions with int
 ## Overview
 
 The `thinking` tool is the main entry point for Codeine's reasoning system. It creates structured thoughts that can:
-- Track reasoning chains with branching
-- Create requirements, tasks, recommendations
+- Organize reasoning into **design doc sections** (context, goals, design, etc.)
+- Create tasks with categories and milestones
 - Create relationships between items
 - Execute RETER operations
 
-## Basic Usage
+## Design Docs Workflow
 
 ```python
+# 1. Document the context/problem
 thinking(
-    thought="Analyzing the authentication module to understand how user sessions are managed",
+    thought="We need to add OAuth support to the auth module...",
     thought_number=1,
-    total_thoughts=3,
-    thought_type="analysis"
+    total_thoughts=5,
+    section="context"
+)
+
+# 2. Define goals
+thinking(
+    thought="Goals: 1) Support Google/GitHub OAuth 2) Maintain existing login",
+    thought_number=2,
+    total_thoughts=5,
+    section="goals"
+)
+
+# 3. Document design decision
+thinking(
+    thought="Using NextAuth.js because it has built-in providers...",
+    thought_number=3,
+    total_thoughts=5,
+    section="design",
+    thought_type="decision"
+)
+
+# 4. Create tasks
+thinking(
+    thought="Breaking down implementation",
+    thought_number=4,
+    total_thoughts=5,
+    section="tasks",
+    operations={
+        "task": {"name": "Add NextAuth.js", "category": "feature", "priority": "high"},
+        "milestone": {"name": "OAuth Ready", "date": "2025-01-15"}
+    }
 )
 ```
 
@@ -30,6 +60,7 @@ thinking(
 | `total_thoughts` | int | required | Estimated total steps |
 | `instance_name` | str | "default" | Session instance name |
 | `thought_type` | str | "reasoning" | Type: reasoning, analysis, decision, planning, verification |
+| `section` | str | None | Design doc section (see below) |
 | `next_thought_needed` | bool | True | Whether more thoughts are needed |
 | `branch_id` | str | None | ID for branching |
 | `branch_from` | int | None | Thought number to branch from |
@@ -37,6 +68,19 @@ thinking(
 | `revises_thought` | int | None | Which thought number is being revised |
 | `needs_more_thoughts` | bool | False | Signal that more analysis is needed |
 | `operations` | dict | None | Operations to execute (see below) |
+
+## Design Doc Sections
+
+| Section | Purpose |
+|---------|---------|
+| `context` | Problem statement, background |
+| `goals` | What we want to achieve |
+| `non_goals` | Explicitly out of scope |
+| `design` | Technical approach |
+| `alternatives` | Options considered and rejected |
+| `risks` | What could go wrong |
+| `implementation` | Implementation details |
+| `tasks` | Task breakdown |
 
 ## Thought Types
 
@@ -76,18 +120,30 @@ Available item types:
 - `milestone` - Create a milestone
 - `decision` - Record a decision
 
-### Create Task with Scheduling
+### Create Task with Category and Scheduling
 
 ```python
 operations={
     "task": {
         "name": "Implement JWT authentication",
+        "category": "feature",  # feature, bug, refactor, test, docs, research
+        "priority": "high",     # critical, high, medium, low
         "start_date": "2024-01-15",
-        "duration_days": 5,
-        "priority": "high"
+        "duration_days": 5
     }
 }
 ```
+
+### Task Categories
+
+| Category | Use For |
+|----------|---------|
+| `feature` | New functionality |
+| `bug` | Bug fixes |
+| `refactor` | Code refactoring |
+| `test` | Test creation |
+| `docs` | Documentation |
+| `research` | Research/investigation |
 
 ### Create Relations
 
