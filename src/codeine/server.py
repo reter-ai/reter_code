@@ -206,8 +206,13 @@ Key tools:
 - `code_inspection` - Python/JS/C#/C++ code analysis
 - `recommender` - Refactoring and test coverage recommendations
 - `diagram` - Generate UML diagrams
+- `semantic_search` - Find code by meaning, not just keywords
+- `natural_language_query` - Query codebase in plain English
+- `find_similar_clusters` - Detect similar/duplicate code patterns
+- `add_knowledge` - Add external context (URLs, files, directories)
 
 Always use the `thinking` tool when analyzing problems or making decisions.""",
+            website_url="https://codeine.ai",
             sampling_handler=anthropic_sampling_handler,
             sampling_handler_behavior="fallback"
         )
