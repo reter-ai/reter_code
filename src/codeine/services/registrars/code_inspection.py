@@ -264,7 +264,7 @@ class CodeInspectionToolsRegistrar(ToolRegistrarBase):
                 elif action == "get_docstring":
                     if not target:
                         return {"success": False, "error": "target (name) is required for get_docstring"}
-                    return basic_tools.get_docstring(instance_name, target)
+                    return basic_tools.get_docstring(instance_name, target, limit, offset)
 
                 elif action == "get_method_signature":
                     if not target:
@@ -345,7 +345,7 @@ class CodeInspectionToolsRegistrar(ToolRegistrarBase):
                     return advanced_tools.get_type_hints(instance_name, limit, offset)
 
                 elif action == "get_api_docs":
-                    return advanced_tools.get_api_documentation(instance_name)
+                    return advanced_tools.get_api_documentation(instance_name, limit, offset)
 
                 elif action == "get_exceptions":
                     return advanced_tools.get_exception_hierarchy(instance_name)

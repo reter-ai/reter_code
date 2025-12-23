@@ -127,7 +127,7 @@ class AdvancedPythonTools(AdvancedToolsBase):
     def get_public_api(self, instance_name: str, limit: int = 100,
                        offset: int = 0) -> Dict[str, Any]:
         """Get all public classes and functions (not starting with _)."""
-        return self._pattern.get_public_api(instance_name)
+        return self._pattern.get_public_api(instance_name, limit, offset)
 
     # =========================================================================
     # TYPE ANALYSIS (TypeAnalysisTools)
@@ -181,9 +181,10 @@ class AdvancedPythonTools(AdvancedToolsBase):
         """Find undocumented classes, functions, and methods."""
         return self._documentation_analysis.find_undocumented_code(instance_name)
 
-    def get_api_documentation(self, instance_name: str) -> Dict[str, Any]:
+    def get_api_documentation(self, instance_name: str, limit: int = 100,
+                               offset: int = 0) -> Dict[str, Any]:
         """Extract all docstrings and generate API documentation."""
-        return self._documentation_analysis.get_api_documentation(instance_name)
+        return self._documentation_analysis.get_api_documentation(instance_name, limit, offset)
 
     # =========================================================================
     # ARCHITECTURE ANALYSIS (ArchitectureAnalysisTools)

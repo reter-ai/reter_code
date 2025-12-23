@@ -216,15 +216,22 @@ class PatternDetectionTools(AdvancedToolsBase):
                 "time_ms": time_ms
             }
 
-    def get_public_api(self, instance_name: str) -> Dict[str, Any]:
+    def get_public_api(
+        self,
+        instance_name: str,
+        limit: int = 100,
+        offset: int = 0
+    ) -> Dict[str, Any]:
         """
         Get all public classes and functions (not starting with _).
 
         Args:
             instance_name: RETER instance name
+            limit: Maximum number of entities per type to return (default: 100)
+            offset: Number of entities to skip (default: 0)
 
         Returns:
-            dict with success, public_classes, public_functions, queries
+            dict with success, public_classes, public_functions, counts, has_more, queries
         """
         start_time = time.time()
         queries = []
@@ -265,14 +272,21 @@ class PatternDetectionTools(AdvancedToolsBase):
             result = self.reter.reql(func_query)
             func_rows = self._query_to_list(result)
 
+            total_classes = len(class_rows)
+            total_functions = len(func_rows)
+
+            # Apply pagination
+            paginated_class_rows = class_rows[offset:offset + limit] if limit > 0 else class_rows
+            paginated_func_rows = func_rows[offset:offset + limit] if limit > 0 else func_rows
+
             public_classes = [
                 {"qualified_name": row[0], "name": row[1], "file": row[2]}
-                for row in class_rows
+                for row in paginated_class_rows
             ]
 
             public_functions = [
                 {"qualified_name": row[0], "name": row[1], "file": row[2]}
-                for row in func_rows
+                for row in paginated_func_rows
             ]
 
             time_ms = (time.time() - start_time) * 1000
@@ -282,6 +296,10 @@ class PatternDetectionTools(AdvancedToolsBase):
                 "public_functions": public_functions,
                 "class_count": len(public_classes),
                 "function_count": len(public_functions),
+                "total_classes": total_classes,
+                "total_functions": total_functions,
+                "has_more_classes": (offset + limit) < total_classes if limit > 0 else False,
+                "has_more_functions": (offset + limit) < total_functions if limit > 0 else False,
                 "queries": queries,
                 "time_ms": time_ms
             }
@@ -292,6 +310,10 @@ class PatternDetectionTools(AdvancedToolsBase):
                 "error": str(e),
                 "public_classes": [],
                 "public_functions": [],
+                "class_count": 0,
+                "function_count": 0,
+                "total_classes": 0,
+                "total_functions": 0,
                 "queries": queries,
                 "time_ms": time_ms
             }

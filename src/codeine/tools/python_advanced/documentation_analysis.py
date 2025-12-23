@@ -76,15 +76,22 @@ class DocumentationAnalysisTools(AdvancedToolsBase):
                 "time_ms": time_ms
             }
 
-    def get_api_documentation(self, instance_name: str) -> Dict[str, Any]:
+    def get_api_documentation(
+        self,
+        instance_name: str,
+        limit: int = 100,
+        offset: int = 0
+    ) -> Dict[str, Any]:
         """
         Extract all API documentation (classes and functions with docstrings).
 
         Args:
             instance_name: RETER instance name
+            limit: Maximum number of entities to return (default: 100)
+            offset: Number of entities to skip (default: 0)
 
         Returns:
-            dict with success, documented entities, count, queries
+            dict with success, documented entities, count, total_count, has_more, queries
         """
         start_time = time.time()
         queries = []
@@ -109,6 +116,9 @@ class DocumentationAnalysisTools(AdvancedToolsBase):
             result = self.reter.reql(query)
             rows = self._query_to_list(result)
 
+            total_count = len(rows)
+            paginated_rows = rows[offset:offset + limit] if limit > 0 else rows
+
             entities = [
                 {
                     "qualified_name": row[0],
@@ -117,7 +127,7 @@ class DocumentationAnalysisTools(AdvancedToolsBase):
                     "file": row[3],
                     "docstring": row[4]
                 }
-                for row in rows
+                for row in paginated_rows
             ]
 
             time_ms = (time.time() - start_time) * 1000
@@ -125,6 +135,8 @@ class DocumentationAnalysisTools(AdvancedToolsBase):
                 "success": True,
                 "entities": entities,
                 "count": len(entities),
+                "total_count": total_count,
+                "has_more": (offset + limit) < total_count if limit > 0 else False,
                 "queries": queries,
                 "time_ms": time_ms
             }
@@ -135,6 +147,7 @@ class DocumentationAnalysisTools(AdvancedToolsBase):
                 "error": str(e),
                 "entities": [],
                 "count": 0,
+                "total_count": 0,
                 "queries": queries,
                 "time_ms": time_ms
             }

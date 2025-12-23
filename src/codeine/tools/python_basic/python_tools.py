@@ -774,17 +774,28 @@ class PythonAnalysisTools:
                 "queries": queries
             }
 
-    def get_docstring(self, instance_name: str, name: str) -> Dict[str, Any]:
+    def get_docstring(
+        self,
+        instance_name: str,
+        name: str,
+        limit: int = 100,
+        offset: int = 0
+    ) -> Dict[str, Any]:
         """
         Get the docstring of a class or method.
 
         Args:
             instance_name: RETER instance name
             name: Class or method name
+            limit: Maximum number of entities to return (default: 100)
+            offset: Number of entities to skip (default: 0)
 
         Returns:
             success: Whether query succeeded
             entities: List of entities with their docstrings
+            count: Number of entities returned
+            total_count: Total number of matching entities
+            has_more: Whether there are more entities
             queries: List of REQL queries executed
         """
         queries = []
@@ -803,6 +814,9 @@ class PythonAnalysisTools:
             result = self.reter.reql(query)
             rows = self._query_to_list(result)
 
+            total_count = len(rows)
+            paginated_rows = rows[offset:offset + limit] if limit > 0 else rows
+
             entities = [
                 {
                     "qualified_name": row[0],
@@ -810,7 +824,7 @@ class PythonAnalysisTools:
                     "type": row[2],
                     "docstring": row[3]
                 }
-                for row in rows
+                for row in paginated_rows
             ]
 
             # Add top-level docstring key for test compatibility (first match)
@@ -822,6 +836,8 @@ class PythonAnalysisTools:
                 "search_term": name,
                 "entities": entities,
                 "count": len(entities),
+                "total_count": total_count,
+                "has_more": (offset + limit) < total_count if limit > 0 else False,
                 "queries": queries
             }
         except Exception as e:
@@ -830,6 +846,7 @@ class PythonAnalysisTools:
                 "search_term": name,
                 "entities": [],
                 "count": 0,
+                "total_count": 0,
                 "error": str(e),
                 "queries": queries
             }
