@@ -27,11 +27,11 @@ def untested_classes() -> Pipeline:
                 ?c atLine ?line .
                 OPTIONAL { ?method type {Method} . ?method definedIn ?c }
                 FILTER ( !REGEX(?name, "^Test|Test$|^_") && !REGEX(?file, "test_|_test\\.py") )
-            }
-            MINUS {
-                ?test type {Class} .
-                ?test name ?test_name .
-                FILTER ( REGEX(?test_name, "^Test|Test$") )
+                MINUS {
+                    ?test type {Class} .
+                    ?test name ?test_name .
+                    FILTER ( REGEX(?test_name, "^Test|Test$") )
+                }
             }
             GROUP BY ?c ?name ?file ?line
             ORDER BY ?file ?name

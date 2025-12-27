@@ -1,48 +1,52 @@
 """
-move_statements - Detect repeated statement sequences before/after function calls.
+move_statements - Detect functions called from many places (candidates for refactoring).
 
-When the same statements appear before or after calls to a function,
-they should be moved into the function itself.
+Original intent: Detect repeated statement sequences before/after function calls.
+Current implementation: Find heavily-called functions that may need statement consolidation.
+
+Note: Statement-level tracking is not available in the current parser.
 """
 
 from codeine.dsl import detector, param, reql, Pipeline
 
 
 @detector("move_statements", category="refactoring", severity="medium")
-@param("min_occurrences", int, default=2, description="Minimum occurrences of pattern")
+@param("min_callers", int, default=5, description="Minimum callers to report")
 @param("limit", int, default=100, description="Maximum results to return")
 def move_statements() -> Pipeline:
     """
-    Detect repeated statements that should be moved into a function.
+    Detect heavily-called functions - candidates for statement consolidation.
+
+    Since statement-level tracking is not available, this finds functions
+    called from many places, which may benefit from consolidating
+    common setup/teardown patterns.
 
     Returns:
-        findings: List of statement patterns to move
+        findings: List of heavily-called functions
         count: Number of findings
     """
     return (
         reql('''
-            SELECT ?func ?func_name ?pattern ?position ?occurrence_count ?callers ?file ?line
+            SELECT ?func ?func_name ?file ?line (COUNT(?caller) AS ?caller_count)
             WHERE {
-                ?pattern type {CallSitePattern} .
-                ?pattern targetFunction ?func .
+                ?func type {Function} .
                 ?func name ?func_name .
-                ?pattern statements ?statements .
-                ?pattern position ?position .
-                ?pattern occurrenceCount ?occurrence_count .
-                ?pattern callers ?callers .
                 ?func inFile ?file .
                 ?func atLine ?line .
-            FILTER ( ?occurrence_count >= {min_occurrences} )
+                ?caller calls ?func .
+                FILTER ( REGEX(?file, "\\.py$") )
             }
-            ORDER BY DESC(?occurrence_count)
+            GROUP BY ?func ?func_name ?file ?line
+            HAVING ( ?caller_count >= {min_callers} )
+            ORDER BY DESC(?caller_count)
             LIMIT {limit}
         ''')
-        .select("func_name", "position", "occurrence_count", "callers", "file", "line")
+        .select("func_name", "file", "line", "caller_count")
         .map(lambda r: {
             **r,
             "refactoring": "move_statements_into_function",
-            "message": f"Statements {r['position']} '{r['func_name']}' appear in {r['occurrence_count']} call sites",
-            "suggestion": f"Move these statements into '{r['func_name']}'"
+            "message": f"Function '{r['func_name']}' called from {r['caller_count']} places",
+            "suggestion": "Review call sites for common patterns that could be moved into the function"
         })
         .emit("findings")
     )

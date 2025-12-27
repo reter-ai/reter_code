@@ -3,7 +3,7 @@ Code Inspection Queries - Read-only code analysis tools.
 
 All tools in this package use @query decorator (no side effects).
 
-Note: Some tools moved to other packages:
+Re-exports from other packages for code_inspection registrar:
 - find_decorators -> patterns/decorator_usage
 - get_external_deps -> dependencies/external_deps
 - get_magic_methods -> patterns/magic_methods
@@ -12,6 +12,13 @@ Note: Some tools moved to other packages:
 """
 
 from .list_modules import list_modules
+
+# Re-exports from patterns and dependencies modules (for code_inspection registrar)
+from ..patterns.decorator_usage import find_decorator_usage as find_decorators
+from ..patterns.magic_methods import find_magic_methods as get_magic_methods
+from ..patterns.interface_impl import find_interface_implementations as get_interfaces
+from ..patterns.public_api import find_public_api as get_public_api
+from ..dependencies.external_deps import find_external_dependencies as get_external_deps
 from .list_classes import list_classes
 from .list_functions import list_functions
 from .describe_class import describe_class
@@ -49,12 +56,17 @@ __all__ = [
     "find_subclasses",
     "find_callers",
     "find_callees",
+    "find_decorators",  # re-exported from patterns
     "find_tests",
     # Analysis
     "analyze_dependencies",
     "get_imports",
+    "get_external_deps",  # re-exported from dependencies
     "predict_impact",
     "get_complexity",
+    "get_magic_methods",  # re-exported from patterns
+    "get_interfaces",  # re-exported from patterns
+    "get_public_api",  # re-exported from patterns
     "get_type_hints",
     "get_api_docs",
     "get_exceptions",

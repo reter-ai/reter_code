@@ -26,9 +26,9 @@ def untested_functions() -> Pipeline:
                 ?f inFile ?file .
                 ?f atLine ?line .
                 OPTIONAL { ?f lineCount ?line_count }
-            MINUS { ?test calls ?f . ?test inFile ?test_file . FILTER ( REGEX(?test_file, "test_") )
+                FILTER ( !REGEX(?name, "^_") && !REGEX(?file, "test_|_test\\.py") )
+                MINUS { ?test calls ?f . ?test inFile ?test_file . FILTER ( REGEX(?test_file, "test_") ) }
             }
-            FILTER ( !REGEX(?name, "^_") && !REGEX(?file, "test_|_test\\.py") )
             ORDER BY DESC(?line_count)
         ''')
         .select("name", "file", "line", "line_count")

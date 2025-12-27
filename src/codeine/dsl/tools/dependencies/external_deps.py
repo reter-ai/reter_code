@@ -14,23 +14,27 @@ def find_external_dependencies() -> Pipeline:
     Find external package dependencies.
 
     Returns:
-        findings: List of external packages used
+        findings: List of external packages imported by modules
         count: Number of findings
     """
     return (
         reql('''
-            SELECT ?i ?package_name ?file ?line ?usage_count
+            SELECT ?m ?module_name ?package_name ?file
             WHERE {
-                ?i type {Import} .
-                ?i name ?package_name .
-                ?i inFile ?file .
-                ?i atLine ?line .
-                ?i isExternal true.
-                OPTIONAL { ?i usageCount ?usage_count }
+                ?m type {Module} .
+                ?m name ?module_name .
+                ?m inFile ?file .
+                ?m imports ?package_name
             }
-            ORDER BY ?package_name
+            ORDER BY ?package_name ?module_name
+            LIMIT {limit}
         ''')
-        .select("package_name", "file", "line", "usage_count")
+        .select("package_name", "module_name", "file")
         .unique(lambda r: r.get("package_name"))
+        .map(lambda r: {
+            **r,
+            "issue": "external_dependency",
+            "message": f"Package '{r['package_name']}' is imported"
+        })
         .emit("findings")
     )

@@ -21,25 +21,24 @@ def replace_conditional_with_polymorphism() -> Pipeline:
     """
     return (
         reql('''
-            SELECT ?m ?name ?class_name ?file ?line ?branch_count ?conditional_type
+            SELECT ?m ?name ?class_name ?file ?line ?branch_count
             WHERE {
                 ?m type {Method} .
                 ?m name ?name .
                 ?m inFile ?file .
                 ?m atLine ?line .
                 OPTIONAL { ?m definedIn ?c . ?c name ?class_name }
-                { ?m switchCount ?branch_count  }
-                UNION
-                { ?m ifElseChainLength ?branch_count                  FILTER ( ?branch_count >= {min_branches} )
-            }
+                ?m branchCount ?branch_count .
+                FILTER ( ?branch_count >= {min_branches} )
             }
             ORDER BY DESC(?branch_count)
+            LIMIT {limit}
         ''')
-        .select("name", "class_name", "file", "line", "branch_count", "conditional_type", qualified_name="m")
+        .select("name", "class_name", "file", "line", "branch_count", qualified_name="m")
         .map(lambda r: {
             **r,
             "refactoring": "replace_conditional_with_polymorphism",
-            "message": f"Method '{r['name']}' has {r['branch_count']}-branch {r.get('conditional_type', 'conditional')}",
+            "message": f"Method '{r['name']}' has {r.get('branch_count', 0)} branches",
             "suggestion": "Consider using polymorphism (strategy pattern) instead"
         })
         .emit("findings")

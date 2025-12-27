@@ -14,25 +14,32 @@ def find_interface_implementations() -> Pipeline:
     """
     Find classes implementing abstract base classes or interfaces.
 
+    Detects classes that inherit from base classes (classes with names
+    containing Base, Abstract, ABC, Interface, or Protocol).
+
     Returns:
         findings: List of interface implementations
         count: Number of findings
     """
     return (
         reql('''
-            SELECT ?c ?class_name ?interface_name ?file ?line ?implemented_methods
+            SELECT ?c ?class_name ?parent_name ?file ?line
             WHERE {
                 ?c type {Class} .
                 ?c name ?class_name .
                 ?c inFile ?file .
                 ?c atLine ?line .
-                ?c inheritsFrom ?interface .
-                ?interface name ?interface_name .
-                ?interface isAbstract true.
-                OPTIONAL { ?c implementedMethodCount ?implemented_methods }
+                ?c inheritsFrom ?parent_name .
+                FILTER ( REGEX(?parent_name, "Base|Abstract|ABC|Interface|Protocol") )
             }
-            ORDER BY ?interface_name ?class_name
+            ORDER BY ?parent_name ?class_name
+            LIMIT {limit}
         ''')
-        .select("class_name", "interface_name", "file", "line", "implemented_methods")
+        .select("class_name", "file", "line", parent="parent_name")
+        .map(lambda r: {
+            **r,
+            "interface_name": r.get("parent", ""),
+            "message": f"Class '{r['class_name']}' implements '{r.get('parent', '')}'"
+        })
         .emit("findings")
     )

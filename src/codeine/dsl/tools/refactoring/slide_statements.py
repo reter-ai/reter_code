@@ -1,47 +1,51 @@
 """
-slide_statements - Detect statements accessing same data but separated by unrelated code.
+slide_statements - Detect long methods that may have scattered variable usage.
 
-Related statements should be grouped together for clarity.
-When statements operating on the same data are separated, consider sliding them together.
+Original intent: Detect statements accessing same data but separated by unrelated code.
+Current implementation: Find long methods where code organization may need review.
+
+Note: Statement-level variable tracking is not available in the current parser.
 """
 
 from codeine.dsl import detector, param, reql, Pipeline
 
 
 @detector("slide_statements", category="refactoring", severity="low")
-@param("min_distance", int, default=5, description="Minimum lines between related statements")
+@param("min_lines", int, default=30, description="Minimum method length to report")
 @param("limit", int, default=100, description="Maximum results to return")
 def slide_statements() -> Pipeline:
     """
-    Detect separated statements that should be grouped together.
+    Detect long methods that may benefit from statement reorganization.
+
+    Since statement-level tracking is not available, this finds long methods
+    where related statements may be scattered and could be grouped together.
 
     Returns:
-        findings: List of statement pairs that should be slid together
+        findings: List of long methods to review
         count: Number of findings
     """
     return (
         reql('''
-            SELECT ?func ?func_name ?var_name ?first_line ?second_line ?distance ?file
+            SELECT ?m ?name ?class_name ?file ?line ?loc
             WHERE {
-                ?pair type {SeparatedStatements} .
-                ?pair inFunction ?func .
-                ?func name ?func_name .
-                ?pair variableName ?var_name .
-                ?pair firstLine ?first_line .
-                ?pair secondLine ?second_line .
-                ?pair distance ?distance .
-                ?func inFile ?file .
-            FILTER ( ?distance >= {min_distance} )
+                ?m type {Method} .
+                ?m name ?name .
+                ?m inFile ?file .
+                ?m atLine ?line .
+                ?m lineCount ?loc .
+                OPTIONAL { ?m definedIn ?c . ?c name ?class_name }
+                FILTER ( REGEX(?file, "\\.py$") )
+                FILTER ( ?loc >= {min_lines} )
             }
-            ORDER BY DESC(?distance)
+            ORDER BY DESC(?loc)
             LIMIT {limit}
         ''')
-        .select("func_name", "var_name", "first_line", "second_line", "distance", "file")
+        .select("name", "class_name", "file", "line", "loc")
         .map(lambda r: {
             **r,
             "refactoring": "slide_statements",
-            "message": f"Statements using '{r['var_name']}' at lines {r['first_line']} and {r['second_line']} are {r['distance']} lines apart",
-            "suggestion": "Slide statements together to group related operations"
+            "message": f"Method '{r['name']}' is {r['loc']} lines - may have scattered variable usage",
+            "suggestion": "Review and group related statements together"
         })
         .emit("findings")
     )

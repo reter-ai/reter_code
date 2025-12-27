@@ -27,7 +27,7 @@ def too_general_exceptions() -> Pipeline:
                 ?h atLine ?line .
                 ?h exceptionType ?exception_type .
                 OPTIONAL { ?h inFunction ?f . ?f name ?func_name }
-            FILTER ( ?exception_type IN ("Exception", "BaseException", "") )
+                FILTER ( ?exception_type = "Exception" || ?exception_type = "BaseException" || ?exception_type = "" )
             }
             ORDER BY ?file ?line
         ''')

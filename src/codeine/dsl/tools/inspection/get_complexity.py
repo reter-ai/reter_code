@@ -21,20 +21,19 @@ def get_complexity() -> Pipeline:
     """
     return (
         reql('''
-            SELECT ?c ?name ?file ?line_count (COUNT(?method) AS ?method_count) (COUNT(?attr) AS ?attr_count) (COUNT(?parent) AS ?parent_count)
+            SELECT ?c ?name ?file (COUNT(?method) AS ?method_count) (COUNT(?attr) AS ?attr_count) (COUNT(?parent) AS ?parent_count)
             WHERE {
                 ?c type {Class} .
                 ?c name ?name .
                 ?c inFile ?file .
-                OPTIONAL { ?c lineCount ?line_count }
                 OPTIONAL { ?method type {Method} . ?method definedIn ?c }
                 OPTIONAL { ?attr type {Field} . ?attr definedIn ?c }
                 OPTIONAL { ?c inheritsFrom ?parent }
             }
-            GROUP BY ?c ?name ?file ?line_count
+            GROUP BY ?c ?name ?file
             ORDER BY DESC(?method_count)
             LIMIT {limit}
         ''')
-        .select("name", "file", "method_count", "attr_count", "line_count", "parent_count", qualified_name="c")
+        .select("name", "file", "method_count", "attr_count", "parent_count", qualified_name="c")
         .emit("class_complexity")
     )

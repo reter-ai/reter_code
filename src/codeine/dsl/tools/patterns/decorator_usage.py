@@ -20,21 +20,21 @@ def find_decorator_usage() -> Pipeline:
     """
     return (
         reql('''
-            SELECT ?d ?decorator_name ?target_name ?target_type ?file ?line
+            SELECT ?target ?decorator_name ?target_name ?file ?line
             WHERE {
-                { ?target type {Class}  }
+                { ?target type {Class} }
                 UNION
-                { ?target type {Method}  }
+                { ?target type {Method} }
                 UNION
-                { ?target type {Function}  }
-                ?target hasDecorator ?d .
-                ?d name ?decorator_name .
+                { ?target type {Function} }
+                ?target hasDecorator ?decorator_name .
                 ?target name ?target_name .
                 ?target inFile ?file .
                 ?target atLine ?line
             }
             ORDER BY ?decorator_name ?file
+            LIMIT {limit}
         ''')
-        .select("decorator_name", "target_name", "target_type", "file", "line")
+        .select("decorator_name", "target_name", "file", "line", qualified_name="target")
         .emit("findings")
     )

@@ -5,6 +5,12 @@ A Model Context Protocol server that provides intelligent code analysis
 and reasoning capabilities powered by the RETER reasoning engine.
 """
 
+# Suppress SWIG deprecation warnings from FAISS before any imports
+# (FAISS uses SWIG bindings that trigger Python 3.12+ deprecation warnings)
+import warnings
+warnings.filterwarnings("ignore", message="builtin type Swig", category=DeprecationWarning)
+warnings.filterwarnings("ignore", message="builtin type swig", category=DeprecationWarning)
+
 __version__ = "0.1.0"
 __author__ = "Codeine.AI"
 

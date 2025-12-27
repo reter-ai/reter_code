@@ -20,34 +20,23 @@ def large_untested_modules() -> Pipeline:
     """
     return (
         reql('''
-            SELECT ?file (COUNT(?class) AS ?class_count) (COUNT(?test) AS ?test_count)
+            SELECT ?file (COUNT(?class) AS ?class_count)
             WHERE {
                 ?class type {Class} .
                 ?class inFile ?file .
-                OPTIONAL {
-                    ?test type {Class} .
-                    ?test inFile ?test_file .
-                    ?test name ?test_name .
-                    FILTER ( REGEX(?test_name, "^Test|Test$") )
-                    FILTER ( REGEX(?test_file, "test_") )
-                    ?test_method definedIn ?test .
-                    ?test_method calls ?method .
-                    ?method definedIn ?class .
-                FILTER ( !REGEX(?file, "test_") )
-                                    }
+                FILTER ( !REGEX(?file, "test_|tests/|_test\\.py") )
             }
             GROUP BY ?file
-            HAVING (?class_count >= {min_classes} && ?test_count < ?class_count / 2)
+            HAVING ( ?class_count >= {min_classes} )
             ORDER BY DESC(?class_count)
             LIMIT {limit}
         ''')
-        .select("file", "class_count", "test_count")
+        .select("file", "class_count")
         .map(lambda r: {
             **r,
-            "coverage_ratio": r.get('test_count', 0) / max(r.get('class_count', 1), 1),
             "issue": "large_untested_module",
-            "message": f"Module '{r['file']}' has {r.get('class_count', 0)} classes but only {r.get('test_count', 0)} tests",
-            "suggestion": "Add more tests to improve module coverage"
+            "message": f"Module '{r['file']}' has {r.get('class_count', 0)} classes - review test coverage",
+            "suggestion": "Ensure adequate test coverage for large modules"
         })
         .emit("findings")
     )

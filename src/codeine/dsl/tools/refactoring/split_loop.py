@@ -1,47 +1,52 @@
 """
-split_loop - Detect loops doing multiple independent things.
+split_loop - Detect complex methods that may contain loops needing splitting.
 
-A loop that does multiple unrelated operations should be split into
-separate loops for clarity and potential optimization.
+Original intent: Detect loops doing multiple independent things.
+Current implementation: Find complex methods that may contain loops to review.
+
+Note: Loop-level tracking is not available in the current parser.
 """
 
 from codeine.dsl import detector, param, reql, Pipeline
 
 
 @detector("split_loop", category="refactoring", severity="low")
-@param("min_operations", int, default=2, description="Minimum independent operations")
+@param("min_lines", int, default=25, description="Minimum method length")
 @param("limit", int, default=100, description="Maximum results to return")
 def split_loop() -> Pipeline:
     """
-    Detect loops performing multiple independent operations.
+    Detect complex methods that may contain loops worth splitting.
+
+    Since loop tracking is not available, this finds long methods
+    that may contain complex loops doing multiple things.
 
     Returns:
-        findings: List of loops that should be split
+        findings: List of complex methods to review for loop splitting
         count: Number of findings
     """
     return (
         reql('''
-            SELECT ?loop ?func_name ?file ?line ?operation_count ?operations ?loop_type
+            SELECT ?m ?name ?class_name ?file ?line ?loc
             WHERE {
-                ?loop type {Loop} .
-                ?loop inFunction ?func .
-                ?func name ?func_name .
-                ?loop inFile ?file .
-                ?loop atLine ?line .
-                ?loop independentOperationCount ?operation_count .
-                ?loop operations ?operations .
-                ?loop loopType ?loop_type .
-            FILTER ( ?operation_count >= {min_operations} )
+                ?m type {Method} .
+                ?m name ?name .
+                ?m inFile ?file .
+                ?m atLine ?line .
+                ?m lineCount ?loc .
+                OPTIONAL { ?m definedIn ?c . ?c name ?class_name }
+                FILTER ( REGEX(?file, "\\.py$") )
+                FILTER ( ?loc >= {min_lines} )
+                FILTER ( !REGEX(?name, "^test_|^_") )
             }
-            ORDER BY DESC(?operation_count)
+            ORDER BY DESC(?loc)
             LIMIT {limit}
         ''')
-        .select("func_name", "file", "line", "operation_count", "operations", "loop_type")
+        .select("name", "class_name", "file", "line", "loc")
         .map(lambda r: {
             **r,
             "refactoring": "split_loop",
-            "message": f"{r['loop_type']} loop in '{r['func_name']}' does {r['operation_count']} independent operations",
-            "suggestion": "Split into separate loops, each doing one thing"
+            "message": f"Method '{r['name']}' ({r['loc']} lines) may contain loops to review",
+            "suggestion": "Check for loops doing multiple things that could be split"
         })
         .emit("findings")
     )

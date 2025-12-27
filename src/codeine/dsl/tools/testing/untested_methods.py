@@ -28,9 +28,9 @@ def untested_methods() -> Pipeline:
                 ?m definedIn ?c .
                 ?c name ?class_name .
                 OPTIONAL { ?m lineCount ?line_count }
-            MINUS { ?test calls ?m . ?test inFile ?test_file . FILTER ( REGEX(?test_file, "test_") )
+                FILTER ( !REGEX(?name, "^_") && !REGEX(?file, "test_|_test\\.py") )
+                MINUS { ?test calls ?m . ?test inFile ?test_file . FILTER ( REGEX(?test_file, "test_") ) }
             }
-            FILTER ( !REGEX(?name, "^_") && !REGEX(?file, "test_|_test\\.py") )
             ORDER BY DESC(?line_count)
         ''')
         .select("name", "class_name", "file", "line", "line_count")

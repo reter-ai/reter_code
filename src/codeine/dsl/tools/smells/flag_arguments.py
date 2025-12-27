@@ -20,29 +20,31 @@ def flag_arguments() -> Pipeline:
     """
     return (
         reql('''
-            SELECT ?func ?name ?file ?line ?param_name ?class_name ?has_conditional
+            SELECT ?func ?name ?file ?line ?param_name ?class_name
             WHERE {
-                ?func type {Function} .
-                ?func name ?name .
-                ?func inFile ?file .
-                ?func atLine ?line .
-                ?param ofFunction ?func .
-                ?param name ?param_name .
-                ?param type "bool" .
-                OPTIONAL { ?func definedIn ?c . ?c name ?class_name }
-                OPTIONAL { ?func usesFlagInConditional ?param ?has_conditional }
-            }
-            UNION {
-                ?func type {Method} .
-                ?func name ?name .
-                ?func inFile ?file .
-                ?func atLine ?line .
-                ?param ofFunction ?func .
-                ?param name ?param_name .
-                ?param type "bool" .
-                ?func definedIn ?c .
-                ?c name ?class_name .
-                OPTIONAL { ?func usesFlagInConditional ?param ?has_conditional }
+                {
+                    ?func type {Function} .
+                    ?func name ?name .
+                    ?func inFile ?file .
+                    ?func atLine ?line .
+                    ?param parameterOf ?func .
+                    ?param name ?param_name .
+                    ?param parameterType ?ptype .
+                    FILTER ( ?ptype = "bool" || ?ptype = "boolean" )
+                    OPTIONAL { ?func definedIn ?c . ?c name ?class_name }
+                }
+                UNION
+                {
+                    ?func type {Method} .
+                    ?func name ?name .
+                    ?func inFile ?file .
+                    ?func atLine ?line .
+                    ?param parameterOf ?func .
+                    ?param name ?param_name .
+                    ?param parameterType ?ptype .
+                    FILTER ( ?ptype = "bool" || ?ptype = "boolean" )
+                    OPTIONAL { ?func definedIn ?c . ?c name ?class_name }
+                }
             }
             ORDER BY ?file ?line
             LIMIT {limit}

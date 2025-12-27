@@ -1,8 +1,10 @@
 """
-pipeline_conversion - Detect loops that could be replaced with collection pipelines.
+pipeline_conversion - Detect functions that may benefit from pipeline patterns.
 
-Loops that filter, transform, or aggregate collections can often be
-expressed more clearly using map/filter/reduce operations.
+Original intent: Detect loops that could be replaced with collection pipelines.
+Current implementation: Find functions using list operations that could use comprehensions.
+
+Note: Loop-level tracking is not available in the current parser.
 """
 
 from codeine.dsl import detector, param, reql, Pipeline
@@ -12,35 +14,38 @@ from codeine.dsl import detector, param, reql, Pipeline
 @param("limit", int, default=100, description="Maximum results to return")
 def pipeline_conversion() -> Pipeline:
     """
-    Detect loops replaceable with collection pipeline operations.
+    Detect functions that may benefit from pipeline/comprehension patterns.
+
+    Since loop tracking is not available, this finds functions
+    that call list operations like append, extend, filter.
 
     Returns:
-        findings: List of loops suitable for pipeline conversion
+        findings: List of functions to review for pipeline conversion
         count: Number of findings
     """
     return (
         reql('''
-            SELECT ?loop ?func_name ?file ?line ?pattern ?collection ?suggested_pipeline
+            SELECT ?m ?name ?class_name ?file ?line ?callee
             WHERE {
-                ?loop type {Loop} .
-                ?loop inFunction ?func .
-                ?func name ?func_name .
-                ?loop inFile ?file .
-                ?loop atLine ?line .
-                ?loop pipelinePattern ?pattern .
-                ?loop iteratedCollection ?collection .
-                ?loop suggestedPipeline ?suggested_pipeline .
-                FILTER ( ?pattern != "none" )
+                ?m type {Method} .
+                ?m name ?name .
+                ?m inFile ?file .
+                ?m atLine ?line .
+                ?m calls ?callee .
+                OPTIONAL { ?m definedIn ?c . ?c name ?class_name }
+                FILTER ( REGEX(?file, "\\.py$") )
+                FILTER ( REGEX(?callee, "append|extend|filter|map|reduce") )
+                FILTER ( !REGEX(?name, "^test_|^_") )
             }
-            ORDER BY ?file ?line
+            ORDER BY ?file ?name
             LIMIT {limit}
         ''')
-        .select("func_name", "file", "line", "pattern", "collection", "suggested_pipeline")
+        .select("name", "class_name", "file", "line", "callee")
         .map(lambda r: {
             **r,
             "refactoring": "replace_loop_with_pipeline",
-            "message": f"Loop in '{r['func_name']}' follows '{r['pattern']}' pattern",
-            "suggestion": f"Replace with: {r.get('suggested_pipeline', 'list comprehension or generator')}"
+            "message": f"Method '{r['name']}' uses '{r['callee']}' - may benefit from comprehension",
+            "suggestion": "Consider using list comprehension or generator expression"
         })
         .emit("findings")
     )

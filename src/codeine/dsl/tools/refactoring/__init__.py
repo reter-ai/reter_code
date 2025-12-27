@@ -51,6 +51,9 @@ from .move_statements import move_statements
 from .slide_statements import slide_statements
 from .replace_inline_code import replace_inline_code
 
+# Re-export from rag module (has category="refactoring" but lives in rag/)
+from ..rag.extraction_opportunities import detect_extraction_opportunities
+
 __all__ = [
     "extract_method",
     "extract_class",
@@ -74,4 +77,5 @@ __all__ = [
     "move_statements",
     "slide_statements",
     "replace_inline_code",
+    "detect_extraction_opportunities",
 ]

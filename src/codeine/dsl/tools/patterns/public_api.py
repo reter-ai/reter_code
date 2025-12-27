@@ -19,19 +19,20 @@ def find_public_api() -> Pipeline:
     """
     return (
         reql('''
-            SELECT ?e ?name ?entity_type ?file ?line ?docstring
+            SELECT ?e ?name ?file ?line ?docstring
             WHERE {
-                { ?e type {Class}  }
+                { ?e type {Class} }
                 UNION
-                { ?e type {Function}  }
+                { ?e type {Function} }
                 ?e name ?name .
                 ?e inFile ?file .
                 ?e atLine ?line .
                 OPTIONAL { ?e docstring ?docstring }
-                FILTER ( !REGEX(?name, "^_") )
+                FILTER ( !REGEX(?name, "^_") && REGEX(?file, "\\.py$") )
             }
-            ORDER BY ?entity_type ?name
+            ORDER BY ?file ?name
+            LIMIT {limit}
         ''')
-        .select("name", "entity_type", "file", "line", "docstring")
+        .select("name", "file", "line", "docstring")
         .emit("findings")
     )

@@ -10,11 +10,17 @@ Provides a high-level interface for FAISS operations with support for:
 """
 
 import logging
+import warnings
 from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Any
 from dataclasses import dataclass
 
 import numpy as np
+
+# Suppress SWIG deprecation warnings from FAISS (Python 3.12+ compatibility issue)
+# These warnings occur during module load, so must be set globally before import
+warnings.filterwarnings("ignore", message="builtin type Swig", category=DeprecationWarning)
+warnings.filterwarnings("ignore", message="builtin type swig", category=DeprecationWarning)
 
 try:
     import faiss

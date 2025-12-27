@@ -11,26 +11,24 @@ from codeine.dsl import query, param, reql, Pipeline
 @param("target", str, required=True, description="Function or method name to find callees of")
 def find_callees() -> Pipeline:
     """
-    Find all functions/methods called by the target (recursive).
+    Find all functions/methods called by the target (direct callees).
 
     Returns:
         callees: List of callee info with name, file, line
         count: Number of callees found
-        call_depth: Maximum call depth analyzed
     """
     return (
         reql('''
             SELECT ?callee ?callee_name ?callee_file ?callee_line ?callee_type
             WHERE {
-                ?caller name "{target}".
                 { ?caller type {Method} } UNION { ?caller type {Function} }
-                ?caller callsTransitive ?callee .
+                ?caller name "{target}" .
+                ?caller calls ?callee .
                 { ?callee type {Method} } UNION { ?callee type {Function} }
+                ?callee type ?callee_type .
                 ?callee name ?callee_name .
                 ?callee inFile ?callee_file .
                 ?callee atLine ?callee_line .
-                
-                
             }
         ''')
         .select("callee_name", "callee_file", "callee_line", "callee_type", qualified_name="callee")

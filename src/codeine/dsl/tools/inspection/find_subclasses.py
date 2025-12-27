@@ -11,7 +11,10 @@ from codeine.dsl import query, param, reql, Pipeline
 @param("target", str, required=True, description="Class name to find subclasses of")
 def find_subclasses() -> Pipeline:
     """
-    Find all subclasses of a class (direct and indirect).
+    Find all subclasses of a class (direct subclasses).
+
+    Note: inheritsFrom returns qualified name strings, so we use CONTAINS
+    to match the target class name within the parent string.
 
     Returns:
         subclasses: List of subclass info with name, file, line
@@ -19,18 +22,17 @@ def find_subclasses() -> Pipeline:
     """
     return (
         reql('''
-            SELECT ?sub ?name ?file ?line
+            SELECT ?sub ?name ?file ?line ?parent_name
             WHERE {
-                ?parent type {Class} .
-                ?parent name "{target}" .
                 ?sub type {Class} .
-                ?sub inheritsFrom ?parent .
+                ?sub inheritsFrom ?parent_name .
                 ?sub name ?name .
                 ?sub inFile ?file .
                 ?sub atLine ?line .
+                FILTER CONTAINS(?parent_name, "{target}") .
             }
         ''')
-        .select("name", "file", "line", qualified_name="sub")
+        .select("name", "file", "line", "parent_name", qualified_name="sub")
         .order_by("file")
         .emit("subclasses")
     )

@@ -21,16 +21,14 @@ def public_api_untested() -> Pipeline:
         reql('''
             SELECT ?e ?name ?entity_type ?file ?line
             WHERE {
-                { ?e type {Class}  }
-                UNION
-                { ?e type {Function}  }
+                { ?e type {Class} } UNION { ?e type {Function} }
                 ?e name ?name .
                 ?e inFile ?file .
                 ?e atLine ?line .
-                ?e isExported true.
-            MINUS { ?test calls ?e . ?test inFile ?test_file . FILTER ( REGEX(?test_file, "test_") )
+                ?e isExported true .
+                FILTER ( !REGEX(?name, "^_") && !REGEX(?file, "test_") )
+                MINUS { ?test calls ?e . ?test inFile ?test_file . FILTER ( REGEX(?test_file, "test_") ) }
             }
-            FILTER ( !REGEX(?name, "^_") && !REGEX(?file, "test_") )
             ORDER BY ?entity_type ?name
         ''')
         .select("name", "entity_type", "file", "line")

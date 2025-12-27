@@ -28,11 +28,11 @@ def high_fanout_untested() -> Pipeline:
                 ?e atLine ?line .
                 ?e calls ?callee .
                 OPTIONAL { ?e definedIn ?c . ?c name ?class_name }
+                FILTER ( !REGEX(?file, "test_") )
+                MINUS { ?test calls ?e . ?test inFile ?test_file . FILTER ( REGEX(?test_file, "test_") ) }
             }
-            MINUS { ?test calls ?e . ?test inFile ?test_file . FILTER ( REGEX(?test_file, "test_") ) }
             GROUP BY ?e ?name ?class_name ?file ?line
             HAVING (?fanout >= {min_fanout})
-            FILTER ( !REGEX(?file, "test_") )
             ORDER BY DESC(?fanout)
             LIMIT {limit}
         ''')

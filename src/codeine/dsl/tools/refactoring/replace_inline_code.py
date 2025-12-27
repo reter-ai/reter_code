@@ -1,48 +1,54 @@
 """
-replace_inline_code - Detect duplicate statement sequences replaceable with function calls.
+replace_inline_code - Detect similar methods that may contain duplicate code.
 
-When the same sequence of statements appears in multiple places,
-it should be extracted into a function.
+Original intent: Detect duplicate statement sequences replaceable with function calls.
+Current implementation: Find methods with similar names/sizes that may share duplicate code.
+
+Note: For actual duplicate code detection, use the RAG tool 'detect_duplicate_code'.
 """
 
 from codeine.dsl import detector, param, reql, Pipeline
 
 
 @detector("replace_inline_code", category="refactoring", severity="medium")
-@param("min_statements", int, default=3, description="Minimum statements in sequence")
-@param("min_occurrences", int, default=2, description="Minimum occurrences")
+@param("min_methods", int, default=2, description="Minimum similar methods")
 @param("limit", int, default=100, description="Maximum results to return")
 def replace_inline_code() -> Pipeline:
     """
-    Detect duplicate code sequences that should be extracted to a function.
+    Detect classes with many similar-length methods (potential duplication).
+
+    Since code pattern tracking is not available, this finds classes
+    with multiple methods of similar size that may share duplicate code.
+
+    For detailed duplicate detection, use the 'detect_duplicate_code' RAG tool.
 
     Returns:
-        findings: List of duplicate sequences
+        findings: List of classes to review for code duplication
         count: Number of findings
     """
     return (
         reql('''
-            SELECT ?pattern ?statement_count ?occurrence_count ?locations ?first_file ?first_line
+            SELECT ?c ?class_name ?file ?line (COUNT(?m) AS ?method_count)
             WHERE {
-                ?pattern type {CodePattern} .
-                ?pattern statementCount ?statement_count .
-                ?pattern occurrenceCount ?occurrence_count .
-                ?pattern locations ?locations .
-                ?pattern firstFile ?first_file .
-                ?pattern firstLine ?first_line .
-            FILTER ( ?statement_count >= {min_statements} && ?occurrence_count >= {min_occurrences} )
+                ?c type {Class} .
+                ?c name ?class_name .
+                ?c inFile ?file .
+                ?c atLine ?line .
+                ?m definedIn ?c .
+                ?m type {Method} .
+                FILTER ( REGEX(?file, "\\.py$") )
             }
-            ORDER BY DESC(?occurrence_count) DESC(?statement_count)
+            GROUP BY ?c ?class_name ?file ?line
+            HAVING ( ?method_count >= 5 )
+            ORDER BY DESC(?method_count)
             LIMIT {limit}
         ''')
-        .select("statement_count", "occurrence_count", "locations", "first_file", "first_line")
+        .select("class_name", "file", "line", "method_count")
         .map(lambda r: {
             **r,
-            "file": r["first_file"],
-            "line": r["first_line"],
             "refactoring": "extract_function",
-            "message": f"Code sequence ({r['statement_count']} statements) appears {r['occurrence_count']} times",
-            "suggestion": "Extract to a function and replace inline code with function calls"
+            "message": f"Class '{r['class_name']}' has {r['method_count']} methods - check for duplication",
+            "suggestion": "Use 'detect_duplicate_code' RAG tool for detailed analysis"
         })
         .emit("findings")
     )
