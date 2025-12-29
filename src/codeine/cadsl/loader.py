@@ -375,6 +375,40 @@ def build_pipeline_factory(spec: CADSLToolSpec,
                 inner_steps = step_spec.get("steps", [])
                 pipeline = pipeline >> ParallelStep(inner_steps)
 
+            elif step_type == "collect":
+                # Group and aggregate
+                from .transformer import CollectStep
+                by_field = step_spec.get("by")
+                fields = step_spec.get("fields", {})
+                pipeline = pipeline >> CollectStep(by_field, fields)
+
+            elif step_type == "cross_join":
+                # Cartesian product
+                from .transformer import CrossJoinStep
+                pipeline = pipeline >> CrossJoinStep(
+                    unique_pairs=step_spec.get("unique_pairs", True),
+                    exclude_self=step_spec.get("exclude_self", True),
+                    left_prefix=step_spec.get("left_prefix", "left_"),
+                    right_prefix=step_spec.get("right_prefix", "right_"),
+                )
+
+            elif step_type == "set_similarity":
+                # Set similarity calculation
+                from .transformer import SetSimilarityStep
+                pipeline = pipeline >> SetSimilarityStep(
+                    left_col=step_spec.get("left_col"),
+                    right_col=step_spec.get("right_col"),
+                    sim_type=step_spec.get("sim_type", "jaccard"),
+                    output=step_spec.get("output", "similarity"),
+                    intersection_output=step_spec.get("intersection_output"),
+                    union_output=step_spec.get("union_output"),
+                )
+
+            elif step_type == "compute":
+                # Add computed fields
+                from .transformer import ComputeStep
+                pipeline = pipeline >> ComputeStep(step_spec.get("fields", {}))
+
         if emit_key:
             pipeline = pipeline.emit(emit_key)
 

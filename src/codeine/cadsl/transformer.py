@@ -7,6 +7,7 @@ that can be run against a RETER instance.
 
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
+import textwrap
 
 from lark import Tree, Token
 
@@ -893,7 +894,8 @@ class CADSLTransformer:
                 # Remove outer braces
                 if content.startswith("{") and content.endswith("}"):
                     code = content[1:-1]
-
+        # Dedent the code to remove common leading whitespace
+        code = textwrap.dedent(code)
         return {"type": "python", "code": code}
 
     def _transform_render_step(self, node: Tree) -> Dict[str, Any]:

@@ -47,6 +47,8 @@ detector alternative_interfaces(category="code_smell", severity="medium") {
         union_output: all_methods
     }
     # Step 4: Calculate additional metrics and filter
+    # Filter out null similarity values first
+    | filter { similarity is not null }
     | compute {
         shared_count: len(shared_methods),
         diff_count: len(all_methods) - len(shared_methods)
@@ -60,11 +62,11 @@ detector alternative_interfaces(category="code_smell", severity="medium") {
         name2: right_class_name,
         file: left_file,
         line: left_line,
-        similarity: round(similarity, 2),
+        similarity: round((similarity ?? 0), 2),
         shared_methods: shared_count,
         different_methods: diff_count,
         issue: "alternative_interfaces",
-        message: "Classes '{left_class_name}' and '{right_class_name}' are " + str(round(similarity * 100, 0)) + "% similar but have " + str(diff_count) + " different methods",
+        message: "Classes '{left_class_name}' and '{right_class_name}' are " + str(round((similarity ?? 0) * 100, 0)) + "% similar but have " + str(diff_count) + " different methods",
         suggestion: "Consider extracting a common interface or unifying method signatures"
     }
     | emit { findings }
