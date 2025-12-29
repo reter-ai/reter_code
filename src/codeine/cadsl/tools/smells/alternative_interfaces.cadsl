@@ -1,0 +1,71 @@
+# alternative_interfaces - Detect classes with similar responsibilities but different interfaces
+#
+# These are classes that do similar things but have different method signatures,
+# making it harder to use them interchangeably.
+
+detector alternative_interfaces(category="code_smell", severity="medium") {
+    """Detect classes with similar behavior but different interfaces."""
+
+    param min_similarity: float = 0.6;
+    param min_shared_methods: int = 3;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?c ?class_name ?method_name ?file ?line
+        WHERE {
+            ?c type {Class} .
+            ?c name ?class_name .
+            ?c inFile ?file .
+            ?c atLine ?line .
+            ?m type {Method} .
+            ?m definedIn ?c .
+            ?m name ?method_name .
+            FILTER ( !STRSTARTS(?method_name, "_") )
+        }
+    }
+    | select { c, class_name, method_name, file, line }
+    # Step 1: Group methods by class
+    | collect {
+        by: c,
+        class_name: first(class_name),
+        file: first(file),
+        line: first(line),
+        methods: set(method_name),
+        method_count: count(method_name)
+    }
+    # Filter out classes with too few methods
+    | filter { method_count >= 2 }
+    # Step 2: Cross join to get all unique pairs
+    | cross_join { unique_pairs: true, left_prefix: "left_", right_prefix: "right_" }
+    # Step 3: Calculate set similarity between method sets
+    | set_similarity {
+        left: left_methods,
+        right: right_methods,
+        type: jaccard,
+        output: similarity,
+        intersection_output: shared_methods,
+        union_output: all_methods
+    }
+    # Step 4: Calculate additional metrics and filter
+    | compute {
+        shared_count: len(shared_methods),
+        diff_count: len(all_methods) - len(shared_methods)
+    }
+    | filter { similarity >= {min_similarity} and shared_count >= {min_shared_methods} and diff_count > 0 }
+    | order_by { -similarity }
+    | limit { {limit} }
+    # Step 5: Format output
+    | map {
+        name1: left_class_name,
+        name2: right_class_name,
+        file: left_file,
+        line: left_line,
+        similarity: round(similarity, 2),
+        shared_methods: shared_count,
+        different_methods: diff_count,
+        issue: "alternative_interfaces",
+        message: "Classes '{left_class_name}' and '{right_class_name}' are " + str(round(similarity * 100, 0)) + "% similar but have " + str(diff_count) + " different methods",
+        suggestion: "Consider extracting a common interface or unifying method signatures"
+    }
+    | emit { findings }
+}

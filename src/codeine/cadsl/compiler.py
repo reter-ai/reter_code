@@ -129,6 +129,19 @@ class ExpressionCompiler:
 
     def _compile_val_string(self, node: Tree) -> Callable:
         value = self._unquote(str(node.children[0]))
+        # Check if string contains parameter placeholders like {param}
+        if '{' in value and '}' in value:
+            import re
+            placeholders = re.findall(r'\{(\w+)\}', value)
+            if placeholders:
+                def substitute(r, ctx=None, v=value, phs=placeholders):
+                    result = v
+                    if ctx and hasattr(ctx, 'params'):
+                        for ph in phs:
+                            if ph in ctx.params:
+                                result = result.replace('{' + ph + '}', str(ctx.params[ph]))
+                    return result
+                return substitute
         return lambda r, ctx=None, v=value: v
 
     def _compile_val_int(self, node: Tree) -> Callable:
@@ -237,6 +250,23 @@ class ExpressionCompiler:
     def _compile_paren_expr(self, node: Tree) -> Callable:
         """Compile parenthesized expression."""
         return self.compile(node.children[0])
+
+    def _compile_ternary(self, node: Tree) -> Callable:
+        """Compile ternary expression: condition ? then_value : else_value"""
+        cond = self.compile(node.children[0])
+        then_val = self.compile(node.children[1])
+        else_val = self.compile(node.children[2])
+        return lambda r, ctx=None, c=cond, t=then_val, e=else_val: (
+            t(r, ctx) if c(r, ctx) else e(r, ctx)
+        )
+
+    def _compile_coalesce(self, node: Tree) -> Callable:
+        """Compile coalesce expression: value ?? default"""
+        left = self.compile(node.children[0])
+        right = self.compile(node.children[1])
+        return lambda r, ctx=None, l=left, ri=right: (
+            l(r, ctx) if l(r, ctx) is not None else ri(r, ctx)
+        )
 
     # --------------------------------------------------------
     # Property Access and Function Calls

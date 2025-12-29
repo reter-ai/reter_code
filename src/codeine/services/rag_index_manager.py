@@ -4413,6 +4413,10 @@ class RAGIndexManager:
         import time
         start_time = time.time()
 
+        # Defensive type coercion - parameters may come as strings from CADSL
+        n_clusters = int(n_clusters) if n_clusters is not None else 50
+        min_cluster_size = int(min_cluster_size) if min_cluster_size is not None else 2
+
         if not self._initialized or self._faiss_wrapper is None:
             return {
                 "success": False,

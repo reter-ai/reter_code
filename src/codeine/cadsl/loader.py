@@ -115,6 +115,60 @@ class ParamSpec:
 
 
 # ============================================================
+# PARAMETER RESOLUTION HELPERS
+# ============================================================
+
+def _resolve_param_ref(value: Any, ctx: "Context", default: Any = None) -> Any:
+    """Resolve a parameter reference like '{param_name}' from context.
+
+    CADSL RAG params may contain parameter references like '{n_clusters}'
+    which need to be resolved from ctx.params at runtime.
+
+    Args:
+        value: The value to resolve (may be a param ref string or literal)
+        ctx: The pipeline context containing params
+        default: Default value if param not found
+
+    Returns:
+        Resolved value from ctx.params, or original value if not a param ref
+    """
+    if isinstance(value, str) and value.startswith("{") and value.endswith("}"):
+        param_name = value[1:-1]  # Extract "param_name" from "{param_name}"
+        resolved = ctx.params.get(param_name, default)
+        return resolved
+    return value if value is not None else default
+
+
+def _resolve_rag_params(params: Dict[str, Any], ctx: "Context") -> Dict[str, Any]:
+    """Resolve all parameter references in RAG params dict.
+
+    Args:
+        params: RAG parameters from CADSL (may contain param refs)
+        ctx: Pipeline context
+
+    Returns:
+        Dict with all param refs resolved to actual values
+    """
+    defaults = {
+        "n_clusters": 50,
+        "min_size": 2,
+        "top_k": 10,
+        "similarity": 0.85,
+        "limit": 50,
+        "exclude_same_file": True,
+        "exclude_same_class": True,
+        "query": "",
+    }
+
+    resolved = {}
+    for key, value in params.items():
+        default = defaults.get(key)
+        resolved[key] = _resolve_param_ref(value, ctx, default)
+
+    return resolved
+
+
+# ============================================================
 # PIPELINE FACTORY BUILDER
 # ============================================================
 
@@ -134,7 +188,8 @@ def build_pipeline_factory(spec: CADSLToolSpec,
         Callable that creates Pipeline objects
     """
     from codeine.dsl.core import (
-        Pipeline, REQLSource, RAGSource, ValueSource,
+        Pipeline, REQLSource, ValueSource,
+        RAGSearchSource, RAGDuplicatesSource, RAGClustersSource,
         FilterStep, SelectStep, MapStep, FlatMapStep,
         OrderByStep, LimitStep, OffsetStep,
         GroupByStep, AggregateStep, FlattenStep, UniqueStep,
@@ -147,13 +202,36 @@ def build_pipeline_factory(spec: CADSLToolSpec,
         # Create source
         if spec.source_type == "reql":
             source = REQLSource(spec.source_content)
-        elif spec.source_type == "rag":
-            source = RAGSource(
-                query=spec.rag_query or "",
-                top_k=spec.rag_top_k,
+        elif spec.source_type == "rag_search":
+            params = _resolve_rag_params(spec.rag_params, ctx)
+            source = RAGSearchSource(
+                query=params.get("query", ""),
+                top_k=params.get("top_k", 10),
+                entity_types=params.get("entity_types"),
+            )
+        elif spec.source_type == "rag_duplicates":
+            params = _resolve_rag_params(spec.rag_params, ctx)
+            source = RAGDuplicatesSource(
+                similarity=params.get("similarity", 0.85),
+                limit=params.get("limit", 50),
+                exclude_same_file=params.get("exclude_same_file", True),
+                exclude_same_class=params.get("exclude_same_class", True),
+                entity_types=params.get("entity_types"),
+            )
+        elif spec.source_type == "rag_clusters":
+            params = _resolve_rag_params(spec.rag_params, ctx)
+            source = RAGClustersSource(
+                n_clusters=params.get("n_clusters", 50),
+                min_size=params.get("min_size", 2),
+                exclude_same_file=params.get("exclude_same_file", True),
+                exclude_same_class=params.get("exclude_same_class", True),
+                entity_types=params.get("entity_types"),
             )
         elif spec.source_type == "value":
             source = ValueSource(spec.source_content)
+        elif spec.source_type == "merge":
+            from .transformer import MergeSource
+            source = MergeSource(spec.merge_sources)
         else:
             source = ValueSource([])
 
@@ -260,6 +338,42 @@ def build_pipeline_factory(spec: CADSLToolSpec,
 
             elif step_type == "emit":
                 emit_key = step_spec.get("key", "result")
+
+            elif step_type == "when":
+                # Conditional execution
+                from .transformer import WhenStep
+                condition = step_spec.get("condition", lambda r, ctx=None: True)
+                inner_step = step_spec.get("inner_step")
+                if inner_step:
+                    pipeline = pipeline >> WhenStep(condition, inner_step)
+
+            elif step_type == "unless":
+                # Inverted conditional
+                from .transformer import UnlessStep
+                condition = step_spec.get("condition", lambda r, ctx=None: False)
+                inner_step = step_spec.get("inner_step")
+                if inner_step:
+                    pipeline = pipeline >> UnlessStep(condition, inner_step)
+
+            elif step_type == "branch":
+                # Branching
+                from .transformer import BranchStep
+                condition = step_spec.get("condition", lambda r, ctx=None: True)
+                then_step = step_spec.get("then_step")
+                else_step = step_spec.get("else_step")
+                pipeline = pipeline >> BranchStep(condition, then_step, else_step)
+
+            elif step_type == "catch":
+                # Error handling
+                from .transformer import CatchStep
+                default_fn = step_spec.get("default", lambda r, ctx=None: [])
+                pipeline = pipeline >> CatchStep(default_fn)
+
+            elif step_type == "parallel":
+                # Execute multiple steps in parallel
+                from .transformer import ParallelStep
+                inner_steps = step_spec.get("steps", [])
+                pipeline = pipeline >> ParallelStep(inner_steps)
 
         if emit_key:
             pipeline = pipeline.emit(emit_key)

@@ -1,0 +1,28 @@
+# list_classes - List all classes in the codebase
+#
+# Returns a list of all classes, optionally filtered by module.
+
+query list_classes() {
+    """List all classes in the codebase or a specific module."""
+
+    param module: str = "";
+    param limit: int = 100;
+    param offset: int = 0;
+
+    reql {
+        SELECT ?c ?name ?qualifiedName ?file ?line (COUNT(?method) AS ?methodCount)
+        WHERE {
+            ?c type {Class} .
+            ?c name ?name .
+            ?c qualifiedName ?qualifiedName .
+            ?c inFile ?file .
+            ?c atLine ?line .
+            OPTIONAL { ?method type {Method} . ?method definedIn ?c }
+        }
+        GROUP BY ?c ?name ?qualifiedName ?file ?line
+        ORDER BY ?name
+    }
+    | filter { "{module}" == "" or row.file contains "{module}" }
+    | select { name, qualifiedName, file, line, methodCount, qualified_name: c }
+    | emit { classes }
+}

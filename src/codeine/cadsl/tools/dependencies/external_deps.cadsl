@@ -1,0 +1,29 @@
+# find_external_dependencies - Find external package dependencies
+#
+# Identifies all external (pip) packages used in the codebase.
+
+detector find_external_dependencies(category="dependencies", severity="info") {
+    """Find external package dependencies."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?module_name ?package_name ?file
+        WHERE {
+            ?m type {Module} .
+            ?m name ?module_name .
+            ?m inFile ?file .
+            ?m imports ?package_name
+        }
+        ORDER BY ?package_name ?module_name
+        LIMIT {limit}
+    }
+    | select { package_name, module_name, file }
+    | unique { package_name }
+    | map {
+        ...row,
+        issue: "external_dependency",
+        message: "Package '{package_name}' is imported"
+    }
+    | emit { findings }
+}

@@ -1,0 +1,46 @@
+# extract_superclass_candidates - Find classes sharing methods that need a superclass
+#
+# Identifies unrelated classes with similar methods that could share
+# a common superclass.
+
+detector extract_superclass_candidates(category="inheritance", severity="medium") {
+    """Find classes that should share a common superclass."""
+
+    param min_shared_methods: int = 3;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?c1 ?class1 ?c2 ?class2 ?file1 ?line1 (COUNT(?shared_name) AS ?shared_methods)
+        WHERE {
+            ?c1 type {Class} .
+            ?c1 name ?class1 .
+            ?c1 inFile ?file1 .
+            ?c1 atLine ?line1 .
+            ?c2 type {Class} .
+            ?c2 name ?class2 .
+            ?m1 type {Method} .
+            ?m1 definedIn ?c1 .
+            ?m1 name ?shared_name .
+            ?m2 type {Method} .
+            ?m2 definedIn ?c2 .
+            ?m2 name ?shared_name .
+            FILTER ( ?c1 != ?c2 )
+            FILTER NOT EXISTS { ?c1 inheritsFrom ?c2 }
+            FILTER NOT EXISTS { ?c2 inheritsFrom ?c1 }
+        }
+        GROUP BY ?c1 ?class1 ?c2 ?class2 ?file1 ?line1
+        HAVING (?shared_methods >= {min_shared_methods})
+        ORDER BY DESC(?shared_methods)
+        LIMIT {limit}
+    }
+    | select { class1, class2, file1, line1, shared_methods }
+    | map {
+        ...row,
+        file: file1,
+        line: line1,
+        refactoring: "extract_superclass",
+        message: "Classes '{class1}' and '{class2}' share {shared_methods} methods",
+        suggestion: "Extract a common superclass for shared functionality"
+    }
+    | emit { findings }
+}

@@ -1,0 +1,30 @@
+# get_method_signature - Get method signature with parameters and return type
+#
+# Returns the full signature information for a method or function.
+
+query get_method_signature() {
+    """Get method signature with parameters and return type."""
+
+    param target: str required;
+
+    reql {
+        SELECT ?m ?name ?qualifiedName ?file ?line ?return_type ?param_name ?param_type ?param_default
+        WHERE {
+            { ?m type {Method} } UNION { ?m type {Function} }
+            ?m name ?name .
+            ?m qualifiedName ?qualifiedName .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            OPTIONAL { ?m returnType ?return_type }
+            OPTIONAL {
+                ?m hasParameter ?p .
+                ?p name ?param_name .
+                OPTIONAL { ?p typeAnnotation ?param_type }
+                OPTIONAL { ?p defaultValue ?param_default }
+            }
+            FILTER ( ?name = "{target}" || CONTAINS(?qualifiedName, "{target}") )
+        }
+    }
+    | select { name, qualifiedName, file, line, return_type, param_name, param_type, param_default, qualified_name: m }
+    | emit { signature }
+}

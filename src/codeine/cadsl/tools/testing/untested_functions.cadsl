@@ -1,0 +1,32 @@
+# untested_functions - Find public functions without tests
+#
+# Identifies public functions that have no test coverage.
+
+detector untested_functions(category="test_coverage", severity="medium") {
+    """Find public functions without test coverage."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?f ?name ?file ?line ?line_count
+        WHERE {
+            ?f type {Function} .
+            ?f name ?name .
+            ?f inFile ?file .
+            ?f atLine ?line .
+            OPTIONAL { ?f lineCount ?line_count }
+            FILTER ( !REGEX(?name, "^_") && !REGEX(?file, "test_|_test\\.py") )
+            MINUS { ?test calls ?f . ?test inFile ?test_file . FILTER ( REGEX(?test_file, "test_") ) }
+        }
+        ORDER BY DESC(?line_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, line_count }
+    | map {
+        ...row,
+        issue: "untested_function",
+        message: "Function '{name}' has no tests",
+        suggestion: "Create test function 'test_{name}'"
+    }
+    | emit { findings }
+}

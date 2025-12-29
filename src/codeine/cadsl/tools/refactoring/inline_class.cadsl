@@ -1,0 +1,37 @@
+# inline_class - Detect small, trivial classes that should be inlined
+#
+# Classes that do very little can add unnecessary complexity.
+# If a class is barely doing anything, its features can be moved into another class.
+
+detector inline_class(category="refactoring", severity="low") {
+    """Detect trivial classes that could be inlined into their users."""
+
+    param max_methods: int = 2;
+    param max_attributes: int = 2;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?c ?name ?file ?line (COUNT(?method) AS ?method_count) (COUNT(?attr) AS ?attr_count)
+        WHERE {
+            ?c type {Class} .
+            ?c name ?name .
+            ?c inFile ?file .
+            ?c atLine ?line .
+            OPTIONAL { ?method type {Method} . ?method definedIn ?c }
+            OPTIONAL { ?attr type {Field} . ?attr definedIn ?c }
+            FILTER ( !REGEX(?name, "Exception$|Error$|Config$|Settings$") )
+        }
+        GROUP BY ?c ?name ?file ?line
+        HAVING (?method_count <= {max_methods} && ?attr_count <= {max_attributes})
+        ORDER BY ?method_count ?attr_count
+        LIMIT {limit}
+    }
+    | select { name, file, line, method_count, attr_count }
+    | map {
+        ...row,
+        refactoring: "inline_class",
+        message: "Class '{name}' is trivial ({method_count} methods, {attr_count} attributes)",
+        suggestion: "Consider inlining this class into its users"
+    }
+    | emit { findings }
+}

@@ -1,0 +1,24 @@
+# get_docstring - Get the docstring of a class, method, or function
+#
+# Returns the docstring and entity type for the specified target.
+
+query get_docstring() {
+    """Get the docstring of a class, method, or function."""
+
+    param target: str required;
+
+    reql {
+        SELECT ?e ?name ?docstring ?file ?line ?type
+        WHERE {
+            { ?e type {Class} } UNION { ?e type {Method} } UNION { ?e type {Function} }
+            ?e type ?type .
+            ?e name ?name .
+            ?e inFile ?file .
+            ?e atLine ?line .
+            OPTIONAL { ?e docstring ?docstring }
+            FILTER ( CONTAINS(?name, "{target}") || CONTAINS(?e, "{target}") )
+        }
+    }
+    | select { name, docstring, file, line, type, qualified_name: e }
+    | emit { result }
+}

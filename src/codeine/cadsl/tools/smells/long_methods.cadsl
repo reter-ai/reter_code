@@ -1,0 +1,33 @@
+# long_methods - Detect methods that are too long
+#
+# Long methods are harder to understand, test, and maintain.
+# They often indicate that a method is doing too many things.
+
+detector long_methods(category="size", severity="medium") {
+    """Detect methods that are too long."""
+
+    param max_lines: int = 50;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?name ?class_name ?file ?line ?line_count
+        WHERE {
+            ?m type {Method} .
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            ?m lineCount ?line_count .
+            OPTIONAL { ?m definedIn ?c . ?c name ?class_name }
+            FILTER ( ?line_count > {max_lines} )
+        }
+        ORDER BY DESC(?line_count)
+    }
+    | select { name, class_name, file, line, line_count, qualified_name: m }
+    | map {
+        ...row,
+        issue: "long_method",
+        message: "Method '{name}' has {line_count} lines",
+        suggestion: "Consider extracting smaller methods with clear responsibilities"
+    }
+    | emit { findings }
+}

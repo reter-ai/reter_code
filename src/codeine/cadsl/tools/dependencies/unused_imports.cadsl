@@ -1,0 +1,30 @@
+# find_unused_imports - Find imported modules/symbols that are never used
+#
+# Identifies imports that can be removed to clean up the code.
+
+detector find_unused_imports(category="dependencies", severity="low") {
+    """Find unused imports that can be removed."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?i ?import_name ?file ?line
+        WHERE {
+            ?i type {Import} .
+            ?i name ?import_name .
+            ?i inFile ?file .
+            ?i atLine ?line .
+            ?i isUsed false
+        }
+        ORDER BY ?file ?line
+        LIMIT {limit}
+    }
+    | select { import_name, file, line }
+    | map {
+        ...row,
+        issue: "unused_import",
+        message: "Unused import '{import_name}'",
+        suggestion: "Remove the unused import"
+    }
+    | emit { findings }
+}

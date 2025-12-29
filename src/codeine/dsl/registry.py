@@ -176,6 +176,34 @@ class Registry:
         return cls._by_type.get(type_key, []).copy()
 
     @classmethod
+    def unregister(cls, name: str) -> bool:
+        """
+        Unregister a tool by name.
+
+        Args:
+            name: Tool name to unregister
+
+        Returns:
+            True if tool was found and removed, False otherwise
+        """
+        if name not in cls._tools:
+            return False
+
+        spec = cls._tools.pop(name)
+
+        # Remove from type index
+        type_key = spec.type.value if hasattr(spec.type, "value") else str(spec.type)
+        if type_key in cls._by_type and name in cls._by_type[type_key]:
+            cls._by_type[type_key].remove(name)
+
+        # Remove from category index
+        category = spec.meta.get("category") if hasattr(spec, "meta") else None
+        if category and category in cls._by_category and name in cls._by_category[category]:
+            cls._by_category[category].remove(name)
+
+        return True
+
+    @classmethod
     def clear(cls) -> None:
         """Clear all registered tools. Mainly for testing."""
         cls._tools.clear()

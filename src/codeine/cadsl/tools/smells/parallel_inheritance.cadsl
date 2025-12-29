@@ -1,0 +1,110 @@
+# parallel_inheritance - Detect parallel inheritance hierarchies
+#
+# Parallel inheritance occurs when you have to create a subclass of one class
+# every time you create a subclass of another class.
+
+detector parallel_inheritance(category="code_smell", severity="medium") {
+    """Detect parallel inheritance hierarchies - mirrored class structures."""
+
+    param min_parallel_pairs: int = 2;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?c ?name ?base_name ?file ?line
+        WHERE {
+            ?c type {Class} .
+            ?c name ?name .
+            ?c inFile ?file .
+            ?c atLine ?line .
+            ?c inheritsFrom ?base .
+            ?base name ?base_name
+        }
+    }
+    | select { c, name, base_name, file, line }
+    # Step 1: Group children by base class
+    | collect {
+        by: base_name,
+        children: set(name),
+        file: first(file),
+        line: first(line),
+        child_count: count(name)
+    }
+    # Need at least 1 child to compare
+    | filter { child_count >= 1 }
+    # Step 2: Cross join base class groups to compare hierarchies
+    | cross_join { unique_pairs: true, left_prefix: "left_", right_prefix: "right_" }
+    # Step 3: Flatten children to compare individual class pairs
+    # For each pair of hierarchies, we need to compare their children
+    # Use a custom approach: join left_children with right_children
+    | map {
+        base1: left_base_name,
+        base2: right_base_name,
+        left_children: left_children,
+        right_children: right_children,
+        file: left_file,
+        line: left_line
+    }
+    # Step 4: Use Python for nested loop comparison (still needed for complex matching)
+    | python {
+        # Compare children for parallel naming patterns
+        min_parallel_pairs = ctx.params.get('min_parallel_pairs', 2)
+        limit = ctx.params.get('limit', 100)
+
+        def names_are_parallel(n1, n2):
+            if n1 == n2 or len(n1) < 3 or len(n2) < 3:
+                return False
+            min_len = min(len(n1), len(n2))
+            # Check common suffix
+            for slen in range(3, min_len):
+                if n1[-slen:] == n2[-slen:]:
+                    p1, p2 = n1[:-slen], n2[:-slen]
+                    if p1 and p2 and p1 != p2:
+                        return True
+            # Check common prefix
+            for plen in range(3, min_len):
+                if n1[:plen] == n2[:plen]:
+                    s1, s2 = n1[plen:], n2[plen:]
+                    if s1 and s2 and s1 != s2:
+                        return True
+            return False
+
+        findings = []
+        seen_pairs = set()
+
+        for row in rows:
+            base1 = row.get('base1')
+            base2 = row.get('base2')
+            children1 = row.get('left_children', [])
+            children2 = row.get('right_children', [])
+
+            if not children1 or not children2:
+                continue
+
+            # Find parallel pairs
+            parallel_pairs = []
+            for c1 in children1:
+                for c2 in children2:
+                    if names_are_parallel(c1, c2):
+                        parallel_pairs.append((c1, c2))
+
+            if len(parallel_pairs) >= min_parallel_pairs:
+                pair = tuple(sorted([base1, base2]))
+                if pair not in seen_pairs:
+                    seen_pairs.add(pair)
+                    findings.append({
+                        "base1": base1,
+                        "base2": base2,
+                        "parallel_pairs": len(parallel_pairs),
+                        "examples": parallel_pairs[:3],
+                        "file": row.get("file", ""),
+                        "line": row.get("line", 0),
+                        "issue": "parallel_inheritance",
+                        "message": f"Hierarchies under '{base1}' and '{base2}' have {len(parallel_pairs)} parallel pairs",
+                        "suggestion": "Consider merging hierarchies or using composition instead of inheritance"
+                    })
+
+        findings.sort(key=lambda x: x["parallel_pairs"], reverse=True)
+        result = findings[:limit]
+    }
+    | emit { findings }
+}

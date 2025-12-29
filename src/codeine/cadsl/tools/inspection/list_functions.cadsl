@@ -1,0 +1,29 @@
+# list_functions - List all top-level functions in the codebase
+#
+# Returns a list of all module-level functions (not methods).
+
+query list_functions() {
+    """List all top-level functions in the codebase or a specific module."""
+
+    param module: str = "";
+    param limit: int = 100;
+    param offset: int = 0;
+
+    reql {
+        SELECT ?f ?name ?qualifiedName ?file ?line ?returnType
+        WHERE {
+            ?f type {Function} .
+            ?f name ?name .
+            ?f qualifiedName ?qualifiedName .
+            ?f inFile ?file .
+            ?f atLine ?line .
+            OPTIONAL { ?f returnType ?returnType }
+            FILTER NOT EXISTS { ?f definedIn ?class }
+            FILTER ( "{module}" = "" || CONTAINS(?file, "{module}") )
+        }
+        ORDER BY ?name
+        LIMIT {limit}
+    }
+    | select { name, qualifiedName, file, line, returnType, qualified_name: f }
+    | emit { functions }
+}

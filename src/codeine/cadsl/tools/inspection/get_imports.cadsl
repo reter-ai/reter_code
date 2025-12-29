@@ -1,0 +1,23 @@
+# get_imports - Get complete module import dependency graph
+#
+# Returns all imports in the codebase with their sources and targets.
+
+query get_imports() {
+    """Get complete module import dependency graph."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?i ?module ?imported ?line
+        WHERE {
+            ?i type {Import} .
+            ?i inModule ?module .
+            ?i imports ?imported .
+            OPTIONAL { ?i atLine ?line }
+        }
+        ORDER BY ?module ?imported
+        LIMIT {limit}
+    }
+    | select { module, imported, line, qualified_name: i }
+    | emit { imports }
+}

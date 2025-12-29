@@ -1,0 +1,42 @@
+# error_handling_review - Find code semantically similar to error handling
+#
+# Uses semantic search to find code that handles errors, exceptions,
+# logging, or failure scenarios. Joins with REQL to add exception info.
+
+detector error_handling_review(category="reliability", severity="medium") {
+    """Find methods semantically similar to error handling patterns."""
+
+    param similarity: float = 0.70;
+    param limit: int = 50;
+
+    # Get methods that raise or catch exceptions
+    reql {
+        SELECT ?m ?name ?file ?line ?line_count ?class_name ?exc_name
+        WHERE {
+            ?m type {Method} .
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            OPTIONAL { ?m definedIn ?c . ?c name ?class_name }
+            OPTIONAL { ?m lineCount ?line_count }
+            OPTIONAL { ?m raises ?exc . ?exc name ?exc_name }
+            FILTER ( !REGEX(?file, "test_") )
+        }
+    }
+    | join {
+        on: name,
+        right: rag { search, query: "error exception raise catch try finally handle failure fallback retry recover log warning", top_k: 200 },
+        type: inner
+    }
+    | filter { similarity >= {similarity} }
+    | select { name, file, line, line_count, class_name, exc_name, similarity }
+    | map {
+        ...row,
+        issue: "error_handling",
+        message: "'{name}' matches error handling patterns ({similarity})",
+        suggestion: "Review error handling: logging, cleanup, user feedback, recovery"
+    }
+    | order_by { -similarity }
+    | limit { {limit} }
+    | emit { findings }
+}

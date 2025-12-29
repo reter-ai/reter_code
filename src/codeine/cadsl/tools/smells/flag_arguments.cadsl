@@ -1,0 +1,49 @@
+# flag_arguments - Detect boolean parameters that control function behavior
+#
+# Flag arguments indicate that a function does more than one thing.
+# The function should typically be split into separate functions.
+
+detector flag_arguments(category="code_smell", severity="medium") {
+    """Detect flag arguments - boolean params controlling function behavior."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?func ?name ?file ?line ?param_name ?class_name
+        WHERE {
+            {
+                ?func type {Function} .
+                ?func name ?name .
+                ?func inFile ?file .
+                ?func atLine ?line .
+                ?param parameterOf ?func .
+                ?param name ?param_name .
+                ?param parameterType ?ptype .
+                FILTER ( ?ptype = "bool" || ?ptype = "boolean" )
+                OPTIONAL { ?func definedIn ?c . ?c name ?class_name }
+            }
+            UNION
+            {
+                ?func type {Method} .
+                ?func name ?name .
+                ?func inFile ?file .
+                ?func atLine ?line .
+                ?param parameterOf ?func .
+                ?param name ?param_name .
+                ?param parameterType ?ptype .
+                FILTER ( ?ptype = "bool" || ?ptype = "boolean" )
+                OPTIONAL { ?func definedIn ?c . ?c name ?class_name }
+            }
+        }
+        ORDER BY ?file ?line
+        LIMIT {limit}
+    }
+    | select { name, file, line, param_name, class_name }
+    | map {
+        ...row,
+        issue: "flag_argument",
+        message: "Function '{name}' has boolean flag parameter '{param_name}'",
+        suggestion: "Split into two separate functions or use polymorphism"
+    }
+    | emit { findings }
+}

@@ -1,0 +1,42 @@
+# undocumented_code - Detect public classes and functions without docstrings
+#
+# Documentation is essential for maintainability. Public APIs should
+# always have docstrings explaining purpose, parameters, and return values.
+
+detector undocumented_code(category="code_smell", severity="low") {
+    """Detect undocumented public classes and functions."""
+
+    param include_private: bool = false;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?e ?name ?file ?line ?class_name
+        WHERE {
+            {
+                ?e type {Class}
+            } UNION {
+                ?e type {Function}
+            } UNION {
+                ?e type {Method} .
+                ?e definedIn ?c .
+                ?c name ?class_name
+            }
+            ?e name ?name .
+            ?e inFile ?file .
+            ?e atLine ?line .
+            MINUS { ?e hasDocstring ?doc }
+            FILTER ( {include_private} || !STRSTARTS(?name, "_") )
+            FILTER ( !REGEX(?file, "test") )
+        }
+        ORDER BY ?file ?line
+        LIMIT {limit}
+    }
+    | select { name, type, file, line, class_name }
+    | map {
+        ...row,
+        issue: "undocumented",
+        message: "Undocumented {type}: '{name}'",
+        suggestion: "Add a docstring explaining purpose, parameters, and return value"
+    }
+    | emit { findings }
+}

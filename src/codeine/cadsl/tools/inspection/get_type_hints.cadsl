@@ -1,0 +1,29 @@
+# get_type_hints - Extract all type annotations from parameters and returns
+#
+# Returns type annotation coverage and details for the codebase.
+
+query get_type_hints() {
+    """Extract all type annotations from parameters and returns."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?e ?entity_name ?entity_type ?param_name ?param_type ?return_type ?file ?line
+        WHERE {
+            { ?e type {Method} } UNION { ?e type {Function} }
+            ?e name ?entity_name .
+            ?e inFile ?file .
+            ?e atLine ?line .
+            OPTIONAL { ?e returnType ?return_type }
+            OPTIONAL {
+                ?e hasParameter ?p .
+                ?p name ?param_name .
+                ?p typeAnnotation ?param_type
+            }
+        }
+        ORDER BY ?file ?line
+        LIMIT {limit}
+    }
+    | select { entity_name, entity_type, param_name, param_type, return_type, file, line }
+    | emit { type_hints }
+}

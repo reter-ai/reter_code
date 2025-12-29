@@ -48,14 +48,16 @@ class ToolSpec:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     # Pipeline components
-    source_type: str = ""  # "reql", "rag", "value"
+    source_type: str = ""  # "reql", "rag_search", "rag_duplicates", "rag_clusters", "value", "merge"
     source_content: str = ""
     steps: List[Dict[str, Any]] = field(default_factory=list)
     emit_key: Optional[str] = None
 
-    # For RAG source
-    rag_query: Optional[str] = None
-    rag_top_k: int = 10
+    # For RAG sources
+    rag_params: Dict[str, Any] = field(default_factory=dict)
+
+    # For merge sources - list of sub-sources
+    merge_sources: List[Dict[str, Any]] = field(default_factory=list)
 
 
 # ============================================================
@@ -317,16 +319,10 @@ class CADSLTransformer:
                     spec.source_content = content
 
         elif node.data == "rag_source":
-            spec.source_type = "rag"
-            # Extract query and top_k from rag_args
+            # Parse RAG operation type and parameters
             for child in node.children:
                 if isinstance(child, Tree) and child.data == "rag_args":
-                    for arg in child.children:
-                        if isinstance(arg, Tree):
-                            # Query expression
-                            spec.rag_query = self._extract_expr_as_string(arg)
-                        elif isinstance(arg, Token) and arg.type == "INT":
-                            spec.rag_top_k = int(str(arg))
+                    self._transform_rag_args(child, spec)
 
         elif node.data == "value_source":
             spec.source_type = "value"
@@ -334,6 +330,133 @@ class CADSLTransformer:
             for child in node.children:
                 if isinstance(child, Tree):
                     spec.source_content = self._extract_expr_as_string(child)
+
+        elif node.data == "merge_source":
+            spec.source_type = "merge"
+            # Extract list of sub-sources
+            for child in node.children:
+                if isinstance(child, Tree) and child.data == "source_list":
+                    spec.merge_sources = self._extract_source_list(child)
+
+    def _extract_source_list(self, node: Tree) -> List[Dict[str, Any]]:
+        """Extract list of sources from source_list node."""
+        sources = []
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "source_item":
+                for source_node in child.children:
+                    if isinstance(source_node, Tree):
+                        source_spec = self._extract_single_source(source_node)
+                        if source_spec:
+                            sources.append(source_spec)
+        return sources
+
+    def _extract_single_source(self, node: Tree) -> Optional[Dict[str, Any]]:
+        """Extract a single source specification."""
+        if node.data == "reql_source":
+            for child in node.children:
+                if isinstance(child, Token) and child.type == "REQL_BLOCK":
+                    content = str(child)
+                    if content.startswith("{") and content.endswith("}"):
+                        content = content[1:-1].strip()
+                    return {"type": "reql", "content": content}
+
+        elif node.data == "rag_source":
+            # Create a temporary spec to extract RAG params
+            temp_spec = ToolSpec(name="", tool_type="")
+            for child in node.children:
+                if isinstance(child, Tree) and child.data == "rag_args":
+                    self._transform_rag_args(child, temp_spec)
+            return {
+                "type": temp_spec.source_type,
+                "params": temp_spec.rag_params
+            }
+
+        elif node.data == "value_source":
+            for child in node.children:
+                if isinstance(child, Tree):
+                    content = self._extract_expr_as_string(child)
+                    return {"type": "value", "content": content}
+
+        return None
+
+    def _transform_rag_args(self, node: Tree, spec: ToolSpec) -> None:
+        """Transform RAG arguments (search, duplicates, or clusters)."""
+        # Find the operation type (rag_search, rag_duplicates, rag_clusters)
+        for child in node.children:
+            if isinstance(child, Tree):
+                if child.data == "rag_search":
+                    spec.source_type = "rag_search"
+                    spec.rag_params = self._extract_rag_params(child)
+                elif child.data == "rag_duplicates":
+                    spec.source_type = "rag_duplicates"
+                    spec.rag_params = self._extract_rag_params(child)
+                elif child.data == "rag_clusters":
+                    spec.source_type = "rag_clusters"
+                    spec.rag_params = self._extract_rag_params(child)
+
+    def _extract_rag_params(self, node: Tree) -> Dict[str, Any]:
+        """Extract parameters from RAG operation node."""
+        params = {}
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "rag_param":
+                name = None
+                value = None
+                for param_child in child.children:
+                    if isinstance(param_child, Token) and param_child.type == "NAME":
+                        name = str(param_child)
+                    elif isinstance(param_child, Tree):
+                        value = self._extract_rag_param_value(param_child)
+                if name is not None:
+                    params[name] = value
+        return params
+
+    def _extract_rag_param_value(self, node: Tree) -> Any:
+        """Extract value from rag_param_value node."""
+        if node.data == "rag_float_val":
+            return float(str(node.children[0]))
+        elif node.data == "rag_int_val":
+            return int(str(node.children[0]))
+        elif node.data == "rag_true_val":
+            return True
+        elif node.data == "rag_false_val":
+            return False
+        elif node.data == "rag_string_val":
+            s = str(node.children[0])
+            return s[1:-1] if s.startswith('"') or s.startswith("'") else s
+        elif node.data == "rag_param_ref":
+            # Return as placeholder string to be resolved at runtime
+            param_node = node.children[0]
+            if isinstance(param_node, Tree) and param_node.data == "param_ref":
+                return "{" + str(param_node.children[0]) + "}"
+            return None
+        elif node.data == "rag_list_val":
+            # Extract list values
+            items = []
+            for child in node.children:
+                if isinstance(child, Tree) and child.data == "val_list":
+                    for item in child.children:
+                        if isinstance(item, Tree) and item.data == "value_list":
+                            for val in item.children:
+                                items.append(self._extract_value(val))
+            return items
+        return None
+
+    def _extract_value(self, node: Tree) -> Any:
+        """Extract a simple value from a value node."""
+        if node.data == "val_string":
+            s = str(node.children[0])
+            return s[1:-1] if s.startswith('"') or s.startswith("'") else s
+        elif node.data == "val_int":
+            return int(str(node.children[0]))
+        elif node.data == "val_float":
+            return float(str(node.children[0]))
+        elif node.data == "val_true":
+            return True
+        elif node.data == "val_false":
+            return False
+        elif node.data == "val_null":
+            return None
+        return str(node.children[0]) if node.children else None
 
     def _transform_step(self, node: Tree) -> Optional[Dict[str, Any]]:
         """Transform a step node to a step specification dict."""
@@ -369,8 +492,214 @@ class CADSLTransformer:
             return self._transform_render_step(node)
         elif step_type == "emit":
             return self._transform_emit_step(node)
+        elif step_type == "when":
+            return self._transform_when_step(node)
+        elif step_type == "unless":
+            return self._transform_unless_step(node)
+        elif step_type == "branch":
+            return self._transform_branch_step(node)
+        elif step_type == "catch":
+            return self._transform_catch_step(node)
+        elif step_type == "parallel":
+            return self._transform_parallel_step(node)
+        elif step_type == "join":
+            return self._transform_join_step(node)
+        elif step_type == "graph_cycles":
+            return self._transform_graph_cycles_step(node)
+        elif step_type == "graph_closure":
+            return self._transform_graph_closure_step(node)
+        elif step_type == "graph_traverse":
+            return self._transform_graph_traverse_step(node)
+        elif step_type == "render_mermaid":
+            return self._transform_render_mermaid_step(node)
+        elif step_type == "pivot":
+            return self._transform_pivot_step(node)
+        elif step_type == "compute":
+            return self._transform_compute_step(node)
+        elif step_type == "collect":
+            return self._transform_collect_step(node)
+        elif step_type == "nest":
+            return self._transform_nest_step(node)
+        elif step_type == "render_table":
+            return self._transform_render_table_step(node)
+        elif step_type == "render_chart":
+            return self._transform_render_chart_step(node)
+        elif step_type == "cross_join":
+            return self._transform_cross_join_step(node)
+        elif step_type == "set_similarity":
+            return self._transform_set_similarity_step(node)
+        elif step_type == "string_match":
+            return self._transform_string_match_step(node)
 
         return None
+
+    def _transform_parallel_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform parallel step: parallel { step1, step2, ... }"""
+        inner_steps = []
+
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "step_list":
+                for step_item in child.children:
+                    if isinstance(step_item, Tree) and step_item.data == "step_item":
+                        for inner_node in step_item.children:
+                            if isinstance(inner_node, Tree):
+                                step = self._transform_step(inner_node)
+                                if step:
+                                    inner_steps.append(step)
+
+        return {
+            "type": "parallel",
+            "steps": inner_steps,
+        }
+
+    def _transform_join_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform join step: join { left: key, right: source, right_key: key, type: inner }"""
+        result = {
+            "type": "join",
+            "left_key": None,
+            "right_source": None,
+            "right_key": None,
+            "join_type": "inner",
+        }
+
+        # Find join_spec
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "join_spec":
+                for param in child.children:
+                    if isinstance(param, Tree):
+                        if param.data == "join_left_key":
+                            result["left_key"] = str(param.children[0])
+                        elif param.data == "join_right_source":
+                            # Extract the source item
+                            for src in param.children:
+                                if isinstance(src, Tree) and src.data == "source_item":
+                                    for src_node in src.children:
+                                        if isinstance(src_node, Tree):
+                                            result["right_source"] = self._extract_single_source(src_node)
+                        elif param.data == "join_right_key":
+                            result["right_key"] = str(param.children[0])
+                        elif param.data == "join_on_key":
+                            # on: key sets both left and right keys
+                            key = str(param.children[0])
+                            result["left_key"] = key
+                            if result["right_key"] is None:
+                                result["right_key"] = key
+                        elif param.data == "join_type_spec":
+                            # Extract join type from the nested node
+                            for type_node in param.children:
+                                if isinstance(type_node, Tree):
+                                    jt = type_node.data.replace("join_", "")
+                                    result["join_type"] = jt
+
+        return result
+
+    def _transform_when_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform when step: when { condition } step"""
+        condition = None
+        inner_step = None
+
+        for child in node.children:
+            if isinstance(child, Tree):
+                if child.data in ("or_cond", "and_cond", "not_cond", "comparison",
+                                  "or_expr", "and_expr", "not_expr", "binary_comp",
+                                  "paren_cond"):
+                    condition = compile_condition(child)
+                elif child.data.endswith("_step") or child.data == "step":
+                    # Handle nested step
+                    if child.data == "step":
+                        for step_child in child.children:
+                            if isinstance(step_child, Tree):
+                                inner_step = self._transform_step(step_child)
+                                break
+                    else:
+                        inner_step = self._transform_step(child)
+
+        return {
+            "type": "when",
+            "condition": condition,
+            "inner_step": inner_step,
+        }
+
+    def _transform_unless_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform unless step: unless { condition } step"""
+        condition = None
+        inner_step = None
+
+        for child in node.children:
+            if isinstance(child, Tree):
+                if child.data in ("or_cond", "and_cond", "not_cond", "comparison",
+                                  "or_expr", "and_expr", "not_expr", "binary_comp",
+                                  "paren_cond"):
+                    condition = compile_condition(child)
+                elif child.data.endswith("_step") or child.data == "step":
+                    if child.data == "step":
+                        for step_child in child.children:
+                            if isinstance(step_child, Tree):
+                                inner_step = self._transform_step(step_child)
+                                break
+                    else:
+                        inner_step = self._transform_step(child)
+
+        return {
+            "type": "unless",
+            "condition": condition,
+            "inner_step": inner_step,
+        }
+
+    def _transform_branch_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform branch step: branch { condition } then step [else step]"""
+        condition = None
+        then_step = None
+        else_step = None
+        found_then = False
+
+        for child in node.children:
+            if isinstance(child, Token) and str(child) == "then":
+                found_then = True
+                continue
+            if isinstance(child, Token) and str(child) == "else":
+                found_then = False  # Next step is else
+                continue
+
+            if isinstance(child, Tree):
+                if child.data in ("or_cond", "and_cond", "not_cond", "comparison",
+                                  "or_expr", "and_expr", "not_expr", "binary_comp",
+                                  "paren_cond"):
+                    condition = compile_condition(child)
+                elif child.data.endswith("_step") or child.data == "step":
+                    step = None
+                    if child.data == "step":
+                        for step_child in child.children:
+                            if isinstance(step_child, Tree):
+                                step = self._transform_step(step_child)
+                                break
+                    else:
+                        step = self._transform_step(child)
+
+                    if then_step is None:
+                        then_step = step
+                    else:
+                        else_step = step
+
+        return {
+            "type": "branch",
+            "condition": condition,
+            "then_step": then_step,
+            "else_step": else_step,
+        }
+
+    def _transform_catch_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform catch step: catch { default_value }"""
+        default_expr = None
+
+        for child in node.children:
+            if isinstance(child, Tree):
+                default_expr = compile_expression(child)
+
+        return {
+            "type": "catch",
+            "default": default_expr,
+        }
 
     def _transform_filter_step(self, node: Tree) -> Dict[str, Any]:
         """Transform filter step."""
@@ -595,13 +924,484 @@ class CADSLTransformer:
         return result
 
     def _transform_emit_step(self, node: Tree) -> Dict[str, Any]:
-        """Transform emit step."""
-        key = "result"
-        for child in node.children:
-            if isinstance(child, Token) and child.type == "NAME":
-                key = str(child)
+        """Transform emit step - supports single or multiple outputs."""
+        outputs = {}
 
-        return {"type": "emit", "key": key}
+        # Find emit_spec
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "emit_spec":
+                for emit_field in child.children:
+                    if isinstance(emit_field, Tree):
+                        if emit_field.data == "emit_simple":
+                            # Simple: emit { key }
+                            name = str(emit_field.children[0])
+                            outputs[name] = name
+                        elif emit_field.data == "emit_named":
+                            # Named: emit { key: source }
+                            name = str(emit_field.children[0])
+                            source = str(emit_field.children[1])
+                            outputs[name] = source
+            elif isinstance(child, Token) and child.type == "NAME":
+                # Legacy single key format
+                key = str(child)
+                outputs[key] = key
+
+        if len(outputs) == 1:
+            # Single output - use legacy format for compatibility
+            key = list(outputs.keys())[0]
+            return {"type": "emit", "key": key}
+        else:
+            # Multiple outputs
+            return {"type": "emit", "outputs": outputs}
+
+    def _transform_graph_cycles_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform graph_cycles step: graph_cycles { from: x, to: y }"""
+        result = {"type": "graph_cycles", "from_field": None, "to_field": None}
+
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "graph_spec":
+                for param in child.children:
+                    if isinstance(param, Tree):
+                        if param.data == "graph_from":
+                            result["from_field"] = str(param.children[0])
+                        elif param.data == "graph_to":
+                            result["to_field"] = str(param.children[0])
+
+        return result
+
+    def _transform_graph_closure_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform graph_closure step: graph_closure { from: x, to: y, max_depth: 10 }"""
+        result = {"type": "graph_closure", "from_field": None, "to_field": None, "max_depth": 10}
+
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "graph_spec":
+                for param in child.children:
+                    if isinstance(param, Tree):
+                        if param.data == "graph_from":
+                            result["from_field"] = str(param.children[0])
+                        elif param.data == "graph_to":
+                            result["to_field"] = str(param.children[0])
+                        elif param.data == "graph_max_depth":
+                            result["max_depth"] = int(str(param.children[0]))
+                        elif param.data == "graph_max_depth_param":
+                            result["max_depth_param"] = str(param.children[0].children[0])
+
+        return result
+
+    def _transform_graph_traverse_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform graph_traverse step: graph_traverse { from: x, to: y, algorithm: bfs }"""
+        result = {"type": "graph_traverse", "from_field": None, "to_field": None,
+                  "algorithm": "bfs", "max_depth": 10, "root": None}
+
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "graph_spec":
+                for param in child.children:
+                    if isinstance(param, Tree):
+                        if param.data == "graph_from":
+                            result["from_field"] = str(param.children[0])
+                        elif param.data == "graph_to":
+                            result["to_field"] = str(param.children[0])
+                        elif param.data == "graph_max_depth":
+                            result["max_depth"] = int(str(param.children[0]))
+                        elif param.data == "graph_algorithm":
+                            algo_node = param.children[0]
+                            if isinstance(algo_node, Tree):
+                                result["algorithm"] = "bfs" if algo_node.data == "algo_bfs" else "dfs"
+                        elif param.data == "graph_root":
+                            result["root"] = compile_expression(param.children[0])
+
+        return result
+
+    def _transform_render_mermaid_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform render_mermaid step."""
+        result = {
+            "type": "render_mermaid",
+            "mermaid_type": "flowchart",
+            "nodes": None,
+            "edges_from": None,
+            "edges_to": None,
+            "direction": "TB",
+            "title": None,
+            "participants": None,
+            "messages_from": None,
+            "messages_to": None,
+            "messages_label": None,
+            # Class diagram
+            "classes": None,
+            "methods": None,
+            "attributes": None,
+            "inheritance_from": None,
+            "inheritance_to": None,
+            # Pie chart
+            "labels": None,
+            "values": None,
+            # State diagram
+            "states": None,
+            "transitions_from": None,
+            "transitions_to": None,
+            # ER diagram
+            "entities": None,
+            "relationships": None,
+        }
+
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "mermaid_spec":
+                for param in child.children:
+                    if isinstance(param, Tree):
+                        if param.data == "mermaid_type_spec":
+                            type_node = param.children[0]
+                            if isinstance(type_node, Tree):
+                                result["mermaid_type"] = type_node.data.replace("mermaid_", "")
+                        elif param.data == "mermaid_nodes":
+                            result["nodes"] = str(param.children[0])
+                        elif param.data == "mermaid_edges":
+                            result["edges_from"] = str(param.children[0])
+                            result["edges_to"] = str(param.children[1])
+                        elif param.data == "mermaid_direction":
+                            dir_node = param.children[0]
+                            if isinstance(dir_node, Tree):
+                                result["direction"] = dir_node.data.replace("dir_", "").upper()
+                        elif param.data == "mermaid_title":
+                            result["title"] = self._unquote(str(param.children[0]))
+                        elif param.data == "mermaid_participants":
+                            result["participants"] = str(param.children[0])
+                        elif param.data == "mermaid_messages":
+                            result["messages_from"] = str(param.children[0])
+                            result["messages_to"] = str(param.children[1])
+                            result["messages_label"] = str(param.children[2])
+                        # Class diagram
+                        elif param.data == "mermaid_classes":
+                            result["classes"] = str(param.children[0])
+                        elif param.data == "mermaid_methods":
+                            result["methods"] = str(param.children[0])
+                        elif param.data == "mermaid_attributes":
+                            result["attributes"] = str(param.children[0])
+                        elif param.data == "mermaid_inheritance":
+                            result["inheritance_from"] = str(param.children[0])
+                            result["inheritance_to"] = str(param.children[1])
+                        # Pie chart
+                        elif param.data == "mermaid_labels":
+                            result["labels"] = str(param.children[0])
+                        elif param.data == "mermaid_values":
+                            result["values"] = str(param.children[0])
+                        # State diagram
+                        elif param.data == "mermaid_states":
+                            result["states"] = str(param.children[0])
+                        elif param.data == "mermaid_transitions":
+                            result["transitions_from"] = str(param.children[0])
+                            result["transitions_to"] = str(param.children[1])
+                        # ER diagram
+                        elif param.data == "mermaid_entities":
+                            result["entities"] = str(param.children[0])
+                        elif param.data == "mermaid_relationships":
+                            result["relationships"] = str(param.children[0])
+
+        return result
+
+    def _transform_pivot_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform pivot step: pivot { rows: x, cols: y, value: z, aggregate: sum }"""
+        result = {"type": "pivot", "rows": None, "cols": None, "value": None, "aggregate": "sum"}
+
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "pivot_spec":
+                for param in child.children:
+                    if isinstance(param, Tree):
+                        if param.data == "pivot_rows":
+                            result["rows"] = str(param.children[0])
+                        elif param.data == "pivot_cols":
+                            result["cols"] = str(param.children[0])
+                        elif param.data == "pivot_value":
+                            result["value"] = str(param.children[0])
+                        elif param.data == "pivot_aggregate":
+                            agg_node = param.children[0]
+                            if isinstance(agg_node, Tree):
+                                result["aggregate"] = agg_node.data.replace("agg_", "")
+
+        return result
+
+    def _transform_compute_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform compute step: compute { ratio: a / b, pct: ratio * 100 }"""
+        computations = {}
+
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "compute_field":
+                name = str(child.children[0])
+                expr = compile_expression(child.children[1])
+                computations[name] = expr
+
+        return {"type": "compute", "computations": computations}
+
+    def _transform_collect_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform collect step: collect { by: field, name: op(field) }"""
+        result = {"type": "collect", "by": None, "fields": {}}
+
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "collect_spec":
+                for param in child.children:
+                    if isinstance(param, Tree):
+                        if param.data == "collect_by":
+                            result["by"] = str(param.children[0])
+                        elif param.data == "collect_field":
+                            # name: op(field)
+                            name = str(param.children[0])
+                            op_node = param.children[1]
+                            source = str(param.children[2])
+                            if isinstance(op_node, Tree):
+                                op = op_node.data.replace("collect_", "")
+                            else:
+                                op = "list"
+                            result["fields"][name] = (source, op)
+
+        return result
+
+    def _transform_nest_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform nest step: nest { parent: field, child: field, root: expr }"""
+        result = {
+            "type": "nest",
+            "parent": None,
+            "child": None,
+            "root": None,
+            "max_depth": 10,
+            "children_key": "children",
+        }
+
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "nest_spec":
+                for param in child.children:
+                    if isinstance(param, Tree):
+                        if param.data == "nest_parent":
+                            result["parent"] = str(param.children[0])
+                        elif param.data == "nest_child":
+                            result["child"] = str(param.children[0])
+                        elif param.data == "nest_root":
+                            result["root"] = compile_expression(param.children[0])
+                        elif param.data == "nest_max_depth":
+                            result["max_depth"] = int(str(param.children[0]))
+                        elif param.data == "nest_max_depth_param":
+                            result["max_depth_param"] = str(param.children[0].children[0])
+                        elif param.data == "nest_children_key":
+                            result["children_key"] = self._unquote(str(param.children[0]))
+
+        return result
+
+    def _transform_render_table_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform render_table step."""
+        result = {
+            "type": "render_table",
+            "format": "markdown",
+            "columns": [],
+            "title": None,
+            "totals": False,
+            "sort": None,
+            "group_by": None,
+            "max_rows": None,
+        }
+
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "table_spec":
+                for param in child.children:
+                    if isinstance(param, Tree):
+                        if param.data == "table_format_spec":
+                            fmt_node = param.children[0]
+                            if isinstance(fmt_node, Tree):
+                                result["format"] = fmt_node.data.replace("tbl_", "")
+                        elif param.data == "table_columns":
+                            result["columns"] = self._extract_column_list(param)
+                        elif param.data == "table_title":
+                            result["title"] = self._unquote(str(param.children[0]))
+                        elif param.data == "table_title_param":
+                            result["title_param"] = str(param.children[0].children[0])
+                        elif param.data == "table_totals":
+                            val_node = param.children[0]
+                            if isinstance(val_node, Tree):
+                                result["totals"] = val_node.data == "bool_true"
+                        elif param.data == "table_sort":
+                            result["sort"] = str(param.children[0])
+                        elif param.data == "table_group":
+                            result["group_by"] = str(param.children[0])
+                        elif param.data == "table_max_rows":
+                            result["max_rows"] = int(str(param.children[0]))
+                        elif param.data == "table_max_rows_param":
+                            result["max_rows_param"] = str(param.children[0].children[0])
+
+        return result
+
+    def _extract_column_list(self, node: Tree) -> List[Dict[str, str]]:
+        """Extract column definitions from column_list."""
+        columns = []
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "column_list":
+                for col in child.children:
+                    if isinstance(col, Tree):
+                        if col.data == "col_simple":
+                            name = str(col.children[0])
+                            columns.append({"name": name, "alias": name})
+                        elif col.data == "col_alias":
+                            name = str(col.children[0])
+                            alias = self._unquote(str(col.children[1]))
+                            columns.append({"name": name, "alias": alias})
+        return columns
+
+    def _transform_render_chart_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform render_chart step."""
+        result = {
+            "type": "render_chart",
+            "chart_type": "bar",
+            "x": None,
+            "y": None,
+            "series": None,
+            "title": None,
+            "format": "mermaid",
+            "colors": None,
+            "stacked": False,
+            "horizontal": False,
+        }
+
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "chart_spec":
+                for param in child.children:
+                    if isinstance(param, Tree):
+                        if param.data == "chart_type_spec":
+                            type_node = param.children[0]
+                            if isinstance(type_node, Tree):
+                                result["chart_type"] = type_node.data.replace("chart_", "")
+                        elif param.data == "chart_x":
+                            result["x"] = str(param.children[0])
+                        elif param.data == "chart_y":
+                            result["y"] = str(param.children[0])
+                        elif param.data == "chart_series":
+                            result["series"] = str(param.children[0])
+                        elif param.data == "chart_title":
+                            result["title"] = self._unquote(str(param.children[0]))
+                        elif param.data == "chart_title_param":
+                            result["title_param"] = str(param.children[0].children[0])
+                        elif param.data == "chart_format_spec":
+                            fmt_node = param.children[0]
+                            if isinstance(fmt_node, Tree):
+                                result["format"] = fmt_node.data.replace("chart_fmt_", "")
+                        elif param.data == "chart_colors":
+                            result["colors"] = self._extract_color_list(param)
+                        elif param.data == "chart_stacked":
+                            val_node = param.children[0]
+                            if isinstance(val_node, Tree):
+                                result["stacked"] = val_node.data == "bool_true"
+                        elif param.data == "chart_horizontal":
+                            val_node = param.children[0]
+                            if isinstance(val_node, Tree):
+                                result["horizontal"] = val_node.data == "bool_true"
+
+        return result
+
+    def _extract_color_list(self, node: Tree) -> List[str]:
+        """Extract color list from color_list."""
+        colors = []
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "color_list":
+                for item in child.children:
+                    if isinstance(item, Token) and item.type == "STRING":
+                        colors.append(self._unquote(str(item)))
+        return colors
+
+    def _transform_cross_join_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform cross_join step: cross_join { unique_pairs: true, left_prefix: "left_" }"""
+        result = {
+            "type": "cross_join",
+            "unique_pairs": True,
+            "exclude_self": True,
+            "left_prefix": "left_",
+            "right_prefix": "right_",
+        }
+
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "cross_join_spec":
+                for param in child.children:
+                    if isinstance(param, Tree):
+                        if param.data == "cj_unique":
+                            val_node = param.children[0]
+                            if isinstance(val_node, Tree):
+                                result["unique_pairs"] = val_node.data == "bool_true"
+                        elif param.data == "cj_exclude_self":
+                            val_node = param.children[0]
+                            if isinstance(val_node, Tree):
+                                result["exclude_self"] = val_node.data == "bool_true"
+                        elif param.data == "cj_left_prefix":
+                            result["left_prefix"] = self._unquote(str(param.children[0]))
+                        elif param.data == "cj_right_prefix":
+                            result["right_prefix"] = self._unquote(str(param.children[0]))
+
+        return result
+
+    def _transform_set_similarity_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform set_similarity step: set_similarity { left: col1, right: col2, type: jaccard }"""
+        result = {
+            "type": "set_similarity",
+            "left": None,
+            "right": None,
+            "sim_type": "jaccard",
+            "output": "similarity",
+            "intersection_output": None,
+            "union_output": None,
+        }
+
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "set_sim_spec":
+                for param in child.children:
+                    if isinstance(param, Tree):
+                        if param.data == "ss_left":
+                            result["left"] = str(param.children[0])
+                        elif param.data == "ss_right":
+                            result["right"] = str(param.children[0])
+                        elif param.data == "ss_type":
+                            type_node = param.children[0]
+                            if isinstance(type_node, Tree):
+                                result["sim_type"] = type_node.data
+                            else:
+                                result["sim_type"] = str(type_node)
+                        elif param.data == "ss_output":
+                            result["output"] = str(param.children[0])
+                        elif param.data == "ss_intersection":
+                            result["intersection_output"] = str(param.children[0])
+                        elif param.data == "ss_union":
+                            result["union_output"] = str(param.children[0])
+
+        return result
+
+    def _transform_string_match_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform string_match step: string_match { left: col1, right: col2, type: common_affix }"""
+        result = {
+            "type": "string_match",
+            "left": None,
+            "right": None,
+            "match_type": "common_affix",
+            "min_length": 3,
+            "output": "has_match",
+            "match_output": None,
+        }
+
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "string_match_spec":
+                for param in child.children:
+                    if isinstance(param, Tree):
+                        if param.data == "sm_left":
+                            result["left"] = str(param.children[0])
+                        elif param.data == "sm_right":
+                            result["right"] = str(param.children[0])
+                        elif param.data == "sm_type":
+                            type_node = param.children[0]
+                            if isinstance(type_node, Tree):
+                                result["match_type"] = type_node.data
+                            else:
+                                result["match_type"] = str(type_node)
+                        elif param.data == "sm_min_len":
+                            result["min_length"] = int(str(param.children[0]))
+                        elif param.data == "sm_min_len_param":
+                            result["min_length_param"] = str(param.children[0].children[0])
+                        elif param.data == "sm_output":
+                            result["output"] = str(param.children[0])
+                        elif param.data == "sm_match_output":
+                            result["match_output"] = str(param.children[0])
+
+        return result
 
     # --------------------------------------------------------
     # Helpers
@@ -699,7 +1499,8 @@ class PipelineBuilder:
         """
         # Import here to avoid circular imports
         from codeine.dsl.core import (
-            Pipeline, REQLSource, RAGSource, ValueSource,
+            Pipeline, REQLSource, ValueSource,
+            RAGSearchSource, RAGDuplicatesSource, RAGClustersSource,
             FilterStep, SelectStep, MapStep, FlatMapStep,
             OrderByStep, LimitStep, OffsetStep,
             GroupByStep, AggregateStep, FlattenStep, UniqueStep,
@@ -710,13 +1511,36 @@ class PipelineBuilder:
             # Create source
             if spec.source_type == "reql":
                 pipeline = Pipeline(_source=REQLSource(spec.source_content))
-            elif spec.source_type == "rag":
-                pipeline = Pipeline(_source=RAGSource(
-                    query=spec.rag_query or "",
-                    top_k=spec.rag_top_k,
+            elif spec.source_type == "rag_search":
+                params = spec.rag_params
+                pipeline = Pipeline(_source=RAGSearchSource(
+                    query=params.get("query", ""),
+                    top_k=params.get("top_k", 10),
+                    entity_types=params.get("entity_types"),
+                ))
+            elif spec.source_type == "rag_duplicates":
+                params = spec.rag_params
+                pipeline = Pipeline(_source=RAGDuplicatesSource(
+                    similarity=params.get("similarity", 0.85),
+                    limit=params.get("limit", 50),
+                    exclude_same_file=params.get("exclude_same_file", True),
+                    exclude_same_class=params.get("exclude_same_class", True),
+                    entity_types=params.get("entity_types"),
+                ))
+            elif spec.source_type == "rag_clusters":
+                params = spec.rag_params
+                pipeline = Pipeline(_source=RAGClustersSource(
+                    n_clusters=params.get("n_clusters", 50),
+                    min_size=params.get("min_size", 2),
+                    exclude_same_file=params.get("exclude_same_file", True),
+                    exclude_same_class=params.get("exclude_same_class", True),
+                    entity_types=params.get("entity_types"),
                 ))
             elif spec.source_type == "value":
                 pipeline = Pipeline(_source=ValueSource(spec.source_content))
+            elif spec.source_type == "merge":
+                # Create MergeSource from multiple sub-sources
+                pipeline = Pipeline(_source=MergeSource(spec.merge_sources))
             else:
                 pipeline = Pipeline(_source=ValueSource([]))
 
@@ -797,12 +1621,1898 @@ class PipelineBuilder:
                 elif step_type == "emit":
                     emit_key = step_spec.get("key", "result")
 
+                elif step_type == "when":
+                    # Conditional execution - only execute inner step when condition is true
+                    condition = step_spec.get("condition", lambda r, ctx=None: True)
+                    inner_step = step_spec.get("inner_step")
+                    if inner_step:
+                        pipeline = pipeline >> WhenStep(condition, inner_step)
+
+                elif step_type == "unless":
+                    # Inverted conditional - only execute inner step when condition is false
+                    condition = step_spec.get("condition", lambda r, ctx=None: False)
+                    inner_step = step_spec.get("inner_step")
+                    if inner_step:
+                        pipeline = pipeline >> UnlessStep(condition, inner_step)
+
+                elif step_type == "branch":
+                    # Branching - execute then_step if condition, else else_step
+                    condition = step_spec.get("condition", lambda r, ctx=None: True)
+                    then_step = step_spec.get("then_step")
+                    else_step = step_spec.get("else_step")
+                    pipeline = pipeline >> BranchStep(condition, then_step, else_step)
+
+                elif step_type == "catch":
+                    # Error handling - return default if previous steps fail
+                    default_fn = step_spec.get("default", lambda r, ctx=None: [])
+                    pipeline = pipeline >> CatchStep(default_fn)
+
+                elif step_type == "parallel":
+                    # Execute multiple steps in parallel
+                    inner_steps = step_spec.get("steps", [])
+                    pipeline = pipeline >> ParallelStep(inner_steps)
+
+                elif step_type == "join":
+                    # Join with another source using PyArrow
+                    left_key = step_spec.get("left_key")
+                    right_source = step_spec.get("right_source")
+                    right_key = step_spec.get("right_key", left_key)
+                    join_type = step_spec.get("join_type", "inner")
+                    pipeline = pipeline >> JoinStep(left_key, right_source, right_key, join_type)
+
+                elif step_type == "graph_cycles":
+                    from_field = step_spec.get("from_field")
+                    to_field = step_spec.get("to_field")
+                    pipeline = pipeline >> GraphCyclesStep(from_field, to_field)
+
+                elif step_type == "graph_closure":
+                    from_field = step_spec.get("from_field")
+                    to_field = step_spec.get("to_field")
+                    max_depth = step_spec.get("max_depth", 10)
+                    pipeline = pipeline >> GraphClosureStep(from_field, to_field, max_depth)
+
+                elif step_type == "graph_traverse":
+                    from_field = step_spec.get("from_field")
+                    to_field = step_spec.get("to_field")
+                    algorithm = step_spec.get("algorithm", "bfs")
+                    max_depth = step_spec.get("max_depth", 10)
+                    root = step_spec.get("root")
+                    pipeline = pipeline >> GraphTraverseStep(from_field, to_field, algorithm, max_depth, root)
+
+                elif step_type == "render_mermaid":
+                    pipeline = pipeline >> RenderMermaidStep(
+                        mermaid_type=step_spec.get("mermaid_type", "flowchart"),
+                        nodes=step_spec.get("nodes"),
+                        edges_from=step_spec.get("edges_from"),
+                        edges_to=step_spec.get("edges_to"),
+                        direction=step_spec.get("direction", "TB"),
+                        title=step_spec.get("title"),
+                        participants=step_spec.get("participants"),
+                        messages_from=step_spec.get("messages_from"),
+                        messages_to=step_spec.get("messages_to"),
+                        messages_label=step_spec.get("messages_label"),
+                        # Class diagram
+                        classes=step_spec.get("classes"),
+                        methods=step_spec.get("methods"),
+                        attributes=step_spec.get("attributes"),
+                        inheritance_from=step_spec.get("inheritance_from"),
+                        inheritance_to=step_spec.get("inheritance_to"),
+                        # Pie chart
+                        labels=step_spec.get("labels"),
+                        values=step_spec.get("values"),
+                        # State diagram
+                        states=step_spec.get("states"),
+                        transitions_from=step_spec.get("transitions_from"),
+                        transitions_to=step_spec.get("transitions_to"),
+                        # ER diagram
+                        entities=step_spec.get("entities"),
+                        relationships=step_spec.get("relationships"),
+                    )
+
+                elif step_type == "pivot":
+                    pipeline = pipeline >> PivotStep(
+                        rows=step_spec.get("rows"),
+                        cols=step_spec.get("cols"),
+                        value=step_spec.get("value"),
+                        aggregate=step_spec.get("aggregate", "sum"),
+                    )
+
+                elif step_type == "compute":
+                    computations = step_spec.get("computations", {})
+                    pipeline = pipeline >> ComputeStep(computations)
+
+                elif step_type == "collect":
+                    by_field = step_spec.get("by")
+                    fields = step_spec.get("fields", {})
+                    pipeline = pipeline >> CollectStep(by_field, fields)
+
+                elif step_type == "nest":
+                    pipeline = pipeline >> NestStep(
+                        parent=step_spec.get("parent"),
+                        child=step_spec.get("child"),
+                        root=step_spec.get("root"),
+                        max_depth=step_spec.get("max_depth", 10),
+                        children_key=step_spec.get("children_key", "children"),
+                    )
+
+                elif step_type == "render_table":
+                    pipeline = pipeline >> RenderTableStep(
+                        format=step_spec.get("format", "markdown"),
+                        columns=step_spec.get("columns", []),
+                        title=step_spec.get("title"),
+                        totals=step_spec.get("totals", False),
+                        sort=step_spec.get("sort"),
+                        group_by=step_spec.get("group_by"),
+                        max_rows=step_spec.get("max_rows"),
+                    )
+
+                elif step_type == "render_chart":
+                    pipeline = pipeline >> RenderChartStep(
+                        chart_type=step_spec.get("chart_type", "bar"),
+                        x=step_spec.get("x"),
+                        y=step_spec.get("y"),
+                        series=step_spec.get("series"),
+                        title=step_spec.get("title"),
+                        format=step_spec.get("format", "mermaid"),
+                        colors=step_spec.get("colors"),
+                        stacked=step_spec.get("stacked", False),
+                        horizontal=step_spec.get("horizontal", False),
+                    )
+
+                elif step_type == "cross_join":
+                    pipeline = pipeline >> CrossJoinStep(
+                        unique_pairs=step_spec.get("unique_pairs", True),
+                        exclude_self=step_spec.get("exclude_self", True),
+                        left_prefix=step_spec.get("left_prefix", "left_"),
+                        right_prefix=step_spec.get("right_prefix", "right_"),
+                    )
+
+                elif step_type == "set_similarity":
+                    pipeline = pipeline >> SetSimilarityStep(
+                        left_col=step_spec.get("left"),
+                        right_col=step_spec.get("right"),
+                        sim_type=step_spec.get("sim_type", "jaccard"),
+                        output=step_spec.get("output", "similarity"),
+                        intersection_output=step_spec.get("intersection_output"),
+                        union_output=step_spec.get("union_output"),
+                    )
+
+                elif step_type == "string_match":
+                    # Handle param reference for min_length
+                    min_length = step_spec.get("min_length", 3)
+                    if step_spec.get("min_length_param"):
+                        min_length = params.get(step_spec["min_length_param"], min_length)
+                    pipeline = pipeline >> StringMatchStep(
+                        left_col=step_spec.get("left"),
+                        right_col=step_spec.get("right"),
+                        match_type=step_spec.get("match_type", "common_affix"),
+                        min_length=min_length,
+                        output=step_spec.get("output", "has_match"),
+                        match_output=step_spec.get("match_output"),
+                    )
+
             if emit_key:
                 pipeline = pipeline.emit(emit_key)
 
             return pipeline
 
         return pipeline_factory
+
+
+# ============================================================
+# CONDITIONAL STEPS
+# ============================================================
+
+class WhenStep:
+    """
+    Conditional step - executes inner step only when condition is true.
+
+    Syntax: when { condition } step
+    """
+
+    def __init__(self, condition, inner_step_spec):
+        self.condition = condition
+        self.inner_step_spec = inner_step_spec
+
+    def execute(self, data, ctx=None):
+        """Execute inner step if condition is true, otherwise pass through."""
+        from codeine.dsl.core import pipeline_ok, pipeline_err
+
+        try:
+            # Evaluate condition on each row
+            should_execute = True
+            if callable(self.condition):
+                if isinstance(data, list) and data:
+                    # Use first row to check condition
+                    should_execute = self.condition(data[0], ctx)
+                elif isinstance(data, dict):
+                    should_execute = self.condition(data, ctx)
+
+            if should_execute and self.inner_step_spec:
+                # Execute inner step
+                return self._execute_inner_step(data, ctx)
+            else:
+                # Pass through unchanged
+                return pipeline_ok(data)
+        except Exception as e:
+            return pipeline_err("when", f"Condition evaluation failed: {e}", e)
+
+    def _execute_inner_step(self, data, ctx):
+        """Execute the inner step spec."""
+        from codeine.dsl.core import (
+            pipeline_ok, pipeline_err,
+            FilterStep, SelectStep, MapStep, LimitStep
+        )
+
+        spec = self.inner_step_spec
+        step_type = spec.get("type")
+
+        if step_type == "filter":
+            predicate = spec.get("predicate", lambda r, c=None: True)
+            step = FilterStep(predicate)
+        elif step_type == "limit":
+            count = spec.get("count", 100)
+            step = LimitStep(count)
+        elif step_type == "map":
+            transform = spec.get("transform", lambda r, c=None: r)
+            step = MapStep(transform)
+        else:
+            # Fallback - pass through
+            return pipeline_ok(data)
+
+        return step.execute(data, ctx)
+
+
+class UnlessStep:
+    """
+    Inverted conditional step - executes inner step only when condition is false.
+
+    Syntax: unless { condition } step
+    """
+
+    def __init__(self, condition, inner_step_spec):
+        self.condition = condition
+        self.inner_step_spec = inner_step_spec
+
+    def execute(self, data, ctx=None):
+        """Execute inner step if condition is false, otherwise pass through."""
+        from codeine.dsl.core import pipeline_ok, pipeline_err
+
+        try:
+            # Evaluate condition on each row
+            should_skip = False
+            if callable(self.condition):
+                if isinstance(data, list) and data:
+                    should_skip = self.condition(data[0], ctx)
+                elif isinstance(data, dict):
+                    should_skip = self.condition(data, ctx)
+
+            if not should_skip and self.inner_step_spec:
+                # Execute inner step
+                when_step = WhenStep(lambda r, c=None: True, self.inner_step_spec)
+                return when_step._execute_inner_step(data, ctx)
+            else:
+                # Pass through unchanged
+                return pipeline_ok(data)
+        except Exception as e:
+            return pipeline_err("unless", f"Condition evaluation failed: {e}", e)
+
+
+class BranchStep:
+    """
+    Branching step - executes then_step if condition is true, else_step otherwise.
+
+    Syntax: branch { condition } then step [else step]
+    """
+
+    def __init__(self, condition, then_step_spec, else_step_spec=None):
+        self.condition = condition
+        self.then_step_spec = then_step_spec
+        self.else_step_spec = else_step_spec
+
+    def execute(self, data, ctx=None):
+        """Execute appropriate branch based on condition."""
+        from codeine.dsl.core import pipeline_ok, pipeline_err
+
+        try:
+            # Evaluate condition
+            should_then = True
+            if callable(self.condition):
+                if isinstance(data, list) and data:
+                    should_then = self.condition(data[0], ctx)
+                elif isinstance(data, dict):
+                    should_then = self.condition(data, ctx)
+
+            if should_then and self.then_step_spec:
+                when_step = WhenStep(lambda r, c=None: True, self.then_step_spec)
+                return when_step._execute_inner_step(data, ctx)
+            elif not should_then and self.else_step_spec:
+                when_step = WhenStep(lambda r, c=None: True, self.else_step_spec)
+                return when_step._execute_inner_step(data, ctx)
+            else:
+                # No matching branch - pass through
+                return pipeline_ok(data)
+        except Exception as e:
+            return pipeline_err("branch", f"Branch evaluation failed: {e}", e)
+
+
+class CatchStep:
+    """
+    Error handling step - returns default value if previous steps failed.
+
+    Syntax: catch { default_value }
+
+    Note: This step wraps the pipeline execution, catching any errors
+    and returning the default value instead.
+    """
+
+    def __init__(self, default_fn):
+        self.default_fn = default_fn
+
+    def execute(self, data, ctx=None):
+        """Pass through data (actual error catching is done at pipeline level)."""
+        from codeine.dsl.core import pipeline_ok
+
+        # If we get here, no error occurred - just pass through
+        return pipeline_ok(data)
+
+
+class ParallelStep:
+    """
+    Execute multiple steps in parallel on the same input.
+
+    Syntax: parallel { step1, step2, ... }
+
+    Results from all steps are collected into a list.
+    """
+
+    def __init__(self, step_specs):
+        self.step_specs = step_specs
+
+    def execute(self, data, ctx=None):
+        """Execute all steps on the same input and collect results."""
+        from codeine.dsl.core import (
+            pipeline_ok, pipeline_err,
+            FilterStep, SelectStep, MapStep, LimitStep, AggregateStep
+        )
+
+        results = []
+        errors = []
+
+        for spec in self.step_specs:
+            step_type = spec.get("type")
+
+            try:
+                if step_type == "filter":
+                    predicate = spec.get("predicate", lambda r, c=None: True)
+                    step = FilterStep(predicate)
+                elif step_type == "select":
+                    fields = spec.get("fields", {})
+                    step = SelectStep(fields)
+                elif step_type == "map":
+                    transform = spec.get("transform", lambda r, c=None: r)
+                    step = MapStep(transform)
+                elif step_type == "limit":
+                    count = spec.get("count", 100)
+                    step = LimitStep(count)
+                elif step_type == "aggregate":
+                    aggs = spec.get("aggregations", {})
+                    step = AggregateStep(aggs)
+                else:
+                    # Unknown step type, skip
+                    continue
+
+                result = step.execute(data, ctx)
+                if result.is_ok():
+                    results.append(result.unwrap())
+                else:
+                    errors.append(result)
+            except Exception as e:
+                errors.append(pipeline_err("parallel", f"Step failed: {e}", e))
+
+        if errors and not results:
+            return errors[0]
+
+        return pipeline_ok(results)
+
+
+class GraphCyclesStep:
+    """
+    Detect cycles in a directed graph.
+
+    Syntax: graph_cycles { from: field, to: field }
+
+    Uses DFS to detect cycles and returns a list of cycles found.
+    """
+
+    def __init__(self, from_field, to_field):
+        self.from_field = from_field
+        self.to_field = to_field
+
+    def execute(self, data, ctx=None):
+        """Execute cycle detection using DFS."""
+        from codeine.dsl.core import pipeline_ok, pipeline_err
+        from collections import defaultdict
+
+        try:
+            # Convert to list if Arrow table
+            if hasattr(data, 'to_pylist'):
+                data = data.to_pylist()
+
+            # Build adjacency list
+            graph = defaultdict(list)
+            for row in data:
+                from_val = row.get(self.from_field)
+                to_val = row.get(self.to_field)
+                if from_val and to_val:
+                    graph[from_val].append(to_val)
+
+            # DFS for cycle detection
+            cycles = []
+            visited = set()
+            rec_stack = set()
+
+            def dfs(node, path):
+                if node in rec_stack:
+                    cycle_start = path.index(node)
+                    cycle = path[cycle_start:]
+                    cycles.append(tuple(cycle))
+                    return
+                if node in visited:
+                    return
+
+                visited.add(node)
+                rec_stack.add(node)
+                path.append(node)
+
+                for neighbor in graph.get(node, []):
+                    dfs(neighbor, path)
+
+                path.pop()
+                rec_stack.remove(node)
+
+            for node in graph:
+                if node not in visited:
+                    dfs(node, [])
+
+            # Convert cycles to result format
+            result = [
+                {"cycle": list(c), "length": len(c), "message": f"Cycle: {' -> '.join(map(str, c))} -> {c[0]}"}
+                for c in cycles
+            ]
+
+            return pipeline_ok(result)
+        except Exception as e:
+            return pipeline_err("graph_cycles", f"Cycle detection failed: {e}", e)
+
+
+class GraphClosureStep:
+    """
+    Compute transitive closure of a directed graph.
+
+    Syntax: graph_closure { from: field, to: field, max_depth: 10 }
+
+    Returns all reachable nodes from each source node.
+    """
+
+    def __init__(self, from_field, to_field, max_depth=10):
+        self.from_field = from_field
+        self.to_field = to_field
+        self.max_depth = max_depth
+
+    def execute(self, data, ctx=None):
+        """Execute transitive closure computation."""
+        from codeine.dsl.core import pipeline_ok, pipeline_err
+        from collections import defaultdict, deque
+
+        try:
+            # Convert to list if Arrow table
+            if hasattr(data, 'to_pylist'):
+                data = data.to_pylist()
+
+            # Build adjacency list
+            graph = defaultdict(set)
+            for row in data:
+                from_val = row.get(self.from_field)
+                to_val = row.get(self.to_field)
+                if from_val and to_val:
+                    graph[from_val].add(to_val)
+
+            # Compute closure using BFS
+            result = []
+            for start in graph:
+                visited = set()
+                queue = deque([(start, 0)])
+                path = []
+
+                while queue:
+                    node, depth = queue.popleft()
+                    if depth > self.max_depth:
+                        continue
+                    if node in visited:
+                        continue
+
+                    visited.add(node)
+                    if node != start:
+                        path.append(node)
+
+                    for neighbor in graph.get(node, []):
+                        if neighbor not in visited:
+                            queue.append((neighbor, depth + 1))
+
+                result.append({
+                    "source": start,
+                    "reachable": list(visited - {start}),
+                    "count": len(visited) - 1,
+                    "path": path[:self.max_depth],
+                })
+
+            return pipeline_ok(result)
+        except Exception as e:
+            return pipeline_err("graph_closure", f"Transitive closure failed: {e}", e)
+
+
+class GraphTraverseStep:
+    """
+    Traverse a directed graph using BFS or DFS.
+
+    Syntax: graph_traverse { from: field, to: field, algorithm: bfs, max_depth: 10 }
+    """
+
+    def __init__(self, from_field, to_field, algorithm="bfs", max_depth=10, root=None):
+        self.from_field = from_field
+        self.to_field = to_field
+        self.algorithm = algorithm
+        self.max_depth = max_depth
+        self.root = root
+
+    def execute(self, data, ctx=None):
+        """Execute graph traversal."""
+        from codeine.dsl.core import pipeline_ok, pipeline_err
+        from collections import defaultdict, deque
+
+        try:
+            # Convert to list if Arrow table
+            if hasattr(data, 'to_pylist'):
+                data = data.to_pylist()
+
+            # Build adjacency list
+            graph = defaultdict(list)
+            nodes = set()
+            for row in data:
+                from_val = row.get(self.from_field)
+                to_val = row.get(self.to_field)
+                if from_val and to_val:
+                    graph[from_val].append(to_val)
+                    nodes.add(from_val)
+                    nodes.add(to_val)
+
+            # Determine root nodes
+            if self.root and callable(self.root):
+                roots = [n for n in nodes if self.root({"node": n}, ctx)]
+            else:
+                # Find nodes with no incoming edges
+                has_incoming = set()
+                for neighbors in graph.values():
+                    has_incoming.update(neighbors)
+                roots = [n for n in nodes if n not in has_incoming] or list(nodes)[:1]
+
+            # Traverse
+            result = []
+            visited = set()
+
+            if self.algorithm == "bfs":
+                queue = deque([(r, 0, [r]) for r in roots])
+                while queue:
+                    node, depth, path = queue.popleft()
+                    if depth > self.max_depth or node in visited:
+                        continue
+                    visited.add(node)
+                    result.append({
+                        "node": node,
+                        "depth": depth,
+                        "path": path,
+                    })
+                    for neighbor in graph.get(node, []):
+                        if neighbor not in visited:
+                            queue.append((neighbor, depth + 1, path + [neighbor]))
+            else:  # DFS
+                def dfs(node, depth, path):
+                    if depth > self.max_depth or node in visited:
+                        return
+                    visited.add(node)
+                    result.append({
+                        "node": node,
+                        "depth": depth,
+                        "path": path,
+                    })
+                    for neighbor in graph.get(node, []):
+                        dfs(neighbor, depth + 1, path + [neighbor])
+
+                for root in roots:
+                    dfs(root, 0, [root])
+
+            return pipeline_ok(result)
+        except Exception as e:
+            return pipeline_err("graph_traverse", f"Graph traversal failed: {e}", e)
+
+
+class CollectStep:
+    """
+    Aggregate rows by key, collecting fields into sets/lists.
+
+    Syntax: collect { by: field, name: op(field) }
+
+    Operations: set, list, first, last, count, sum, avg, min, max
+    """
+
+    def __init__(self, by: str, fields: dict):
+        self.by = by
+        self.fields = fields  # {output_name: (source_field, operation)}
+
+    def execute(self, data, ctx=None):
+        """Execute collection/aggregation."""
+        from codeine.dsl.core import pipeline_ok, pipeline_err
+
+        try:
+            # Convert to list if Arrow table
+            if hasattr(data, 'to_pylist'):
+                data = data.to_pylist()
+
+            groups = {}
+            for row in data:
+                key = row.get(self.by)
+                if key not in groups:
+                    groups[key] = {self.by: key}
+                    for name, (source, op) in self.fields.items():
+                        if op in ('set', 'list'):
+                            groups[key][f"_{name}_values"] = []
+                        else:
+                            groups[key][f"_{name}_values"] = []
+
+                for name, (source, op) in self.fields.items():
+                    value = row.get(source)
+                    if value is not None:
+                        groups[key][f"_{name}_values"].append(value)
+
+            # Apply aggregation operations
+            result = []
+            for key, group in groups.items():
+                out = {self.by: key}
+                for name, (source, op) in self.fields.items():
+                    values = group.get(f"_{name}_values", [])
+                    if op == 'set':
+                        out[name] = list(dict.fromkeys(values))  # Preserve order, remove dupes
+                    elif op == 'list':
+                        out[name] = values
+                    elif op == 'first':
+                        out[name] = values[0] if values else None
+                    elif op == 'last':
+                        out[name] = values[-1] if values else None
+                    elif op == 'count':
+                        out[name] = len(values)
+                    elif op == 'sum':
+                        out[name] = sum(v for v in values if isinstance(v, (int, float)))
+                    elif op == 'avg':
+                        nums = [v for v in values if isinstance(v, (int, float))]
+                        out[name] = sum(nums) / len(nums) if nums else 0
+                    elif op == 'min':
+                        out[name] = min(values) if values else None
+                    elif op == 'max':
+                        out[name] = max(values) if values else None
+                    else:
+                        out[name] = values
+                result.append(out)
+
+            return pipeline_ok(result)
+        except Exception as e:
+            return pipeline_err("collect", f"Collect failed: {e}", e)
+
+
+class NestStep:
+    """
+    Create nested/tree structure from flat data.
+
+    Syntax: nest { parent: field, child: field, root: expr, max_depth: 10 }
+    """
+
+    def __init__(self, parent: str, child: str, root=None, max_depth=10, children_key="children"):
+        self.parent = parent
+        self.child = child
+        self.root = root
+        self.max_depth = max_depth
+        self.children_key = children_key
+
+    def execute(self, data, ctx=None):
+        """Execute nesting."""
+        from codeine.dsl.core import pipeline_ok, pipeline_err
+        from collections import defaultdict
+
+        try:
+            # Convert to list if Arrow table
+            if hasattr(data, 'to_pylist'):
+                data = data.to_pylist()
+
+            # Build parent->children map
+            children_map = defaultdict(list)
+            all_items = {}
+            for row in data:
+                child_id = row.get(self.child)
+                parent_id = row.get(self.parent)
+                if child_id:
+                    all_items[child_id] = dict(row)
+                    if parent_id:
+                        children_map[parent_id].append(child_id)
+
+            # Find roots
+            if self.root and callable(self.root):
+                roots = [cid for cid, item in all_items.items()
+                        if self.root(item, ctx)]
+            else:
+                # Items with no parent are roots
+                has_parent = set()
+                for row in data:
+                    parent_id = row.get(self.parent)
+                    child_id = row.get(self.child)
+                    if parent_id and child_id:
+                        has_parent.add(child_id)
+                roots = [cid for cid in all_items if cid not in has_parent]
+
+            # Build tree recursively
+            def build_tree(item_id, depth=0):
+                if depth > self.max_depth or item_id not in all_items:
+                    return None
+                node = dict(all_items[item_id])
+                child_ids = children_map.get(item_id, [])
+                if child_ids:
+                    node[self.children_key] = [
+                        build_tree(cid, depth + 1)
+                        for cid in child_ids
+                        if build_tree(cid, depth + 1) is not None
+                    ]
+                return node
+
+            result = [build_tree(r) for r in roots if build_tree(r) is not None]
+            return pipeline_ok(result)
+        except Exception as e:
+            return pipeline_err("nest", f"Nest failed: {e}", e)
+
+
+class RenderTableStep:
+    """
+    Render data as formatted table.
+
+    Syntax: render_table { format: markdown, columns: [name, count], title: "Summary" }
+    """
+
+    def __init__(self, format="markdown", columns=None, title=None, totals=False,
+                 sort=None, group_by=None, max_rows=None):
+        self.format = format
+        self.columns = columns or []
+        self.title = title
+        self.totals = totals
+        self.sort = sort
+        self.group_by = group_by
+        self.max_rows = max_rows
+
+    def execute(self, data, ctx=None):
+        """Render as table."""
+        from codeine.dsl.core import pipeline_ok, pipeline_err
+
+        try:
+            # Convert to list if Arrow table
+            if hasattr(data, 'to_pylist'):
+                data = data.to_pylist()
+
+            if not data:
+                return pipeline_ok({"table": "", "format": self.format, "row_count": 0})
+
+            # Determine columns
+            if self.columns:
+                cols = self.columns
+            else:
+                # Auto-detect from first row
+                cols = [{"name": k, "alias": k} for k in data[0].keys()]
+
+            # Sort if specified
+            if self.sort:
+                reverse = self.sort.startswith('-')
+                sort_key = self.sort.lstrip('-+')
+                data = sorted(data, key=lambda r: r.get(sort_key, ''), reverse=reverse)
+
+            # Limit rows
+            if self.max_rows:
+                data = data[:self.max_rows]
+
+            # Render based on format
+            if self.format == "markdown":
+                table = self._render_markdown(data, cols)
+            elif self.format == "html":
+                table = self._render_html(data, cols)
+            elif self.format == "csv":
+                table = self._render_csv(data, cols)
+            elif self.format == "ascii":
+                table = self._render_ascii(data, cols)
+            elif self.format == "json":
+                import json
+                table = json.dumps(data, indent=2, default=str)
+            else:
+                table = self._render_markdown(data, cols)
+
+            return pipeline_ok({"table": table, "format": self.format, "row_count": len(data)})
+        except Exception as e:
+            return pipeline_err("render_table", f"Table rendering failed: {e}", e)
+
+    def _render_markdown(self, data, cols):
+        """Render as Markdown table."""
+        lines = []
+        if self.title:
+            lines.append(f"## {self.title}\n")
+
+        # Header
+        headers = [c.get('alias', c.get('name', '')) for c in cols]
+        lines.append("| " + " | ".join(headers) + " |")
+        lines.append("| " + " | ".join(["---"] * len(cols)) + " |")
+
+        # Rows
+        for row in data:
+            cells = [str(row.get(c.get('name', ''), '')) for c in cols]
+            lines.append("| " + " | ".join(cells) + " |")
+
+        # Totals row
+        if self.totals:
+            totals = []
+            for c in cols:
+                name = c.get('name', '')
+                values = [r.get(name) for r in data if isinstance(r.get(name), (int, float))]
+                if values:
+                    totals.append(str(sum(values)))
+                else:
+                    totals.append('')
+            lines.append("| " + " | ".join(totals) + " |")
+
+        return "\n".join(lines)
+
+    def _render_html(self, data, cols):
+        """Render as HTML table."""
+        lines = ['<table>']
+        if self.title:
+            lines.append(f'<caption>{self.title}</caption>')
+
+        # Header
+        lines.append('<thead><tr>')
+        for c in cols:
+            lines.append(f'<th>{c.get("alias", c.get("name", ""))}</th>')
+        lines.append('</tr></thead>')
+
+        # Body
+        lines.append('<tbody>')
+        for row in data:
+            lines.append('<tr>')
+            for c in cols:
+                lines.append(f'<td>{row.get(c.get("name", ""), "")}</td>')
+            lines.append('</tr>')
+        lines.append('</tbody>')
+
+        lines.append('</table>')
+        return "\n".join(lines)
+
+    def _render_csv(self, data, cols):
+        """Render as CSV."""
+        lines = []
+        headers = [c.get('alias', c.get('name', '')) for c in cols]
+        lines.append(",".join(f'"{h}"' for h in headers))
+
+        for row in data:
+            cells = [str(row.get(c.get('name', ''), '')).replace('"', '""') for c in cols]
+            lines.append(",".join(f'"{cell}"' for cell in cells))
+
+        return "\n".join(lines)
+
+    def _render_ascii(self, data, cols):
+        """Render as ASCII table."""
+        headers = [c.get('alias', c.get('name', '')) for c in cols]
+
+        # Calculate column widths
+        widths = [len(h) for h in headers]
+        for row in data:
+            for i, c in enumerate(cols):
+                val = str(row.get(c.get('name', ''), ''))
+                widths[i] = max(widths[i], len(val))
+
+        # Build table
+        lines = []
+        sep = '+' + '+'.join('-' * (w + 2) for w in widths) + '+'
+
+        if self.title:
+            lines.append(self.title)
+            lines.append('=' * len(sep))
+
+        lines.append(sep)
+        lines.append('|' + '|'.join(f' {h:<{w}} ' for h, w in zip(headers, widths)) + '|')
+        lines.append(sep)
+
+        for row in data:
+            cells = [str(row.get(c.get('name', ''), '')) for c in cols]
+            lines.append('|' + '|'.join(f' {c:<{w}} ' for c, w in zip(cells, widths)) + '|')
+
+        lines.append(sep)
+        return "\n".join(lines)
+
+
+class RenderChartStep:
+    """
+    Render data as chart.
+
+    Syntax: render_chart { type: bar, x: category, y: count, format: mermaid }
+    """
+
+    def __init__(self, chart_type="bar", x=None, y=None, series=None, title=None,
+                 format="mermaid", colors=None, stacked=False, horizontal=False):
+        self.chart_type = chart_type
+        self.x = x
+        self.y = y
+        self.series = series
+        self.title = title
+        self.format = format
+        self.colors = colors
+        self.stacked = stacked
+        self.horizontal = horizontal
+
+    def execute(self, data, ctx=None):
+        """Render as chart."""
+        from codeine.dsl.core import pipeline_ok, pipeline_err
+
+        try:
+            # Convert to list if Arrow table
+            if hasattr(data, 'to_pylist'):
+                data = data.to_pylist()
+
+            if not data:
+                return pipeline_ok({"chart": "", "format": self.format, "type": self.chart_type})
+
+            if self.format == "mermaid":
+                chart = self._render_mermaid(data)
+            elif self.format == "ascii":
+                chart = self._render_ascii(data)
+            else:
+                chart = self._render_mermaid(data)
+
+            return pipeline_ok({"chart": chart, "format": self.format, "type": self.chart_type})
+        except Exception as e:
+            return pipeline_err("render_chart", f"Chart rendering failed: {e}", e)
+
+    def _render_mermaid(self, data):
+        """Render as Mermaid chart."""
+        if self.chart_type == "pie":
+            return self._mermaid_pie(data)
+        elif self.chart_type in ("bar", "line"):
+            return self._mermaid_xychart(data)
+        else:
+            return self._mermaid_pie(data)
+
+    def _mermaid_pie(self, data):
+        """Render Mermaid pie chart."""
+        lines = ["pie showData"]
+        if self.title:
+            lines[0] = f'pie showData title {self.title}'
+
+        for row in data:
+            label = row.get(self.x, "Unknown")
+            value = row.get(self.y, 0)
+            if value:
+                lines.append(f'    "{label}" : {value}')
+
+        return "\n".join(lines)
+
+    def _mermaid_xychart(self, data):
+        """Render Mermaid xychart (bar/line)."""
+        lines = ["xychart-beta"]
+        if self.horizontal:
+            lines[0] += " horizontal"
+        if self.title:
+            lines.append(f'    title "{self.title}"')
+
+        # Extract x-axis categories
+        categories = [str(row.get(self.x, '')) for row in data]
+        lines.append(f'    x-axis [{", ".join(f"{c}" for c in categories)}]')
+
+        # Extract y values
+        values = [row.get(self.y, 0) for row in data]
+        max_val = max(values) if values else 100
+        lines.append(f'    y-axis "Count" 0 --> {max_val}')
+
+        chart_type = "bar" if self.chart_type == "bar" else "line"
+        lines.append(f'    {chart_type} [{", ".join(str(v) for v in values)}]')
+
+        return "\n".join(lines)
+
+    def _render_ascii(self, data):
+        """Render as ASCII chart."""
+        if self.chart_type == "pie":
+            return self._ascii_pie(data)
+        else:
+            return self._ascii_bar(data)
+
+    def _ascii_pie(self, data):
+        """Simple ASCII representation of pie data."""
+        lines = []
+        if self.title:
+            lines.append(f"  {self.title}")
+            lines.append("  " + "=" * len(self.title))
+
+        total = sum(row.get(self.y, 0) for row in data)
+        for row in data:
+            label = row.get(self.x, "Unknown")
+            value = row.get(self.y, 0)
+            pct = (value / total * 100) if total else 0
+            bar = "#" * int(pct / 2)
+            lines.append(f"  {label:<20} {bar} {pct:.1f}%")
+
+        return "\n".join(lines)
+
+    def _ascii_bar(self, data):
+        """Simple ASCII bar chart."""
+        lines = []
+        if self.title:
+            lines.append(f"  {self.title}")
+            lines.append("  " + "=" * len(self.title))
+
+        max_val = max(row.get(self.y, 0) for row in data) if data else 1
+        for row in data:
+            label = row.get(self.x, "Unknown")[:15]
+            value = row.get(self.y, 0)
+            bar_len = int(value / max_val * 40) if max_val else 0
+            bar = "#" * bar_len
+            lines.append(f"  {label:<15} |{bar} {value}")
+
+        return "\n".join(lines)
+
+
+class RenderMermaidStep:
+    """
+    Render data to a Mermaid diagram.
+
+    Syntax: render_mermaid { type: flowchart, nodes: name, edges: from -> to }
+    Supports: flowchart, sequence, class, gantt, state, er, pie
+    """
+
+    def __init__(self, mermaid_type, nodes=None, edges_from=None, edges_to=None, direction="TB",
+                 title=None, participants=None, messages_from=None, messages_to=None, messages_label=None,
+                 classes=None, methods=None, attributes=None, inheritance_from=None, inheritance_to=None,
+                 labels=None, values=None, states=None, transitions_from=None, transitions_to=None,
+                 entities=None, relationships=None):
+        self.mermaid_type = mermaid_type
+        self.nodes = nodes
+        self.edges_from = edges_from
+        self.edges_to = edges_to
+        self.direction = direction
+        self.title = title
+        self.participants = participants
+        self.messages_from = messages_from
+        self.messages_to = messages_to
+        self.messages_label = messages_label
+        # Class diagram
+        self.classes = classes
+        self.methods = methods
+        self.attributes = attributes
+        self.inheritance_from = inheritance_from
+        self.inheritance_to = inheritance_to
+        # Pie chart
+        self.labels = labels
+        self.values = values
+        # State diagram
+        self.states = states
+        self.transitions_from = transitions_from
+        self.transitions_to = transitions_to
+        # ER diagram
+        self.entities = entities
+        self.relationships = relationships
+
+    def execute(self, data, ctx=None):
+        """Render to Mermaid diagram."""
+        from codeine.dsl.core import pipeline_ok, pipeline_err
+
+        try:
+            # Convert to list if Arrow table
+            if hasattr(data, 'to_pylist'):
+                data = data.to_pylist()
+
+            if self.mermaid_type == "flowchart":
+                diagram = self._render_flowchart(data)
+            elif self.mermaid_type == "sequence":
+                diagram = self._render_sequence(data)
+            elif self.mermaid_type == "class":
+                diagram = self._render_class(data)
+            elif self.mermaid_type == "gantt":
+                diagram = self._render_gantt(data)
+            elif self.mermaid_type == "pie":
+                diagram = self._render_pie(data)
+            elif self.mermaid_type == "state":
+                diagram = self._render_state(data)
+            elif self.mermaid_type == "er":
+                diagram = self._render_er(data)
+            else:
+                diagram = self._render_flowchart(data)
+
+            return pipeline_ok({"diagram": diagram, "format": "mermaid", "type": self.mermaid_type})
+        except Exception as e:
+            return pipeline_err("render_mermaid", f"Mermaid rendering failed: {e}", e)
+
+    def _render_flowchart(self, data):
+        """Render a flowchart."""
+        lines = [f"flowchart {self.direction}"]
+
+        # Collect unique nodes and edges
+        nodes = set()
+        edges = set()
+        for row in data:
+            if self.edges_from and self.edges_to:
+                from_val = row.get(self.edges_from)
+                to_val = row.get(self.edges_to)
+                if from_val and to_val:
+                    nodes.add(from_val)
+                    nodes.add(to_val)
+                    edges.add((from_val, to_val))
+            elif self.nodes:
+                nodes.add(row.get(self.nodes))
+
+        # Render edges (nodes are implicit in edges)
+        for from_val, to_val in sorted(edges):
+            safe_from = str(from_val).replace(" ", "_").replace("-", "_").replace(".", "_")
+            safe_to = str(to_val).replace(" ", "_").replace("-", "_").replace(".", "_")
+            lines.append(f'    {safe_from}["{from_val}"] --> {safe_to}["{to_val}"]')
+
+        return "\n".join(lines)
+
+    def _render_sequence(self, data):
+        """Render a sequence diagram."""
+        lines = ["sequenceDiagram"]
+
+        # Collect participants
+        participants = set()
+        messages = []
+        for row in data:
+            if self.messages_from and self.messages_to:
+                from_val = row.get(self.messages_from)
+                to_val = row.get(self.messages_to)
+                label = row.get(self.messages_label, "") if self.messages_label else ""
+                if from_val and to_val:
+                    participants.add(from_val)
+                    participants.add(to_val)
+                    messages.append((from_val, to_val, label))
+            elif self.participants:
+                participants.add(row.get(self.participants))
+
+        # Render participants
+        for p in sorted(participants):
+            if p:
+                safe_p = str(p).replace(" ", "_")
+                lines.append(f"    participant {safe_p} as {p}")
+
+        # Render messages
+        for from_val, to_val, label in messages:
+            safe_from = str(from_val).replace(" ", "_")
+            safe_to = str(to_val).replace(" ", "_")
+            lines.append(f"    {safe_from}->>+{safe_to}: {label}")
+
+        return "\n".join(lines)
+
+    def _render_class(self, data):
+        """Render a class diagram with methods and attributes."""
+        lines = ["classDiagram"]
+
+        # Aggregate class data
+        class_info = {}
+        relationships = set()
+
+        for row in data:
+            class_name = row.get(self.classes) if self.classes else row.get("class_name") or row.get("name")
+            if not class_name:
+                continue
+
+            if class_name not in class_info:
+                class_info[class_name] = {"methods": set(), "attributes": set()}
+
+            # Collect methods
+            if self.methods:
+                method = row.get(self.methods)
+                if method:
+                    class_info[class_name]["methods"].add(method)
+
+            # Collect attributes
+            if self.attributes:
+                attr = row.get(self.attributes)
+                if attr:
+                    class_info[class_name]["attributes"].add(attr)
+
+            # Collect inheritance
+            if self.inheritance_from and self.inheritance_to:
+                parent = row.get(self.inheritance_from)
+                child = row.get(self.inheritance_to)
+                if parent and child:
+                    relationships.add((parent, child))
+            elif row.get("parent_name") or row.get("inherits_from"):
+                parent = row.get("parent_name") or row.get("inherits_from")
+                if parent:
+                    relationships.add((parent, class_name))
+
+        # Render classes with members
+        LBRACE = "{"
+        RBRACE = "}"
+        for cls_name in sorted(class_info.keys()):
+            info = class_info[cls_name]
+            safe_name = str(cls_name).replace(" ", "_").replace("-", "_")
+            lines.append(f"    class {safe_name} {LBRACE}")
+            for attr in sorted(info["attributes"]):
+                lines.append(f"        +{attr}")
+            for method in sorted(info["methods"]):
+                lines.append(f"        +{method}()")
+            lines.append(f"    {RBRACE}")
+
+        # Render relationships
+        for parent, child in sorted(relationships):
+            safe_parent = str(parent).replace(" ", "_").replace("-", "_")
+            safe_child = str(child).replace(" ", "_").replace("-", "_")
+            lines.append(f"    {safe_parent} <|-- {safe_child}")
+
+        return "\n".join(lines)
+
+    def _render_gantt(self, data):
+        """Render a gantt chart."""
+        lines = ["gantt"]
+        if self.title:
+            lines.append(f"    title {self.title}")
+        lines.append("    dateFormat YYYY-MM-DD")
+
+        # Process task data
+        for row in data:
+            name = row.get("name") or row.get("task")
+            start = row.get("start") or row.get("start_date")
+            end = row.get("end") or row.get("end_date")
+            if name and start:
+                if end:
+                    lines.append(f"    {name} : {start}, {end}")
+                else:
+                    lines.append(f"    {name} : {start}, 1d")
+
+        return "\n".join(lines)
+
+    def _render_pie(self, data):
+        """Render a pie chart."""
+        lines = ["pie showData"]
+        if self.title:
+            lines[0] = f'pie showData title {self.title}'
+
+        for row in data:
+            label = row.get(self.labels) if self.labels else row.get("label") or row.get("name")
+            value = row.get(self.values) if self.values else row.get("value") or row.get("count")
+            if label and value:
+                lines.append(f'    "{label}" : {value}')
+
+        return "\n".join(lines)
+
+    def _render_state(self, data):
+        """Render a state diagram."""
+        lines = ["stateDiagram-v2"]
+
+        transitions = set()
+        states = set()
+
+        for row in data:
+            if self.states:
+                state = row.get(self.states)
+                if state:
+                    states.add(state)
+
+            if self.transitions_from and self.transitions_to:
+                from_state = row.get(self.transitions_from)
+                to_state = row.get(self.transitions_to)
+                if from_state and to_state:
+                    transitions.add((from_state, to_state))
+                    states.add(from_state)
+                    states.add(to_state)
+
+        for from_s, to_s in sorted(transitions):
+            lines.append(f"    {from_s} --> {to_s}")
+
+        return "\n".join(lines)
+
+    def _render_er(self, data):
+        """Render an ER diagram."""
+        lines = ["erDiagram"]
+
+        for row in data:
+            entity = row.get(self.entities) if self.entities else row.get("entity")
+            if entity:
+                lines.append(f"    {entity}")
+
+        return "\n".join(lines)
+
+
+class PivotStep:
+    """
+    Create a pivot table from data.
+
+    Syntax: pivot { rows: field, cols: field, value: field, aggregate: sum }
+    """
+
+    def __init__(self, rows, cols, value, aggregate="sum"):
+        self.rows = rows
+        self.cols = cols
+        self.value = value
+        self.aggregate = aggregate
+
+    def execute(self, data, ctx=None):
+        """Execute pivot table creation."""
+        from codeine.dsl.core import pipeline_ok, pipeline_err
+        from collections import defaultdict
+
+        try:
+            # Convert to list if Arrow table
+            if hasattr(data, 'to_pylist'):
+                data = data.to_pylist()
+
+            # Collect values by (row, col)
+            pivot_data = defaultdict(list)
+            all_cols = set()
+            all_rows = set()
+
+            for row in data:
+                row_key = row.get(self.rows)
+                col_key = row.get(self.cols)
+                val = row.get(self.value, 0)
+
+                if row_key is not None and col_key is not None:
+                    pivot_data[(row_key, col_key)].append(val if val is not None else 0)
+                    all_rows.add(row_key)
+                    all_cols.add(col_key)
+
+            # Aggregate
+            def aggregate_values(values):
+                if not values:
+                    return 0
+                if self.aggregate == "sum":
+                    return sum(values)
+                elif self.aggregate == "avg":
+                    return sum(values) / len(values)
+                elif self.aggregate == "count":
+                    return len(values)
+                elif self.aggregate == "min":
+                    return min(values)
+                elif self.aggregate == "max":
+                    return max(values)
+                elif self.aggregate == "first":
+                    return values[0]
+                elif self.aggregate == "last":
+                    return values[-1]
+                return sum(values)
+
+            # Build result table
+            result = []
+            sorted_cols = sorted(all_cols, key=str)
+            for row_key in sorted(all_rows, key=str):
+                row_result = {self.rows: row_key}
+                for col_key in sorted_cols:
+                    values = pivot_data.get((row_key, col_key), [])
+                    row_result[str(col_key)] = aggregate_values(values)
+                result.append(row_result)
+
+            return pipeline_ok(result)
+        except Exception as e:
+            return pipeline_err("pivot", f"Pivot failed: {e}", e)
+
+
+class ComputeStep:
+    """
+    Compute new fields using expressions.
+
+    Syntax: compute { ratio: a / b, pct: ratio * 100 }
+    """
+
+    def __init__(self, computations):
+        self.computations = computations
+
+    def execute(self, data, ctx=None):
+        """Execute field computation."""
+        from codeine.dsl.core import pipeline_ok, pipeline_err
+
+        try:
+            # Convert to list if Arrow table
+            if hasattr(data, 'to_pylist'):
+                data = data.to_pylist()
+
+            result = []
+            for row in data:
+                new_row = dict(row)
+                # Compute each field in order (so later fields can reference earlier ones)
+                for name, expr in self.computations.items():
+                    try:
+                        new_row[name] = expr(new_row, ctx)
+                    except Exception:
+                        new_row[name] = None
+                result.append(new_row)
+
+            return pipeline_ok(result)
+        except Exception as e:
+            return pipeline_err("compute", f"Compute failed: {e}", e)
+
+
+class JoinStep:
+    """
+    Join step - joins pipeline data with another source using PyArrow.
+
+    Syntax: join { left: key, right: source, right_key: key, type: inner }
+
+    Supports all PyArrow join types: inner, left, right, outer, semi, anti.
+    """
+
+    def __init__(self, left_key, right_source_spec, right_key, join_type="inner"):
+        self.left_key = left_key
+        self.right_source_spec = right_source_spec
+        self.right_key = right_key
+        self.join_type = join_type
+
+    def execute(self, data, ctx=None):
+        """Execute join using PyArrow."""
+        from codeine.dsl.core import pipeline_ok, pipeline_err
+
+        try:
+            import pyarrow as pa
+
+            # Convert left data to Arrow table
+            if isinstance(data, pa.Table):
+                left_table = data
+            elif isinstance(data, list):
+                if not data:
+                    return pipeline_ok([])
+                # Convert list of dicts to Arrow table
+                left_table = pa.Table.from_pylist(data)
+            else:
+                return pipeline_err("join", "Left data must be a list or Arrow table")
+
+            # Execute right source
+            right_data = self._execute_right_source(ctx)
+            if isinstance(right_data, list):
+                if not right_data:
+                    # Right side empty - return empty for inner, left data for left/outer
+                    if self.join_type in ("inner", "semi"):
+                        return pipeline_ok([])
+                    elif self.join_type in ("left", "outer"):
+                        return pipeline_ok(data if isinstance(data, list) else data.to_pylist())
+                    elif self.join_type == "anti":
+                        return pipeline_ok(data if isinstance(data, list) else data.to_pylist())
+                    return pipeline_ok([])
+                right_table = pa.Table.from_pylist(right_data)
+            elif isinstance(right_data, pa.Table):
+                right_table = right_data
+            else:
+                return pipeline_err("join", "Right source must return a list or Arrow table")
+
+            # Resolve column names (handle ? prefix)
+            left_col = self._resolve_column(left_table, self.left_key)
+            right_col = self._resolve_column(right_table, self.right_key)
+
+            if left_col is None:
+                return pipeline_err("join", f"Left key column not found: {self.left_key}")
+            if right_col is None:
+                return pipeline_err("join", f"Right key column not found: {self.right_key}")
+
+            # Perform join
+            joined = left_table.join(
+                right_table,
+                keys=left_col,
+                right_keys=right_col,
+                join_type=self.join_type
+            )
+
+            # Convert back to list of dicts
+            return pipeline_ok(joined.to_pylist())
+        except Exception as e:
+            return pipeline_err("join", f"Join failed: {e}", e)
+
+    def _resolve_column(self, table, col_name):
+        """Resolve column name, handling ? prefix."""
+        if col_name in table.column_names:
+            return col_name
+        if f"?{col_name}" in table.column_names:
+            return f"?{col_name}"
+        return None
+
+    def _execute_right_source(self, ctx):
+        """Execute the right source and return data."""
+        from codeine.dsl.core import (
+            REQLSource, ValueSource,
+            RAGSearchSource, RAGDuplicatesSource, RAGClustersSource
+        )
+
+        spec = self.right_source_spec
+        if spec is None:
+            return []
+
+        source_type = spec.get("type")
+
+        if source_type == "reql":
+            source = REQLSource(spec.get("content", ""))
+        elif source_type == "rag_search":
+            params = spec.get("params", {})
+            source = RAGSearchSource(
+                query=params.get("query", ""),
+                top_k=params.get("top_k", 10),
+                entity_types=params.get("entity_types"),
+            )
+        elif source_type == "rag_duplicates":
+            params = spec.get("params", {})
+            source = RAGDuplicatesSource(
+                similarity=params.get("similarity", 0.85),
+                limit=params.get("limit", 50),
+                exclude_same_file=params.get("exclude_same_file", True),
+                exclude_same_class=params.get("exclude_same_class", True),
+                entity_types=params.get("entity_types"),
+            )
+        elif source_type == "rag_clusters":
+            params = spec.get("params", {})
+            source = RAGClustersSource(
+                n_clusters=params.get("n_clusters", 50),
+                min_size=params.get("min_size", 2),
+                exclude_same_file=params.get("exclude_same_file", True),
+                exclude_same_class=params.get("exclude_same_class", True),
+                entity_types=params.get("entity_types"),
+            )
+        elif source_type == "value":
+            source = ValueSource(spec.get("content", []))
+        else:
+            return []
+
+        result = source.execute(ctx)
+        if result.is_ok():
+            return result.unwrap()
+        return []
+
+
+class MergeSource:
+    """
+    Merge multiple sources into one.
+
+    Syntax: merge { source1, source2, ... }
+
+    Executes all sources and concatenates their results.
+    """
+
+    def __init__(self, source_specs):
+        self.source_specs = source_specs
+
+    def execute(self, ctx=None):
+        """Execute all sources and merge results."""
+        from codeine.dsl.core import (
+            pipeline_ok, pipeline_err,
+            REQLSource, ValueSource,
+            RAGSearchSource, RAGDuplicatesSource, RAGClustersSource
+        )
+
+        merged = []
+        errors = []
+
+        for spec in self.source_specs:
+            source_type = spec.get("type")
+
+            try:
+                if source_type == "reql":
+                    source = REQLSource(spec.get("content", ""))
+                elif source_type == "rag_search":
+                    params = spec.get("params", {})
+                    source = RAGSearchSource(
+                        query=params.get("query", ""),
+                        top_k=params.get("top_k", 10),
+                        entity_types=params.get("entity_types"),
+                    )
+                elif source_type == "rag_duplicates":
+                    params = spec.get("params", {})
+                    source = RAGDuplicatesSource(
+                        similarity=params.get("similarity", 0.85),
+                        limit=params.get("limit", 50),
+                        exclude_same_file=params.get("exclude_same_file", True),
+                        exclude_same_class=params.get("exclude_same_class", True),
+                        entity_types=params.get("entity_types"),
+                    )
+                elif source_type == "rag_clusters":
+                    params = spec.get("params", {})
+                    source = RAGClustersSource(
+                        n_clusters=params.get("n_clusters", 50),
+                        min_size=params.get("min_size", 2),
+                        exclude_same_file=params.get("exclude_same_file", True),
+                        exclude_same_class=params.get("exclude_same_class", True),
+                        entity_types=params.get("entity_types"),
+                    )
+                elif source_type == "value":
+                    source = ValueSource(spec.get("content", []))
+                else:
+                    continue
+
+                result = source.execute(ctx)
+                if result.is_ok():
+                    data = result.unwrap()
+                    if isinstance(data, list):
+                        merged.extend(data)
+                    else:
+                        merged.append(data)
+                else:
+                    errors.append(result)
+            except Exception as e:
+                errors.append(pipeline_err("merge", f"Source failed: {e}", e))
+
+        if errors and not merged:
+            return errors[0]
+
+        return pipeline_ok(merged)
+
+
+# ============================================================
+# N² COMPARISON STEPS
+# ============================================================
+
+class CrossJoinStep:
+    """
+    Cross join (Cartesian product) step for N² pairwise comparison.
+
+    Syntax: cross_join { unique_pairs: true, exclude_self: true, left_prefix: "left_", right_prefix: "right_" }
+
+    Creates all pairs from input rows. With unique_pairs=true, generates (n*(n-1))/2 pairs.
+    Uses PyArrow for efficient vectorized operations.
+    """
+
+    def __init__(self, unique_pairs=True, exclude_self=True, left_prefix="left_", right_prefix="right_"):
+        self.unique_pairs = unique_pairs
+        self.exclude_self = exclude_self
+        self.left_prefix = left_prefix
+        self.right_prefix = right_prefix
+
+    def execute(self, data, ctx=None):
+        """Execute cross join using PyArrow."""
+        from codeine.dsl.core import pipeline_ok, pipeline_err
+
+        try:
+            import numpy as np
+            import pyarrow as pa
+            import pyarrow.compute as pc
+
+            # Convert to Arrow table
+            if isinstance(data, pa.Table):
+                table = data
+            elif isinstance(data, list):
+                if not data:
+                    return pipeline_ok([])
+                table = pa.Table.from_pylist(data)
+            else:
+                return pipeline_err("cross_join", "Input must be a list or Arrow table")
+
+            n = table.num_rows
+            if n < 2:
+                return pipeline_ok([])
+
+            # Create index arrays
+            idx = np.arange(n, dtype=np.int64)
+
+            if self.unique_pairs:
+                # Generate (i, j) pairs where i < j
+                i_grid, j_grid = np.meshgrid(idx, idx, indexing='ij')
+                mask = i_grid < j_grid
+                left_idx = pa.array(i_grid[mask])
+                right_idx = pa.array(j_grid[mask])
+            else:
+                # Full Cartesian product
+                i_grid, j_grid = np.meshgrid(idx, idx, indexing='ij')
+                if self.exclude_self:
+                    mask = i_grid != j_grid
+                    left_idx = pa.array(i_grid[mask])
+                    right_idx = pa.array(j_grid[mask])
+                else:
+                    left_idx = pa.array(i_grid.ravel())
+                    right_idx = pa.array(j_grid.ravel())
+
+            # Build result table with prefixed columns
+            result = {}
+            for col in table.column_names:
+                result[f'{self.left_prefix}{col}'] = pc.take(table.column(col), left_idx)
+                result[f'{self.right_prefix}{col}'] = pc.take(table.column(col), right_idx)
+
+            result_table = pa.table(result)
+            return pipeline_ok(result_table.to_pylist())
+
+        except ImportError:
+            return pipeline_err("cross_join", "PyArrow and NumPy are required for cross_join")
+        except Exception as e:
+            return pipeline_err("cross_join", f"Cross join failed: {e}", e)
+
+
+class SetSimilarityStep:
+    """
+    Compute set similarity between two columns.
+
+    Syntax: set_similarity { left: col1, right: col2, type: jaccard, output: similarity }
+
+    Types:
+    - jaccard: |intersection| / |union|
+    - dice: 2 * |intersection| / (|A| + |B|)
+    - overlap: |intersection| / min(|A|, |B|)
+    - cosine: |intersection| / sqrt(|A| * |B|)
+    """
+
+    def __init__(self, left_col, right_col, sim_type="jaccard", output="similarity",
+                 intersection_output=None, union_output=None):
+        self.left_col = left_col
+        self.right_col = right_col
+        self.sim_type = sim_type
+        self.output = output
+        self.intersection_output = intersection_output
+        self.union_output = union_output
+
+    def execute(self, data, ctx=None):
+        """Calculate set similarity."""
+        from codeine.dsl.core import pipeline_ok, pipeline_err
+
+        try:
+            # Convert to list if Arrow table
+            if hasattr(data, 'to_pylist'):
+                data = data.to_pylist()
+
+            if not data:
+                return pipeline_ok([])
+
+            result = []
+            for row in data:
+                new_row = dict(row)
+                left = row.get(self.left_col) or []
+                right = row.get(self.right_col) or []
+
+                # Convert to sets
+                left_set = set(left) if isinstance(left, (list, tuple, set)) else {left}
+                right_set = set(right) if isinstance(right, (list, tuple, set)) else {right}
+
+                intersection = left_set & right_set
+                union = left_set | right_set
+
+                # Calculate similarity
+                if self.sim_type == "jaccard":
+                    similarity = len(intersection) / len(union) if union else 0
+                elif self.sim_type == "dice":
+                    total = len(left_set) + len(right_set)
+                    similarity = 2 * len(intersection) / total if total else 0
+                elif self.sim_type == "overlap":
+                    min_size = min(len(left_set), len(right_set))
+                    similarity = len(intersection) / min_size if min_size else 0
+                elif self.sim_type == "cosine":
+                    denom = (len(left_set) * len(right_set)) ** 0.5
+                    similarity = len(intersection) / denom if denom else 0
+                else:
+                    similarity = len(intersection) / len(union) if union else 0
+
+                new_row[self.output] = round(similarity, 4)
+
+                if self.intersection_output:
+                    new_row[self.intersection_output] = list(intersection)
+                if self.union_output:
+                    new_row[self.union_output] = list(union)
+
+                result.append(new_row)
+
+            return pipeline_ok(result)
+        except Exception as e:
+            return pipeline_err("set_similarity", f"Set similarity failed: {e}", e)
+
+
+class StringMatchStep:
+    """
+    Detect string pattern matches between two columns.
+
+    Syntax: string_match { left: col1, right: col2, type: common_affix, min_length: 3, output: has_match }
+
+    Types:
+    - common_affix: Check for common prefix OR suffix
+    - common_prefix: Check for common prefix only
+    - common_suffix: Check for common suffix only
+    - levenshtein: Calculate edit distance (requires output_distance)
+    - contains: Check if one contains the other
+    """
+
+    def __init__(self, left_col, right_col, match_type="common_affix", min_length=3,
+                 output="has_match", match_output=None):
+        self.left_col = left_col
+        self.right_col = right_col
+        self.match_type = match_type
+        self.min_length = min_length
+        self.output = output
+        self.match_output = match_output
+
+    def execute(self, data, ctx=None):
+        """Execute string matching."""
+        from codeine.dsl.core import pipeline_ok, pipeline_err
+
+        try:
+            # Convert to list if Arrow table
+            if hasattr(data, 'to_pylist'):
+                data = data.to_pylist()
+
+            if not data:
+                return pipeline_ok([])
+
+            result = []
+            for row in data:
+                new_row = dict(row)
+                left = str(row.get(self.left_col, ""))
+                right = str(row.get(self.right_col, ""))
+
+                has_match = False
+                match_value = None
+
+                if self.match_type in ("common_affix", "common_prefix", "common_suffix"):
+                    # Check prefix
+                    if self.match_type in ("common_affix", "common_prefix"):
+                        min_len = min(len(left), len(right))
+                        for plen in range(self.min_length, min_len + 1):
+                            if left[:plen] == right[:plen]:
+                                # Found common prefix, check if different suffixes
+                                s1, s2 = left[plen:], right[plen:]
+                                if s1 and s2 and s1 != s2:
+                                    has_match = True
+                                    match_value = f"prefix:{left[:plen]}"
+                                    break
+
+                    # Check suffix
+                    if not has_match and self.match_type in ("common_affix", "common_suffix"):
+                        min_len = min(len(left), len(right))
+                        for slen in range(self.min_length, min_len + 1):
+                            if left[-slen:] == right[-slen:]:
+                                # Found common suffix, check if different prefixes
+                                p1, p2 = left[:-slen], right[:-slen]
+                                if p1 and p2 and p1 != p2:
+                                    has_match = True
+                                    match_value = f"suffix:{left[-slen:]}"
+                                    break
+
+                elif self.match_type == "contains":
+                    if left in right:
+                        has_match = True
+                        match_value = f"left_in_right:{left}"
+                    elif right in left:
+                        has_match = True
+                        match_value = f"right_in_left:{right}"
+
+                elif self.match_type == "levenshtein":
+                    # Simple Levenshtein distance
+                    distance = self._levenshtein(left, right)
+                    has_match = distance <= self.min_length
+                    match_value = distance
+
+                new_row[self.output] = has_match
+                if self.match_output and match_value is not None:
+                    new_row[self.match_output] = match_value
+
+                result.append(new_row)
+
+            return pipeline_ok(result)
+        except Exception as e:
+            return pipeline_err("string_match", f"String match failed: {e}", e)
+
+    def _levenshtein(self, s1, s2):
+        """Calculate Levenshtein distance."""
+        if len(s1) < len(s2):
+            return self._levenshtein(s2, s1)
+
+        if len(s2) == 0:
+            return len(s1)
+
+        prev_row = range(len(s2) + 1)
+        for i, c1 in enumerate(s1):
+            curr_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                insertions = prev_row[j + 1] + 1
+                deletions = curr_row[j] + 1
+                substitutions = prev_row[j] + (c1 != c2)
+                curr_row.append(min(insertions, deletions, substitutions))
+            prev_row = curr_row
+
+        return prev_row[-1]
 
 
 # ============================================================

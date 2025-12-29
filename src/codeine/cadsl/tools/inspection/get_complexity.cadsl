@@ -1,0 +1,26 @@
+# get_complexity - Calculate complexity metrics for the codebase
+#
+# Returns various complexity metrics for classes, methods, and functions.
+
+query get_complexity() {
+    """Calculate complexity metrics for the codebase."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?c ?name ?file (COUNT(?method) AS ?method_count) (COUNT(?attr) AS ?attr_count) (COUNT(?parent) AS ?parent_count)
+        WHERE {
+            ?c type {Class} .
+            ?c name ?name .
+            ?c inFile ?file .
+            OPTIONAL { ?method type {Method} . ?method definedIn ?c }
+            OPTIONAL { ?attr type {Field} . ?attr definedIn ?c }
+            OPTIONAL { ?c inheritsFrom ?parent }
+        }
+        GROUP BY ?c ?name ?file
+        ORDER BY DESC(?method_count)
+        LIMIT {limit}
+    }
+    | select { name, file, method_count, attr_count, parent_count, qualified_name: c }
+    | emit { class_complexity }
+}

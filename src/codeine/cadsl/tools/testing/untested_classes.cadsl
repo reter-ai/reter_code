@@ -1,0 +1,37 @@
+# untested_classes - Find classes without corresponding test classes
+#
+# Identifies classes that have no test coverage.
+
+detector untested_classes(category="test_coverage", severity="medium") {
+    """Find classes without corresponding test classes."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?c ?name ?file ?line (COUNT(?method) AS ?method_count)
+        WHERE {
+            ?c type {Class} .
+            ?c name ?name .
+            ?c inFile ?file .
+            ?c atLine ?line .
+            OPTIONAL { ?method type {Method} . ?method definedIn ?c }
+            FILTER ( !REGEX(?name, "^Test|Test$|^_") && !REGEX(?file, "test_|_test\\.py") )
+            MINUS {
+                ?test type {Class} .
+                ?test name ?test_name .
+                FILTER ( REGEX(?test_name, "^Test|Test$") )
+            }
+        }
+        GROUP BY ?c ?name ?file ?line
+        ORDER BY ?file ?name
+        LIMIT {limit}
+    }
+    | select { name, file, line, method_count }
+    | map {
+        ...row,
+        issue: "untested_class",
+        message: "Class '{name}' has no test class",
+        suggestion: "Create a test class 'Test{name}' or '{name}Test'"
+    }
+    | emit { findings }
+}

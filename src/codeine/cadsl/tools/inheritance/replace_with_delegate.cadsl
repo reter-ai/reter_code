@@ -1,0 +1,38 @@
+# replace_with_delegate_candidates - Find inheritance with low coupling
+#
+# Identifies classes that inherit but use very little of the parent,
+# suggesting delegation might be more appropriate.
+
+detector replace_with_delegate_candidates(category="inheritance", severity="medium") {
+    """Find inheritance that should be replaced with delegation."""
+
+    param max_parent_calls: int = 2;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?c ?name ?parent_name ?file ?line (COUNT(?parent_call) AS ?parent_usage)
+        WHERE {
+            ?c type {Class} .
+            ?c name ?name .
+            ?c inFile ?file .
+            ?c atLine ?line .
+            ?c inheritsFrom ?parent .
+            ?parent name ?parent_name .
+            ?method definedIn ?c .
+            ?method calls ?parent_method .
+            ?parent_method definedIn ?parent
+        }
+        GROUP BY ?c ?name ?parent_name ?file ?line
+        HAVING (?parent_usage > 0 && ?parent_usage <= {max_parent_calls})
+        ORDER BY ?parent_usage
+        LIMIT {limit}
+    }
+    | select { name, parent_name, file, line, parent_usage }
+    | map {
+        ...row,
+        refactoring: "replace_inheritance_with_delegation",
+        message: "Class '{name}' uses only {parent_usage} parent methods",
+        suggestion: "Replace inheritance from '{parent_name}' with delegation"
+    }
+    | emit { findings }
+}

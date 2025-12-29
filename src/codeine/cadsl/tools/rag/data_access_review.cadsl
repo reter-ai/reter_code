@@ -1,0 +1,41 @@
+# data_access_review - Find code semantically similar to data access patterns
+#
+# Uses semantic search to find code that interacts with databases, files,
+# or external data sources. Important for data integrity and security review.
+
+detector data_access_review(category="data", severity="medium") {
+    """Find methods semantically similar to data access patterns."""
+
+    param similarity: float = 0.70;
+    param limit: int = 50;
+
+    # Get all methods with context
+    reql {
+        SELECT ?m ?name ?file ?line ?line_count ?class_name
+        WHERE {
+            ?m type {Method} .
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            OPTIONAL { ?m definedIn ?c . ?c name ?class_name }
+            OPTIONAL { ?m lineCount ?line_count }
+            FILTER ( !REGEX(?file, "test_") )
+        }
+    }
+    | join {
+        on: name,
+        right: rag { search, query: "database query sql insert update delete read write file save load fetch store cache serialize deserialize json parse", top_k: 200 },
+        type: inner
+    }
+    | filter { similarity >= {similarity} }
+    | select { name, file, line, line_count, class_name, similarity }
+    | map {
+        ...row,
+        issue: "data_access",
+        message: "'{name}' matches data access patterns ({similarity})",
+        suggestion: "Review for: SQL injection, proper escaping, transaction handling, caching"
+    }
+    | order_by { -similarity }
+    | limit { {limit} }
+    | emit { findings }
+}

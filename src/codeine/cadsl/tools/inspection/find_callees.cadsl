@@ -1,0 +1,26 @@
+# find_callees - Find all functions/methods called by the target
+#
+# Returns the complete list of functions/methods called by the target.
+
+query find_callees() {
+    """Find all functions/methods called by the target (direct callees)."""
+
+    param target: str required;
+
+    reql {
+        SELECT ?callee ?callee_name ?callee_file ?callee_line ?callee_type
+        WHERE {
+            { ?caller type {Method} } UNION { ?caller type {Function} }
+            ?caller name "{target}" .
+            ?caller calls ?callee .
+            { ?callee type {Method} } UNION { ?callee type {Function} }
+            ?callee type ?callee_type .
+            ?callee name ?callee_name .
+            ?callee inFile ?callee_file .
+            ?callee atLine ?callee_line
+        }
+        ORDER BY ?callee_file
+    }
+    | select { callee_name, callee_file, callee_line, callee_type, qualified_name: callee }
+    | emit { callees }
+}

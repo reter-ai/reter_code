@@ -5,7 +5,7 @@ Consolidates code analysis tools into a single code_inspection MCP tool.
 Supports multiple languages: Python, JavaScript, HTML, C#, C++, and language-independent (oo).
 UML diagram tools have been moved to the unified 'diagram' tool.
 
-Uses CADSL (Code Analysis DSL) tools from dsl.tools.inspection module.
+Uses CADSL (Code Analysis DSL) tools from cadsl/tools/inspection.
 """
 
 from typing import Dict, Any, Optional, Literal
@@ -61,14 +61,14 @@ class CodeInspectionToolsRegistrar(ToolRegistrarBase):
     """
     Registers a unified code_inspection tool with FastMCP.
 
-    Uses CADSL tools from dsl.tools.inspection module.
+    Uses CADSL tools from cadsl/tools/inspection.
     UML diagrams are available via the 'diagram' tool.
     """
 
     def register(self, app: FastMCP) -> None:
         """Register the code_inspection tool."""
         from ...dsl.core import Context
-        from ...dsl.tools import inspection
+        from ...cadsl.tools_bridge import inspection
 
         instance_manager = self.instance_manager
 

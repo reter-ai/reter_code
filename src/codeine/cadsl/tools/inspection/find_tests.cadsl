@@ -1,0 +1,26 @@
+# find_tests - Find test classes/functions for a module, class, or function
+#
+# Returns test coverage information for the specified target.
+
+query find_tests() {
+    """Find test classes/functions for a module, class, or function."""
+
+    param target: str = "";
+    param module: str = "";
+
+    reql {
+        SELECT ?t ?test_name ?test_type ?file ?line
+        WHERE {
+            { ?t type {Class} }
+            UNION
+            { ?t type {Function} }
+            ?t name ?test_name .
+            ?t inFile ?file .
+            ?t atLine ?line .
+            FILTER ( REGEX(?test_name, "^test_|^Test|_test$") )
+        }
+        ORDER BY ?file ?line
+    }
+    | select { test_name, test_type, file, line, qualified_name: t }
+    | emit { tests_found }
+}

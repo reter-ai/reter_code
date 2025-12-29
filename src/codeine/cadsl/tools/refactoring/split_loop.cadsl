@@ -1,0 +1,36 @@
+# split_loop - Detect complex methods that may contain loops needing splitting
+#
+# Original intent: Detect loops doing multiple independent things.
+# Current implementation: Find complex methods that may contain loops to review.
+
+detector split_loop(category="refactoring", severity="low") {
+    """Detect complex methods that may contain loops worth splitting."""
+
+    param min_lines: int = 25;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?name ?class_name ?file ?line ?loc
+        WHERE {
+            ?m type {Method} .
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            ?m lineCount ?loc .
+            OPTIONAL { ?m definedIn ?c . ?c name ?class_name }
+            FILTER ( REGEX(?file, "\\.py$") )
+            FILTER ( ?loc >= {min_lines} )
+            FILTER ( !REGEX(?name, "^test_|^_") )
+        }
+        ORDER BY DESC(?loc)
+        LIMIT {limit}
+    }
+    | select { name, class_name, file, line, loc }
+    | map {
+        ...row,
+        refactoring: "split_loop",
+        message: "Method '{name}' ({loc} lines) may contain loops to review",
+        suggestion: "Check for loops doing multiple things that could be split"
+    }
+    | emit { findings }
+}

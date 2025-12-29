@@ -1,0 +1,40 @@
+# coupling_matrix - Generate coupling/cohesion matrix
+#
+# Analyzes coupling between classes using pivot table.
+
+diagram coupling_matrix() {
+    """Generate coupling/cohesion matrix."""
+
+    param classes: list = [];
+    param format: str = "json";
+
+    reql {
+        SELECT ?class ?class_name ?method ?method_name ?calls ?calls_name ?target_class
+        WHERE {
+            ?class type {Class} .
+            ?class name ?class_name .
+            ?method type {Method} .
+            ?method definedIn ?class .
+            ?method name ?method_name .
+            OPTIONAL {
+                ?method calls ?calls .
+                ?calls type {Method} .
+                ?calls name ?calls_name .
+                ?calls definedIn ?tc .
+                ?tc name ?target_class
+            }
+        }
+        ORDER BY ?class_name
+    }
+    | select { from_class: class_name, to_class: target_class, method_name }
+    | filter { to_class is not null }
+    | filter { from_class != to_class }
+    | compute { coupling_count: 1 }
+    | pivot {
+        rows: from_class,
+        cols: to_class,
+        value: coupling_count,
+        aggregate: sum
+    }
+    | emit { matrix }
+}

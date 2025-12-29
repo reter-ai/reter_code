@@ -1,0 +1,34 @@
+# class_hierarchy - Generate class inheritance hierarchy diagram
+#
+# Visualizes class inheritance relationships as a Mermaid flowchart.
+
+diagram class_hierarchy() {
+    """Generate class inheritance hierarchy diagram."""
+
+    param target: str = "";
+    param max_depth: int = 10;
+    param format: str = "mermaid";
+
+    reql {
+        SELECT ?class ?class_name ?parent ?parent_name ?file ?line
+        WHERE {
+            ?class type {Class} .
+            ?class name ?class_name .
+            ?class inFile ?file .
+            ?class atLine ?line .
+            OPTIONAL {
+                ?class inheritsFrom ?parent .
+                ?parent name ?parent_name
+            }
+        }
+        ORDER BY ?class_name
+    }
+    | select { parent: parent_name, child: class_name, file, line }
+    | filter { parent is not null }
+    | render_mermaid {
+        type: flowchart,
+        edges: parent -> child,
+        direction: TB
+    }
+    | emit { diagram }
+}

@@ -1,0 +1,39 @@
+# collapse_hierarchy_candidates - Find nearly identical parent-child pairs
+#
+# Identifies inheritance hierarchies where child adds minimal value
+# and could be collapsed into the parent.
+
+detector collapse_hierarchy_candidates(category="inheritance", severity="low") {
+    """Find parent-child class pairs that could be collapsed."""
+
+    param max_added_methods: int = 1;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?child ?child_name ?parent_name ?file ?line (COUNT(?added_method) AS ?added_methods)
+        WHERE {
+            ?child type {Class} .
+            ?child name ?child_name .
+            ?child inFile ?file .
+            ?child atLine ?line .
+            ?child inheritsFrom ?parent .
+            ?parent name ?parent_name .
+            ?added_method type {Method} .
+            ?added_method definedIn ?child .
+            ?added_method name ?method_name .
+            FILTER ( !STRSTARTS(?method_name, "_") )
+        }
+        GROUP BY ?child ?child_name ?parent_name ?file ?line
+        HAVING (?added_methods <= {max_added_methods})
+        ORDER BY ?added_methods
+        LIMIT {limit}
+    }
+    | select { child_name, parent_name, file, line, added_methods }
+    | map {
+        ...row,
+        refactoring: "collapse_hierarchy",
+        message: "Class '{child_name}' adds only {added_methods} methods to parent '{parent_name}'",
+        suggestion: "Consider collapsing child into parent"
+    }
+    | emit { findings }
+}

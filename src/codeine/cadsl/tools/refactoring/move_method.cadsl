@@ -1,0 +1,37 @@
+# move_method - Suggest Move Method refactoring opportunities
+#
+# Identifies methods that use more features of another class than
+# their own class, suggesting they should be moved.
+
+detector move_method(category="refactoring", severity="medium") {
+    """Suggest Move Method refactoring opportunities."""
+
+    param threshold: float = 0.6;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?name ?class_name ?file ?line ?target_class ?external_usage
+        WHERE {
+            ?m type {Method} .
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            ?m definedIn ?c .
+            ?c name ?class_name .
+            ?m primaryExternalClass ?target .
+            ?target name ?target_class .
+            ?m externalUsageRatio ?external_usage .
+            FILTER ( ?external_usage > {threshold} )
+        }
+        ORDER BY DESC(?external_usage)
+        LIMIT {limit}
+    }
+    | select { name, class_name, file, line, target_class, external_usage, qualified_name: m }
+    | map {
+        ...row,
+        refactoring: "move_method",
+        message: "Method '{name}' uses '{target_class}' more than its own class",
+        suggestion: "Consider moving this method to {target_class}"
+    }
+    | emit { findings }
+}

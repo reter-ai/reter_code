@@ -1,0 +1,23 @@
+# similar_clusters - Find clusters of semantically similar code using K-means
+#
+# Uses RAG embeddings to group code by semantic similarity. Clusters with
+# multiple members from different files/classes indicate potential
+# duplication or extraction opportunities.
+
+detector find_similar_clusters(category="duplication", severity="medium") {
+    """Find clusters of semantically similar code using K-means clustering."""
+
+    param n_clusters: int = 50;
+    param min_size: int = 2;
+    param exclude_same_file: bool = true;
+    param exclude_same_class: bool = true;
+
+    rag { clusters, n_clusters: {n_clusters}, min_size: {min_size}, exclude_same_file: true, exclude_same_class: true }
+    | map {
+        ...row,
+        issue: "similar_cluster",
+        message: "Cluster of {member_count} similar code blocks across {unique_files} files",
+        suggestion: "Review cluster for potential abstraction"
+    }
+    | emit { findings }
+}

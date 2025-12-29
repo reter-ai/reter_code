@@ -1,0 +1,34 @@
+# replace_conditional_with_polymorphism - Suggest polymorphism over conditionals
+#
+# Identifies switch statements or cascading if-else chains that could
+# be replaced with polymorphism using inheritance or strategy pattern.
+
+detector replace_conditional_with_polymorphism(category="refactoring", severity="medium") {
+    """Suggest Replace Conditional with Polymorphism opportunities."""
+
+    param min_branches: int = 4;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?name ?class_name ?file ?line ?branch_count
+        WHERE {
+            ?m type {Method} .
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            OPTIONAL { ?m definedIn ?c . ?c name ?class_name }
+            ?m branchCount ?branch_count .
+            FILTER ( ?branch_count >= {min_branches} )
+        }
+        ORDER BY DESC(?branch_count)
+        LIMIT {limit}
+    }
+    | select { name, class_name, file, line, branch_count, qualified_name: m }
+    | map {
+        ...row,
+        refactoring: "replace_conditional_with_polymorphism",
+        message: "Method '{name}' has {branch_count} branches",
+        suggestion: "Consider using polymorphism (strategy pattern) instead"
+    }
+    | emit { findings }
+}

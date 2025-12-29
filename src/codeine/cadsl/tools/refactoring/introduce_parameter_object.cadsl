@@ -1,0 +1,36 @@
+# introduce_parameter_object - Suggest Introduce Parameter Object refactoring
+#
+# Identifies methods with many parameters that could benefit from
+# grouping related parameters into a parameter object.
+
+detector introduce_parameter_object(category="refactoring", severity="medium") {
+    """Suggest Introduce Parameter Object refactoring opportunities."""
+
+    param min_params: int = 4;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?name ?class_name ?file ?line (COUNT(?param) AS ?param_count)
+        WHERE {
+            { ?m type {Method} } UNION { ?m type {Function} }
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            ?param type {Parameter} .
+            ?param ofFunction ?m .
+            OPTIONAL { ?m definedIn ?c . ?c name ?class_name }
+        }
+        GROUP BY ?m ?name ?class_name ?file ?line
+        HAVING (?param_count >= {min_params})
+        ORDER BY DESC(?param_count)
+        LIMIT {limit}
+    }
+    | select { name, class_name, file, line, param_count, qualified_name: m }
+    | map {
+        ...row,
+        refactoring: "introduce_parameter_object",
+        message: "Method '{name}' has {param_count} parameters",
+        suggestion: "Consider grouping related parameters into a parameter object"
+    }
+    | emit { findings }
+}

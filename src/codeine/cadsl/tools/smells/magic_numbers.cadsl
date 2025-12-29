@@ -1,0 +1,29 @@
+# magic_numbers - Detect numeric literals that should be named constants
+#
+# Magic numbers are unexplained numeric literals in code that make it harder
+# to understand intent and maintain consistency.
+
+detector magic_numbers(category="code_smell", severity="medium") {
+    """Detect magic numbers - numeric default values that appear multiple times."""
+
+    param exclude_common: bool = true;
+    param min_occurrences: int = 2;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?value (COUNT(?p) AS ?occurrences)
+        WHERE {
+            ?p type {Parameter} .
+            ?p defaultValue ?value .
+            FILTER ( REGEX(?value, "^-?[0-9]+[.]?[0-9]*$") )
+            FILTER ( !{exclude_common} || (?value != "0" && ?value != "1" && ?value != "-1" && ?value != "2") )
+        }
+        GROUP BY ?value
+        HAVING ( ?occurrences >= {min_occurrences} )
+        ORDER BY DESC(?occurrences)
+        LIMIT {limit}
+    }
+    | select { value, occurrences }
+    | map { ...row, issue: "magic_number", message: "Numeric value '{value}' used as default in {occurrences} parameters", suggestion: "Consider extracting to a named constant" }
+    | emit { findings }
+}

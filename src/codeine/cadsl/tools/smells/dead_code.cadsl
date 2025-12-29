@@ -1,0 +1,33 @@
+# dead_code - Detect unused classes, methods, and functions
+#
+# Dead code adds maintenance burden and can confuse developers.
+# It should be removed to keep the codebase clean.
+
+detector dead_code(category="maintenance", severity="low") {
+    """Detect unused classes, methods, and functions."""
+
+    param include_private: bool = false;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?e ?name ?entity_type ?file ?line
+        WHERE {
+            { ?e type {Method} } UNION { ?e type {Function} }
+            ?e type ?entity_type .
+            ?e name ?name .
+            ?e inFile ?file .
+            ?e atLine ?line .
+            FILTER NOT EXISTS { ?caller calls ?e }
+            FILTER ( !REGEX(?name, "^__") )
+        }
+        ORDER BY ?file ?line
+    }
+    | select { name, entity_type, file, line, qualified_name: e }
+    | map {
+        ...row,
+        issue: "dead_code",
+        message: "Unused {entity_type} '{name}' - no callers found",
+        suggestion: "Consider removing if truly unused"
+    }
+    | emit { findings }
+}

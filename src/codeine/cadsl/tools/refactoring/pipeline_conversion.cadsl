@@ -1,0 +1,35 @@
+# pipeline_conversion - Detect functions that may benefit from pipeline patterns
+#
+# Original intent: Detect loops that could be replaced with collection pipelines.
+# Current implementation: Find functions using list operations that could use comprehensions.
+
+detector pipeline_conversion(category="refactoring", severity="low") {
+    """Detect functions that may benefit from pipeline/comprehension patterns."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?name ?class_name ?file ?line ?callee
+        WHERE {
+            ?m type {Method} .
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            ?m calls ?callee .
+            OPTIONAL { ?m definedIn ?c . ?c name ?class_name }
+            FILTER ( REGEX(?file, "\\.py$") )
+            FILTER ( REGEX(?callee, "append|extend|filter|map|reduce") )
+            FILTER ( !REGEX(?name, "^test_|^_") )
+        }
+        ORDER BY ?file ?name
+        LIMIT {limit}
+    }
+    | select { name, class_name, file, line, callee }
+    | map {
+        ...row,
+        refactoring: "replace_loop_with_pipeline",
+        message: "Method '{name}' uses '{callee}' - may benefit from comprehension",
+        suggestion: "Consider using list comprehension or generator expression"
+    }
+    | emit { findings }
+}

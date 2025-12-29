@@ -1,0 +1,31 @@
+# large_untested_modules - Find modules with many classes but few tests
+#
+# Identifies large modules that have inadequate test coverage.
+
+detector large_untested_modules(category="test_coverage", severity="medium") {
+    """Find modules with many classes but few tests."""
+
+    param min_classes: int = 5;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?file (COUNT(?class) AS ?class_count)
+        WHERE {
+            ?class type {Class} .
+            ?class inFile ?file .
+            FILTER ( !REGEX(?file, "test_|tests/|_test\\.py") )
+        }
+        GROUP BY ?file
+        HAVING ( ?class_count >= {min_classes} )
+        ORDER BY DESC(?class_count)
+        LIMIT {limit}
+    }
+    | select { file, class_count }
+    | map {
+        ...row,
+        issue: "large_untested_module",
+        message: "Module '{file}' has {class_count} classes - review test coverage",
+        suggestion: "Ensure adequate test coverage for large modules"
+    }
+    | emit { findings }
+}

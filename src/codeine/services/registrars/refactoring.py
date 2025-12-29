@@ -55,7 +55,6 @@ class RecommenderToolsRegistrar(ToolRegistrarBase):
         """Register the recommender tool."""
         from ...dsl.core import Context
         from ...dsl.registry import Registry
-        from ...dsl import tools as dsl_tools
 
         instance_manager = self.instance_manager
         default_manager = self._default_manager
@@ -140,6 +139,9 @@ class RecommenderToolsRegistrar(ToolRegistrarBase):
                 return {"success": False, "error": str(e), "status": "initializing"}
             except Exception as e:
                 return {"success": False, "error": f"Failed to get RETER instance: {str(e)}"}
+
+            # Ensure CADSL tools are loaded (triggers Registry registration)
+            _ensure_cadsl_tools_loaded(recommender_type)
 
             # Get detectors for this category from Registry
             categories = RECOMMENDER_TYPES[recommender_type]
@@ -238,7 +240,7 @@ class RecommenderToolsRegistrar(ToolRegistrarBase):
 
 def _get_tool_module(recommender_type: str):
     """Get the CADSL tool module for a recommender type."""
-    from ...dsl.tools import (
+    from ...cadsl.tools_bridge import (
         smells,
         refactoring,
         inheritance,
@@ -261,3 +263,39 @@ def _get_tool_module(recommender_type: str):
     }
 
     return modules.get(recommender_type)
+
+
+def _ensure_cadsl_tools_loaded(recommender_type: str):
+    """
+    Ensure CADSL tool modules are loaded and registered with Registry.
+
+    This triggers the lazy loading of tool modules which registers them
+    with the global Registry for discovery.
+    """
+    from ...cadsl.tools_bridge import (
+        smells,
+        refactoring,
+        inheritance,
+        testing,
+        dependencies,
+        exceptions,
+        patterns,
+        rag,
+    )
+
+    # Map recommender types to modules that need to be loaded
+    type_to_modules = {
+        "smells": [smells],
+        "refactoring": [refactoring],
+        "inheritance": [inheritance],
+        "testing": [testing],
+        "dependencies": [dependencies],
+        "exceptions": [exceptions],
+        "patterns": [patterns],
+        "duplication": [rag],
+    }
+
+    modules = type_to_modules.get(recommender_type, [])
+    for module in modules:
+        # Accessing list_tools triggers _ensure_loaded
+        module.list_tools()

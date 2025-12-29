@@ -1,0 +1,25 @@
+# get_exceptions - Get exception class hierarchy
+#
+# Returns all exception classes and their inheritance relationships.
+
+query get_exceptions() {
+    """Get exception class hierarchy."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?e ?name ?parent_name ?file ?line
+        WHERE {
+            ?e type {Class} .
+            ?e name ?name .
+            ?e inFile ?file .
+            ?e atLine ?line .
+            ?e inheritsFrom ?parent_name .
+            FILTER ( CONTAINS(?parent_name, "Exception") || CONTAINS(?parent_name, "Error") )
+        }
+        ORDER BY ?name
+        LIMIT {limit}
+    }
+    | select { name, parent_name, file, line, qualified_name: e }
+    | emit { exceptions }
+}

@@ -1,0 +1,23 @@
+# get_class_hierarchy - Get inheritance hierarchy (parents and children)
+#
+# Returns the complete inheritance tree for a class.
+
+query get_class_hierarchy() {
+    """Get inheritance hierarchy for a class (parents and children)."""
+
+    param target: str required;
+
+    reql {
+        SELECT ?c ?name ?qualifiedName ?parent_name ?child_name
+        WHERE {
+            ?c type {Class} .
+            ?c name ?name .
+            ?c qualifiedName ?qualifiedName .
+            OPTIONAL { ?c inheritsFrom ?parent . ?parent name ?parent_name }
+            OPTIONAL { ?child inheritsFrom ?c . ?child name ?child_name }
+            FILTER ( ?name = "{target}" || CONTAINS(?qualifiedName, "{target}") )
+        }
+    }
+    | select { name, qualifiedName, parent_name, child_name, qualified_name: c }
+    | emit { hierarchy }
+}

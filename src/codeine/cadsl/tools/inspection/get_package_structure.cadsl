@@ -1,0 +1,23 @@
+# get_package_structure - Get package/module directory structure
+#
+# Returns the hierarchical structure of modules in the codebase.
+
+query get_package_structure() {
+    """Get package/module directory structure."""
+
+    param limit: int = 100;
+    param offset: int = 0;
+
+    reql {
+        SELECT ?m ?name ?file
+        WHERE {
+            ?m type {Module} .
+            ?m name ?name .
+            ?m inFile ?file
+        }
+        ORDER BY ?file
+        LIMIT {limit}
+    }
+    | select { name, file, qualified_name: m }
+    | emit { modules }
+}

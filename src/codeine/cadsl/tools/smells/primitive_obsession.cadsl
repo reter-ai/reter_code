@@ -1,0 +1,39 @@
+# primitive_obsession - Detect overuse of primitive types
+#
+# Using primitives for domain concepts leads to scattered validation
+# and business logic. Consider using value objects or domain types.
+
+detector primitive_obsession(category="design", severity="low") {
+    """Detect overuse of primitive types for domain concepts."""
+
+    param min_primitives: int = 3;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?name ?class_name ?file ?line (COUNT(?primitive_param) AS ?primitive_params)
+        WHERE {
+            ?m type {Method} .
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            ?m definedIn ?c .
+            ?c name ?class_name .
+            ?primitive_param type {Parameter} .
+            ?primitive_param ofFunction ?m .
+            ?primitive_param typeAnnotation ?ptype .
+            FILTER ( REGEX(?ptype, "^(str|int|float|bool|bytes)$") )
+        }
+        GROUP BY ?m ?name ?class_name ?file ?line
+        HAVING (?primitive_params >= {min_primitives})
+        ORDER BY DESC(?primitive_params)
+        LIMIT {limit}
+    }
+    | select { name, class_name, file, line, primitive_params, qualified_name: m }
+    | map {
+        ...row,
+        issue: "primitive_obsession",
+        message: "Method '{name}' has {primitive_params} primitive parameters",
+        suggestion: "Consider using value objects for domain concepts"
+    }
+    | emit { findings }
+}

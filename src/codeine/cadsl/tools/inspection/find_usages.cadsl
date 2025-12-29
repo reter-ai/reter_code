@@ -1,0 +1,24 @@
+# find_usages - Find where a class/method/function is called in the codebase
+#
+# Returns all locations where the target entity is used.
+
+query find_usages() {
+    """Find all usages of a class, method, or function."""
+
+    param target: str required;
+
+    reql {
+        SELECT ?caller ?caller_name ?caller_file ?caller_line ?callee_name
+        WHERE {
+            { ?caller type {Method} } UNION { ?caller type {Function} }
+            ?caller name ?caller_name .
+            ?caller inFile ?caller_file .
+            ?caller atLine ?caller_line .
+            ?caller calls ?callee_name .
+            FILTER ( CONTAINS(?callee_name, "{target}") )
+        }
+        ORDER BY ?caller_file
+    }
+    | select { caller_name, caller_file, caller_line, call_type, qualified_name: caller }
+    | emit { usages }
+}

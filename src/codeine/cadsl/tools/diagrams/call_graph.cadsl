@@ -1,0 +1,46 @@
+# call_graph - Generate call graph from entry point
+#
+# Visualizes function/method call relationships as a Mermaid flowchart.
+# Uses native graph_traverse and render_mermaid for pure declarative implementation.
+
+diagram call_graph() {
+    """Generate call graph from entry point."""
+
+    param target: str required;
+    param max_depth: int = 10;
+    param format: str = "mermaid";
+
+    reql {
+        SELECT ?caller ?caller_name ?callee ?callee_name ?caller_class ?callee_class ?file ?line
+        WHERE {
+            { ?caller type {Method} } UNION { ?caller type {Function} }
+            ?caller name ?caller_name .
+            ?caller inFile ?file .
+            ?caller atLine ?line .
+            ?caller calls ?callee .
+            { ?callee type {Method} } UNION { ?callee type {Function} }
+            ?callee name ?callee_name .
+            OPTIONAL { ?caller definedIn ?cc . ?cc name ?caller_class }
+            OPTIONAL { ?callee definedIn ?tc . ?tc name ?callee_class }
+        }
+        ORDER BY ?caller_name
+    }
+    | select { caller_name, callee_name, caller_class, callee_class, file, line }
+    | compute {
+        from_node: caller_class ? caller_class + "." + caller_name : caller_name,
+        to_node: callee_class ? callee_class + "." + callee_name : callee_name
+    }
+    | graph_traverse {
+        from: from_node,
+        to: to_node,
+        algorithm: bfs,
+        max_depth: {max_depth},
+        root: {target}
+    }
+    | render_mermaid {
+        type: flowchart,
+        edges: from_node -> to_node,
+        direction: TD
+    }
+    | emit { diagram }
+}

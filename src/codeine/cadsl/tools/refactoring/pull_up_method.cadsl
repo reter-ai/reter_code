@@ -1,0 +1,43 @@
+# pull_up_method - Suggest Pull Up Method refactoring opportunities
+#
+# Identifies identical or similar methods in sibling classes that
+# could be pulled up to a common parent class.
+
+detector pull_up_method(category="refactoring", severity="medium") {
+    """Suggest Pull Up Method refactoring opportunities."""
+
+    param similarity_threshold: float = 0.9;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m1 ?name ?class1 ?class2 ?parent_class ?file ?line ?similarity
+        WHERE {
+            ?m1 type {Method} .
+            ?m1 name ?name .
+            ?m1 inFile ?file .
+            ?m1 atLine ?line .
+            ?m1 definedIn ?c1 .
+            ?c1 name ?class1 .
+            ?m2 type {Method} .
+            ?m2 name ?name .
+            ?m2 definedIn ?c2 .
+            ?c2 name ?class2 .
+            ?c1 inheritsFrom ?parent .
+            ?c2 inheritsFrom ?parent .
+            ?parent name ?parent_class .
+            ?m1 similarTo ?m2 .
+            ?m1 similarityScore ?similarity .
+            FILTER ( ?c1 != ?c2 && ?similarity >= {similarity_threshold} )
+        }
+        ORDER BY DESC(?similarity)
+        LIMIT {limit}
+    }
+    | select { name, class1, class2, parent_class, file, line, similarity, qualified_name: m1 }
+    | map {
+        ...row,
+        refactoring: "pull_up_method",
+        message: "Method '{name}' is duplicated in '{class1}' and '{class2}'",
+        suggestion: "Consider pulling up to parent class '{parent_class}'"
+    }
+    | emit { findings }
+}

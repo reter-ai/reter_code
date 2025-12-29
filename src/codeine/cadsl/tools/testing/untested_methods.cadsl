@@ -1,0 +1,34 @@
+# untested_methods - Find public methods without test coverage
+#
+# Identifies public methods that have no corresponding tests.
+
+detector untested_methods(category="test_coverage", severity="medium") {
+    """Find public methods without test coverage."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?name ?class_name ?file ?line ?line_count
+        WHERE {
+            ?m type {Method} .
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            ?m definedIn ?c .
+            ?c name ?class_name .
+            OPTIONAL { ?m lineCount ?line_count }
+            FILTER ( !REGEX(?name, "^_") && !REGEX(?file, "test_|_test\\.py") )
+            MINUS { ?test calls ?m . ?test inFile ?test_file . FILTER ( REGEX(?test_file, "test_") ) }
+        }
+        ORDER BY DESC(?line_count)
+        LIMIT {limit}
+    }
+    | select { name, class_name, file, line, line_count }
+    | map {
+        ...row,
+        issue: "untested_method",
+        message: "Method '{class_name}.{name}' has no tests",
+        suggestion: "Add test for method '{name}'"
+    }
+    | emit { findings }
+}

@@ -1,0 +1,36 @@
+# replace_inline_code - Detect similar methods that may contain duplicate code
+#
+# Original intent: Detect duplicate statement sequences replaceable with function calls.
+# Current implementation: Find methods with similar names/sizes that may share duplicate code.
+
+detector replace_inline_code(category="refactoring", severity="medium") {
+    """Detect classes with many similar-length methods (potential duplication)."""
+
+    param min_methods: int = 5;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?c ?class_name ?file ?line (COUNT(?m) AS ?method_count)
+        WHERE {
+            ?c type {Class} .
+            ?c name ?class_name .
+            ?c inFile ?file .
+            ?c atLine ?line .
+            ?m definedIn ?c .
+            ?m type {Method} .
+            FILTER ( REGEX(?file, "\\.py$") )
+        }
+        GROUP BY ?c ?class_name ?file ?line
+        HAVING ( ?method_count >= {min_methods} )
+        ORDER BY DESC(?method_count)
+        LIMIT {limit}
+    }
+    | select { class_name, file, line, method_count }
+    | map {
+        ...row,
+        refactoring: "extract_function",
+        message: "Class '{class_name}' has {method_count} methods - check for duplication",
+        suggestion: "Use 'detect_duplicate_code' RAG tool for detailed analysis"
+    }
+    | emit { findings }
+}

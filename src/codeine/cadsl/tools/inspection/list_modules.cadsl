@@ -1,0 +1,23 @@
+# list_modules - List all modules in the codebase
+#
+# Returns a list of all Python modules with their file paths.
+
+query list_modules() {
+    """List all modules in the codebase."""
+
+    param limit: int = 100;
+    param offset: int = 0;
+
+    reql {
+        SELECT ?m ?name ?file
+        WHERE {
+            ?m type {Module} .
+            ?m name ?name .
+            ?m inFile ?file
+        }
+        ORDER BY ?file
+        LIMIT {limit}
+    }
+    | select { name, file, qualified_name: m }
+    | emit { modules }
+}

@@ -1,0 +1,44 @@
+# auth_review - Find methods semantically similar to authentication patterns
+#
+# Uses semantic search to find code that handles authentication, authorization,
+# credentials, or session management. Joins with REQL to add full context.
+# Security-sensitive code should be reviewed for vulnerabilities.
+
+detector auth_review(category="security", severity="high") {
+    """Find methods semantically similar to authentication patterns."""
+
+    param similarity: float = 0.70;
+    param limit: int = 50;
+
+    # Get all methods with their class and file context
+    reql {
+        SELECT ?m ?name ?file ?line ?line_count ?class_name ?docstring
+        WHERE {
+            ?m type {Method} .
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            ?m definedIn ?c .
+            ?c name ?class_name .
+            OPTIONAL { ?m lineCount ?line_count }
+            OPTIONAL { ?m hasDocstring ?docstring }
+            FILTER ( !REGEX(?file, "test_") )
+        }
+    }
+    | join {
+        on: name,
+        right: rag { search, query: "authenticate login password credential token session authorize permission access control validate user", top_k: 200 },
+        type: inner
+    }
+    | filter { similarity >= {similarity} }
+    | select { name, file, line, line_count, class_name, similarity }
+    | map {
+        ...row,
+        issue: "auth_related",
+        message: "'{class_name}.{name}' matches auth patterns ({similarity})",
+        suggestion: "Review for security: input validation, credential handling, session management"
+    }
+    | order_by { -similarity }
+    | limit { {limit} }
+    | emit { findings }
+}

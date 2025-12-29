@@ -1,0 +1,35 @@
+# extract_class - Suggest Extract Class refactoring opportunities
+#
+# Identifies classes that are doing too much and could be split
+# into multiple smaller, focused classes.
+
+detector extract_class(category="refactoring", severity="high") {
+    """Suggest Extract Class refactoring opportunities."""
+
+    param min_methods: int = 15;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?c ?name ?file ?line (COUNT(?method) AS ?method_count)
+        WHERE {
+            ?c type {Class} .
+            ?c name ?name .
+            ?c inFile ?file .
+            ?c atLine ?line .
+            ?method type {Method} .
+            ?method definedIn ?c
+        }
+        GROUP BY ?c ?name ?file ?line
+        HAVING (?method_count >= {min_methods})
+        ORDER BY DESC(?method_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, method_count, qualified_name: c }
+    | map {
+        ...row,
+        refactoring: "extract_class",
+        message: "Class '{name}' ({method_count} methods) may benefit from Extract Class",
+        suggestion: "Group related methods and attributes into separate classes"
+    }
+    | emit { findings }
+}

@@ -1,0 +1,36 @@
+# data_class - Detect classes that only hold data without behavior
+#
+# Data Classes are classes that have fields and getters/setters but no
+# real behavior. They may indicate a need for richer domain modeling.
+
+detector data_class(category="design", severity="low") {
+    """Detect Data Classes - classes with data but no behavior."""
+
+    param min_attributes: int = 3;
+    param max_methods: int = 2;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?c ?name ?file ?line (COUNT(?attr) AS ?attr_count) (COUNT(?method) AS ?method_count)
+        WHERE {
+            ?c type {Class} .
+            ?c name ?name .
+            ?c inFile ?file .
+            ?c atLine ?line .
+            OPTIONAL { ?attr type {Field} . ?attr definedIn ?c }
+            OPTIONAL { ?method type {Method} . ?method definedIn ?c }
+        }
+        GROUP BY ?c ?name ?file ?line
+        HAVING (?attr_count >= {min_attributes} && ?method_count <= {max_methods})
+        ORDER BY DESC(?attr_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, attr_count, method_count, qualified_name: c }
+    | map {
+        ...row,
+        issue: "data_class",
+        message: "Class '{name}' has {attr_count} attributes but only {method_count} methods",
+        suggestion: "Consider adding behavior or using a dataclass/namedtuple"
+    }
+    | emit { findings }
+}

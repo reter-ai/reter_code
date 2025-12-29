@@ -1,0 +1,26 @@
+# predict_impact - Predict impact of changing a function/method/class
+#
+# Analyzes the dependency graph to predict which files and entities
+# would be affected by changes to the target.
+
+query predict_impact() {
+    """Predict impact of changing a function/method/class."""
+
+    param target: str required;
+
+    reql {
+        SELECT ?dependent ?dep_name ?dep_file ?dep_line ?dep_type
+        WHERE {
+            ?target name "{target}" .
+            { ?target type {Class} } UNION { ?target type {Method} } UNION { ?target type {Function} }
+            { ?dependent type {Class} } UNION { ?dependent type {Method} } UNION { ?dependent type {Function} }
+            { ?dependent callsTransitive ?target } UNION { ?dependent inheritsFrom ?target } UNION { ?dependent imports ?target }
+            ?dependent name ?dep_name .
+            ?dependent inFile ?dep_file .
+            ?dependent atLine ?dep_line
+        }
+        ORDER BY ?dep_file
+    }
+    | select { dep_name, dep_file, dep_line, dep_type, qualified_name: dependent }
+    | emit { affected_entities }
+}

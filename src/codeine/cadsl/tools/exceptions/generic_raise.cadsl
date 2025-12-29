@@ -1,0 +1,32 @@
+# generic_exception_raising - Detect raising generic Exception
+#
+# Identifies code that raises generic Exception instead of
+# specific exception types.
+
+detector generic_exception_raising(category="exception_handling", severity="medium") {
+    """Detect raising generic Exception types."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?r ?exception_type ?func_name ?file ?line
+        WHERE {
+            ?r type {ThrowStatement} .
+            ?r inFile ?file .
+            ?r atLine ?line .
+            ?r exceptionType ?exception_type .
+            OPTIONAL { ?r inFunction ?f . ?f name ?func_name }
+            FILTER ( ?exception_type = "Exception" )
+        }
+        ORDER BY ?file ?line
+        LIMIT {limit}
+    }
+    | select { exception_type, func_name, file, line }
+    | map {
+        ...row,
+        issue: "generic_exception_raising",
+        message: "Raising generic 'Exception' in '{func_name}'",
+        suggestion: "Create and raise a specific exception type"
+    }
+    | emit { findings }
+}

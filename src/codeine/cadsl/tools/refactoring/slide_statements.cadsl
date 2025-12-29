@@ -1,0 +1,35 @@
+# slide_statements - Detect long methods that may have scattered variable usage
+#
+# Original intent: Detect statements accessing same data but separated by unrelated code.
+# Current implementation: Find long methods where code organization may need review.
+
+detector slide_statements(category="refactoring", severity="low") {
+    """Detect long methods that may benefit from statement reorganization."""
+
+    param min_lines: int = 30;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?name ?class_name ?file ?line ?loc
+        WHERE {
+            ?m type {Method} .
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            ?m lineCount ?loc .
+            OPTIONAL { ?m definedIn ?c . ?c name ?class_name }
+            FILTER ( REGEX(?file, "\\.py$") )
+            FILTER ( ?loc >= {min_lines} )
+        }
+        ORDER BY DESC(?loc)
+        LIMIT {limit}
+    }
+    | select { name, class_name, file, line, loc }
+    | map {
+        ...row,
+        refactoring: "slide_statements",
+        message: "Method '{name}' is {loc} lines - may have scattered variable usage",
+        suggestion: "Review and group related statements together"
+    }
+    | emit { findings }
+}

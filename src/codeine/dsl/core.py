@@ -35,6 +35,44 @@ from .catpy import (
     compose, identity
 )
 
+# PyArrow for vectorized operations
+import pyarrow as pa
+import pyarrow.compute as pc
+
+
+# =============================================================================
+# Arrow Utilities
+# =============================================================================
+
+def to_arrow(data: Union[pa.Table, List[Dict]]) -> pa.Table:
+    """Convert data to PyArrow table."""
+    if isinstance(data, pa.Table):
+        return data
+    if not data:
+        return pa.table({})
+    return pa.Table.from_pylist(data)
+
+
+def to_list(data: Union[pa.Table, List[Dict]]) -> List[Dict]:
+    """Convert data to list of dicts."""
+    if isinstance(data, pa.Table):
+        return data.to_pylist()
+    return data
+
+
+def is_arrow(data) -> bool:
+    """Check if data is a PyArrow table."""
+    return isinstance(data, pa.Table)
+
+
+def resolve_column(table: pa.Table, name: str) -> Optional[str]:
+    """Find column name, handling ? prefix from REQL."""
+    if name in table.column_names:
+        return name
+    if f"?{name}" in table.column_names:
+        return f"?{name}"
+    return None
+
 T = TypeVar("T")
 U = TypeVar("U")
 V = TypeVar("V")
@@ -126,8 +164,8 @@ class MappedSource(Source[U], Generic[T, U]):
 
 
 @dataclass
-class REQLSource(Source[List[Dict[str, Any]]]):
-    """REQL query source."""
+class REQLSource(Source[pa.Table]):
+    """REQL query source - returns PyArrow table for vectorized operations."""
     query: str
 
     # Language-specific concept placeholders that get resolved
@@ -143,8 +181,8 @@ class REQLSource(Source[List[Dict[str, Any]]]):
         "Form", "FormInput", "Link", "EventHandler", "Meta", "Image", "Iframe",
     ]
 
-    def execute(self, ctx: Context) -> PipelineResult[List[Dict[str, Any]]]:
-        """Execute REQL query against RETER."""
+    def execute(self, ctx: Context) -> PipelineResult[pa.Table]:
+        """Execute REQL query against RETER - returns PyArrow table."""
         try:
             from codeine.services.language_support import LanguageSupport
 
@@ -163,14 +201,13 @@ class REQLSource(Source[List[Dict[str, Any]]]):
                 if placeholder in query:
                     query = query.replace(placeholder, str(value))
 
-            # Execute query
+            # Execute query - returns PyArrow table directly
             table = ctx.reter.reql(query)
 
-            # Convert PyArrow table to list of dicts
             if table is None or table.num_rows == 0:
-                return pipeline_ok([])
-            results = table.to_pylist()
-            return pipeline_ok(results)
+                return pipeline_ok(pa.table({}))
+
+            return pipeline_ok(table)
         except Exception as e:
             return pipeline_err("reql", f"Query failed: {e}: {query}", e)
 
@@ -184,8 +221,22 @@ class ValueSource(Source[T], Generic[T]):
         return pipeline_ok(self.value)
 
 
+def _get_rag_manager(ctx: Context):
+    """Get RAG manager from context or default instance."""
+    rag_manager = ctx.get("rag_manager")
+    if rag_manager is None:
+        try:
+            from codeine.services.default_instance_manager import DefaultInstanceManager
+            default_mgr = DefaultInstanceManager.get_instance()
+            if default_mgr:
+                rag_manager = default_mgr.get_rag_manager()
+        except Exception:
+            pass
+    return rag_manager
+
+
 @dataclass
-class RAGSource(Source[List[Dict[str, Any]]]):
+class RAGSearchSource(Source[List[Dict[str, Any]]]):
     """RAG semantic search source."""
     query: str
     top_k: int = 10
@@ -194,11 +245,126 @@ class RAGSource(Source[List[Dict[str, Any]]]):
     def execute(self, ctx: Context) -> PipelineResult[List[Dict[str, Any]]]:
         """Execute semantic search."""
         try:
-            # This would integrate with the RAG system
-            # For now, return empty result as placeholder
-            return pipeline_ok([])
+            rag_manager = _get_rag_manager(ctx)
+            if rag_manager is None:
+                return pipeline_err("rag", "RAG manager not available")
+
+            # Call search() method which returns (results, stats)
+            results, stats = rag_manager.search(
+                query=self.query,
+                top_k=self.top_k,
+                entity_types=self.entity_types
+            )
+
+            # Check for errors in stats
+            if stats.get("error"):
+                return pipeline_err("rag", stats.get("error", "Search failed"))
+
+            # Convert RAGSearchResult objects to dicts
+            result_dicts = [r.to_dict() for r in results]
+
+            return pipeline_ok(result_dicts)
         except Exception as e:
             return pipeline_err("rag", f"Semantic search failed: {e}", e)
+
+
+@dataclass
+class RAGDuplicatesSource(Source[List[Dict[str, Any]]]):
+    """RAG duplicate code detection source."""
+    similarity: float = 0.85
+    limit: int = 50
+    exclude_same_file: bool = True
+    exclude_same_class: bool = True
+    entity_types: Optional[List[str]] = None
+
+    def execute(self, ctx: Context) -> PipelineResult[List[Dict[str, Any]]]:
+        """Find duplicate code using RAG embeddings."""
+        try:
+            rag_manager = _get_rag_manager(ctx)
+            if rag_manager is None:
+                return pipeline_err("rag", "RAG manager not available")
+
+            result = rag_manager.find_duplicate_candidates(
+                similarity_threshold=self.similarity,
+                max_results=self.limit,
+                exclude_same_file=self.exclude_same_file,
+                exclude_same_class=self.exclude_same_class,
+                entity_types=self.entity_types or ["method", "function"]
+            )
+
+            if not result.get("success"):
+                return pipeline_err("rag", result.get("error", "Duplicate detection failed"))
+
+            # Transform pairs to flat findings
+            findings = []
+            for pair in result.get("pairs", []):
+                e1, e2 = pair["entity1"], pair["entity2"]
+                findings.append({
+                    "similarity": pair["similarity"],
+                    "entity1_name": e1["name"],
+                    "entity1_file": e1["file"],
+                    "entity1_line": e1["line"],
+                    "entity1_class": e1.get("class_name", ""),
+                    "entity2_name": e2["name"],
+                    "entity2_file": e2["file"],
+                    "entity2_line": e2["line"],
+                    "entity2_class": e2.get("class_name", ""),
+                })
+
+            return pipeline_ok(findings)
+        except Exception as e:
+            return pipeline_err("rag", f"Duplicate detection failed: {e}", e)
+
+
+@dataclass
+class RAGClustersSource(Source[List[Dict[str, Any]]]):
+    """RAG code clustering source using K-means."""
+    n_clusters: int = 50
+    min_size: int = 2
+    exclude_same_file: bool = True
+    exclude_same_class: bool = True
+    entity_types: Optional[List[str]] = None
+
+    def execute(self, ctx: Context) -> PipelineResult[List[Dict[str, Any]]]:
+        """Find code clusters using K-means on RAG embeddings."""
+        try:
+            rag_manager = _get_rag_manager(ctx)
+            if rag_manager is None:
+                return pipeline_err("rag", "RAG manager not available")
+
+            result = rag_manager.find_similar_clusters(
+                n_clusters=self.n_clusters,
+                min_cluster_size=self.min_size,
+                exclude_same_file=self.exclude_same_file,
+                exclude_same_class=self.exclude_same_class,
+                entity_types=self.entity_types or ["method", "function"]
+            )
+
+            if not result.get("success"):
+                return pipeline_err("rag", result.get("error", "Clustering failed"))
+
+            # Transform clusters to findings
+            findings = []
+            for cluster in result.get("clusters", []):
+                member_names = [m["name"] for m in cluster["members"]]
+                member_files = list(set(m["file"] for m in cluster["members"]))
+                findings.append({
+                    "cluster_id": cluster["cluster_id"],
+                    "member_count": cluster["member_count"],
+                    "unique_files": cluster["unique_files"],
+                    "members": member_names,
+                    "files": member_files,
+                    "avg_distance": cluster.get("avg_distance", 0),
+                    "details": cluster["members"]
+                })
+
+            return pipeline_ok(findings)
+        except Exception as e:
+            return pipeline_err("rag", f"Clustering failed: {e}", e)
+
+
+# Backward compatibility alias
+RAGSource = RAGSearchSource
 
 
 # =============================================================================
@@ -250,16 +416,20 @@ class ComposedStep(Step[T, V], Generic[T, U, V]):
 
 
 @dataclass
-class FilterStep(Step[List[T], List[T]], Generic[T]):
-    """Filter items based on predicate."""
+class FilterStep(Step[Union[pa.Table, List[T]], Union[pa.Table, List[T]]], Generic[T]):
+    """Filter items based on predicate - Arrow-optimized."""
     predicate: Callable[[T], bool]
     condition: Optional[Callable[[], bool]] = None  # when/unless condition
 
-    def execute(self, data: List[T], ctx: Optional["Context"] = None) -> PipelineResult[List[T]]:
+    def execute(self, data: Union[pa.Table, List[T]], ctx: Optional["Context"] = None) -> PipelineResult[Union[pa.Table, List[T]]]:
         if self.condition is not None and not self.condition():
             return pipeline_ok(data)  # Skip filter if condition not met
         try:
-            # Try to call predicate with context if it accepts 2 parameters
+            # Use Arrow vectorized filter if data is Arrow table
+            if is_arrow(data):
+                return self._arrow_filter(data, ctx)
+
+            # Fall back to row-by-row for list
             import inspect
             try:
                 sig = inspect.signature(self.predicate)
@@ -272,30 +442,51 @@ class FilterStep(Step[List[T], List[T]], Generic[T]):
         except Exception as e:
             return pipeline_err("filter", f"Filter failed: {e}", e)
 
+    def _arrow_filter(self, table: pa.Table, ctx: Optional["Context"]) -> PipelineResult[pa.Table]:
+        """Apply filter using Arrow compute - vectorized."""
+        try:
+            # Convert to list and filter row-by-row (predicate is Python function)
+            # For true vectorization, use ArrowFilterStep with expression parsing
+            rows = table.to_pylist()
+            import inspect
+            try:
+                sig = inspect.signature(self.predicate)
+                if len(sig.parameters) >= 2:
+                    filtered = [item for item in rows if self.predicate(item, ctx)]
+                else:
+                    filtered = [item for item in rows if self.predicate(item)]
+            except (ValueError, TypeError):
+                filtered = [item for item in rows if self.predicate(item)]
+
+            if not filtered:
+                return pipeline_ok(pa.table({}))
+            return pipeline_ok(pa.Table.from_pylist(filtered))
+        except Exception as e:
+            return pipeline_err("filter", f"Arrow filter failed: {e}", e)
+
 
 @dataclass
-class SelectStep(Step[List[Dict], List[Dict]]):
-    """Select/rename fields from items."""
+class SelectStep(Step[Union[pa.Table, List[Dict]], Union[pa.Table, List[Dict]]]):
+    """Select/rename fields from items - Arrow-optimized."""
     fields: Dict[str, str]  # output_name -> source_name
 
-    def execute(self, data: List[Dict], ctx: Optional["Context"] = None) -> PipelineResult[List[Dict]]:
+    def execute(self, data: Union[pa.Table, List[Dict]], ctx: Optional["Context"] = None) -> PipelineResult[Union[pa.Table, List[Dict]]]:
         try:
+            if is_arrow(data):
+                return self._arrow_select(data)
+
+            # List of dicts fallback
             result = []
             for item in data:
                 new_item = {}
                 for out_name, src_name in self.fields.items():
-                    # Normalize output name (strip ? prefix)
                     clean_out = out_name.lstrip("?")
-                    # Try exact match first
                     if src_name in item:
                         new_item[clean_out] = item[src_name]
-                    # Try with ? prefix (REQL variables)
                     elif not src_name.startswith("?") and f"?{src_name}" in item:
                         new_item[clean_out] = item[f"?{src_name}"]
-                    # Try output name as fallback
                     elif out_name in item:
                         new_item[clean_out] = item[out_name]
-                    # Try output name with ? prefix
                     elif not out_name.startswith("?") and f"?{out_name}" in item:
                         new_item[clean_out] = item[f"?{out_name}"]
                 result.append(new_item)
@@ -303,16 +494,38 @@ class SelectStep(Step[List[Dict], List[Dict]]):
         except Exception as e:
             return pipeline_err("select", f"Select failed: {e}", e)
 
+    def _arrow_select(self, table: pa.Table) -> PipelineResult[pa.Table]:
+        """Select columns using Arrow - vectorized O(1) per column."""
+        try:
+            if table.num_rows == 0:
+                return pipeline_ok(pa.table({}))
+
+            columns = {}
+            for out_name, src_name in self.fields.items():
+                clean_out = out_name.lstrip("?")
+                col_name = resolve_column(table, src_name)
+                if col_name is None:
+                    col_name = resolve_column(table, out_name)
+                if col_name:
+                    columns[clean_out] = table.column(col_name)
+
+            return pipeline_ok(pa.table(columns))
+        except Exception as e:
+            return pipeline_err("select", f"Arrow select failed: {e}", e)
+
 
 @dataclass
-class OrderByStep(Step[List[Dict], List[Dict]]):
-    """Sort items by field."""
+class OrderByStep(Step[Union[pa.Table, List[Dict]], Union[pa.Table, List[Dict]]]):
+    """Sort items by field - Arrow-optimized."""
     field_name: str
     descending: bool = False
 
-    def execute(self, data: List[Dict], ctx: Optional["Context"] = None) -> PipelineResult[List[Dict]]:
+    def execute(self, data: Union[pa.Table, List[Dict]], ctx: Optional["Context"] = None) -> PipelineResult[Union[pa.Table, List[Dict]]]:
         try:
-            # Handle both 'name' and '?name' field variants
+            if is_arrow(data):
+                return self._arrow_sort(data)
+
+            # List fallback
             def get_value(x):
                 if self.field_name in x:
                     return x.get(self.field_name, "")
@@ -323,48 +536,85 @@ class OrderByStep(Step[List[Dict], List[Dict]]):
         except Exception as e:
             return pipeline_err("order_by", f"Sort failed: {e}", e)
 
+    def _arrow_sort(self, table: pa.Table) -> PipelineResult[pa.Table]:
+        """Sort using Arrow compute - vectorized."""
+        try:
+            if table.num_rows == 0:
+                return pipeline_ok(table)
+
+            col_name = resolve_column(table, self.field_name)
+            if col_name is None:
+                return pipeline_ok(table)
+
+            order = "descending" if self.descending else "ascending"
+            indices = pc.sort_indices(table, sort_keys=[(col_name, order)])
+            return pipeline_ok(table.take(indices))
+        except Exception as e:
+            return pipeline_err("order_by", f"Arrow sort failed: {e}", e)
+
 
 @dataclass
-class LimitStep(Step[List[T], List[T]], Generic[T]):
-    """Limit number of results."""
+class LimitStep(Step[Union[pa.Table, List[T]], Union[pa.Table, List[T]]], Generic[T]):
+    """Limit number of results - Arrow-optimized."""
     count: int
 
-    def execute(self, data: List[T], ctx: Optional["Context"] = None) -> PipelineResult[List[T]]:
+    def execute(self, data: Union[pa.Table, List[T]], ctx: Optional["Context"] = None) -> PipelineResult[Union[pa.Table, List[T]]]:
+        if is_arrow(data):
+            return pipeline_ok(data.slice(0, self.count))
         return pipeline_ok(data[:self.count])
 
 
 @dataclass
-class OffsetStep(Step[List[T], List[T]], Generic[T]):
-    """Skip first N results."""
+class OffsetStep(Step[Union[pa.Table, List[T]], Union[pa.Table, List[T]]], Generic[T]):
+    """Skip first N results - Arrow-optimized."""
     count: int
 
-    def execute(self, data: List[T], ctx: Optional["Context"] = None) -> PipelineResult[List[T]]:
+    def execute(self, data: Union[pa.Table, List[T]], ctx: Optional["Context"] = None) -> PipelineResult[Union[pa.Table, List[T]]]:
+        if is_arrow(data):
+            return pipeline_ok(data.slice(self.count))
         return pipeline_ok(data[self.count:])
 
 
 @dataclass
-class MapStep(Step[List[T], List[U]], Generic[T, U]):
-    """Transform each item using fmap semantics."""
+class MapStep(Step[Union[pa.Table, List[T]], Union[pa.Table, List[U]]], Generic[T, U]):
+    """Transform each item using fmap semantics - Arrow-aware."""
     transform: Callable[[T], U]
 
-    def execute(self, data: List[T], ctx: Optional["Context"] = None) -> PipelineResult[List[U]]:
+    def execute(self, data: Union[pa.Table, List[T]], ctx: Optional["Context"] = None) -> PipelineResult[Union[pa.Table, List[U]]]:
         try:
+            # For Arrow tables, convert to list, apply transform, convert back
+            # This preserves Arrow format while allowing arbitrary transforms
+            if is_arrow(data):
+                rows = data.to_pylist()
+                transformed = [self.transform(item) for item in rows]
+                if not transformed:
+                    return pipeline_ok(pa.table({}))
+                return pipeline_ok(pa.Table.from_pylist(transformed))
+
             return pipeline_ok([self.transform(item) for item in data])
         except Exception as e:
             return pipeline_err("map", f"Map failed: {e}", e)
 
 
 @dataclass
-class FlatMapStep(Step[List[T], List[U]], Generic[T, U]):
-    """Transform and flatten using bind semantics."""
+class FlatMapStep(Step[Union[pa.Table, List[T]], Union[pa.Table, List[U]]], Generic[T, U]):
+    """Transform and flatten using bind semantics - Arrow-aware."""
     transform: Callable[[T], List[U]]
 
-    def execute(self, data: List[T], ctx: Optional["Context"] = None) -> PipelineResult[List[U]]:
+    def execute(self, data: Union[pa.Table, List[T]], ctx: Optional["Context"] = None) -> PipelineResult[Union[pa.Table, List[U]]]:
         try:
+            # Convert Arrow to list for flat_map (variable output per row)
+            if is_arrow(data):
+                data = data.to_pylist()
+
             result = []
             for item in data:
                 result.extend(self.transform(item))
-            return pipeline_ok(result)
+
+            # Convert back to Arrow if input was Arrow
+            if result:
+                return pipeline_ok(pa.Table.from_pylist(result) if isinstance(result[0], dict) else result)
+            return pipeline_ok(pa.table({}))
         except Exception as e:
             return pipeline_err("flat_map", f"FlatMap failed: {e}", e)
 
@@ -412,12 +662,16 @@ class GroupByStep(Step[List[Dict], Dict[str, Any]]):
 
 
 @dataclass
-class AggregateStep(Step[List[Dict], Dict[str, Any]]):
-    """Aggregate data with specified functions."""
+class AggregateStep(Step[Union[pa.Table, List[Dict]], Dict[str, Any]]):
+    """Aggregate data with specified functions - Arrow-optimized."""
     aggregations: Dict[str, Tuple[str, str]]  # output -> (field, func)
 
-    def execute(self, data: List[Dict], ctx: Optional["Context"] = None) -> PipelineResult[Dict[str, Any]]:
+    def execute(self, data: Union[pa.Table, List[Dict]], ctx: Optional["Context"] = None) -> PipelineResult[Dict[str, Any]]:
         try:
+            if is_arrow(data):
+                return self._arrow_aggregate(data)
+
+            # List fallback
             result = {"count": len(data)}
             for out_name, (field_name, func) in self.aggregations.items():
                 values = [item.get(field_name) for item in data if item.get(field_name) is not None]
@@ -425,7 +679,7 @@ class AggregateStep(Step[List[Dict], Dict[str, Any]]):
                     result[out_name] = len(values)
                 elif func == "sum":
                     result[out_name] = sum(values)
-                elif func == "avg":
+                elif func == "avg" or func == "mean":
                     result[out_name] = sum(values) / len(values) if values else 0
                 elif func == "min":
                     result[out_name] = min(values) if values else None
@@ -434,6 +688,35 @@ class AggregateStep(Step[List[Dict], Dict[str, Any]]):
             return pipeline_ok(result)
         except Exception as e:
             return pipeline_err("aggregate", f"Aggregation failed: {e}", e)
+
+    def _arrow_aggregate(self, table: pa.Table) -> PipelineResult[Dict[str, Any]]:
+        """Aggregate using Arrow compute - vectorized."""
+        try:
+            result = {"count": table.num_rows}
+
+            for out_name, (field_name, func) in self.aggregations.items():
+                col_name = resolve_column(table, field_name)
+                if col_name is None:
+                    continue
+
+                column = table.column(col_name)
+
+                if func == "count":
+                    result[out_name] = pc.count(column).as_py()
+                elif func == "sum":
+                    result[out_name] = pc.sum(column).as_py()
+                elif func == "avg" or func == "mean":
+                    result[out_name] = pc.mean(column).as_py()
+                elif func == "min":
+                    result[out_name] = pc.min(column).as_py()
+                elif func == "max":
+                    result[out_name] = pc.max(column).as_py()
+                elif func == "stddev":
+                    result[out_name] = pc.stddev(column).as_py()
+
+            return pipeline_ok(result)
+        except Exception as e:
+            return pipeline_err("aggregate", f"Arrow aggregate failed: {e}", e)
 
 
 @dataclass
@@ -448,12 +731,17 @@ class FlattenStep(Step[List[List[T]], List[T]], Generic[T]):
 
 
 @dataclass
-class UniqueStep(Step[List[T], List[T]], Generic[T]):
-    """Remove duplicates based on key."""
+class UniqueStep(Step[Union[pa.Table, List[T]], Union[pa.Table, List[T]]], Generic[T]):
+    """Remove duplicates based on key - Arrow-optimized."""
     key: Optional[Callable[[T], Any]] = None
+    columns: Optional[List[str]] = None  # For Arrow: columns to dedupe on
 
-    def execute(self, data: List[T], ctx: Optional["Context"] = None) -> PipelineResult[List[T]]:
+    def execute(self, data: Union[pa.Table, List[T]], ctx: Optional["Context"] = None) -> PipelineResult[Union[pa.Table, List[T]]]:
         try:
+            if is_arrow(data):
+                return self._arrow_unique(data)
+
+            # List fallback
             if self.key:
                 seen = set()
                 result = []
@@ -477,6 +765,27 @@ class UniqueStep(Step[List[T], List[T]], Generic[T]):
                 return pipeline_ok(result)
         except Exception as e:
             return pipeline_err("unique", f"Unique failed: {e}", e)
+
+    def _arrow_unique(self, table: pa.Table) -> PipelineResult[pa.Table]:
+        """Remove duplicates using Arrow group_by - vectorized."""
+        try:
+            if table.num_rows == 0:
+                return pipeline_ok(table)
+
+            # Determine columns to dedupe on
+            if self.columns:
+                cols = [resolve_column(table, c) for c in self.columns if resolve_column(table, c)]
+            else:
+                cols = table.column_names
+
+            if not cols:
+                return pipeline_ok(table)
+
+            # Use group_by with no aggregations to get unique rows
+            unique_table = table.group_by(cols).aggregate([])
+            return pipeline_ok(unique_table)
+        except Exception as e:
+            return pipeline_err("unique", f"Arrow unique failed: {e}", e)
 
 
 @dataclass
@@ -752,6 +1061,11 @@ class Pipeline(Monad[T], Generic[T]):
             }
 
         data = result.unwrap()
+
+        # Convert Arrow table to list at output boundary
+        if is_arrow(data):
+            data = data.to_pylist()
+
         output = {"success": True}
 
         if self._emit_key:
@@ -815,6 +1129,11 @@ class BoundPipeline(Generic[T, U]):
             }
 
         data = result.unwrap()
+
+        # Convert Arrow table to list at output boundary
+        if is_arrow(data):
+            data = data.to_pylist()
+
         output = {"success": True}
 
         if self._emit_key:

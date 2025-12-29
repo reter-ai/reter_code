@@ -1,0 +1,44 @@
+# semantic_dead_code - Find code semantically similar to dead code
+#
+# Uses anti-join to find dead code (no callers), then uses semantic search
+# to find other code that is similar to the dead code patterns.
+# This helps identify potentially unused but not-yet-detected dead code.
+
+detector semantic_dead_code(category="maintenance", severity="medium") {
+    """Find code semantically similar to known dead code."""
+
+    param similarity: float = 0.75;
+    param limit: int = 50;
+
+    # First, find confirmed dead code (no callers)
+    reql {
+        SELECT ?e ?name ?file ?line ?line_count
+        WHERE {
+            { ?e type {Method} } UNION { ?e type {Function} }
+            ?e name ?name .
+            ?e inFile ?file .
+            ?e atLine ?line .
+            OPTIONAL { ?e lineCount ?line_count }
+            FILTER NOT EXISTS { ?caller calls ?e }
+            FILTER ( !REGEX(?name, "^__|^test_") )
+            FILTER ( !REGEX(?file, "test_") )
+        }
+        LIMIT 100
+    }
+    | join {
+        on: name,
+        right: rag { search, query: "unused helper utility internal private deprecated", top_k: 200 },
+        type: left
+    }
+    | filter { similarity >= {similarity} }
+    | select { name, file, line, line_count, similarity }
+    | map {
+        ...row,
+        issue: "semantic_dead_code",
+        message: "'{name}' appears unused and matches dead code patterns ({similarity})",
+        suggestion: "Verify if truly unused, then remove or document why kept"
+    }
+    | order_by { -similarity }
+    | limit { {limit} }
+    | emit { findings }
+}

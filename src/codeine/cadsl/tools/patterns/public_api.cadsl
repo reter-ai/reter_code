@@ -1,0 +1,27 @@
+# find_public_api - Find all public API entities in the codebase
+#
+# Identifies public classes and functions (non-underscore prefixed).
+
+detector find_public_api(category="patterns", severity="info") {
+    """Find all public API entities in the codebase."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?e ?name ?file ?line ?docstring
+        WHERE {
+            { ?e type {Class} }
+            UNION
+            { ?e type {Function} }
+            ?e name ?name .
+            ?e inFile ?file .
+            ?e atLine ?line .
+            OPTIONAL { ?e docstring ?docstring }
+            FILTER ( !REGEX(?name, "^_") && REGEX(?file, "[.]py$") )
+        }
+        ORDER BY ?file ?name
+        LIMIT {limit}
+    }
+    | select { name, file, line, docstring }
+    | emit { findings }
+}

@@ -1,0 +1,37 @@
+# duplicate_names - Detect entities with duplicate names across modules
+#
+# Having multiple classes, functions, or variables with the same name
+# in different modules can lead to confusion and import conflicts.
+
+detector duplicate_names(category="code_smell", severity="low") {
+    """Detect duplicate entity names across different modules."""
+
+    param entity_type: str = "class";
+    param limit: int = 100;
+
+    reql {
+        SELECT ?name ?file ?concept
+        WHERE {
+            ?e type {Class} .
+            ?e name ?name .
+            ?e inFile ?file .
+            ?e concept ?concept
+        }
+    }
+    | select { name, file }
+    | collect {
+        by: name,
+        files: set(file),
+        count: count(file)
+    }
+    | filter { count > 1 }
+    | order_by { -count }
+    | limit { {limit} }
+    | map {
+        ...row,
+        issue: "duplicate_name",
+        message: "Name '{name}' appears {count} times in different modules",
+        suggestion: "Consider using more specific names or reorganizing into a single location"
+    }
+    | emit { findings }
+}

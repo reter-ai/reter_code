@@ -1,0 +1,45 @@
+# api_surface_review - Find public API methods similar to common patterns
+#
+# Uses merge to combine different semantic searches for API patterns,
+# then joins with REQL to get full method context. Helps review public API
+# for consistency and completeness.
+
+detector api_surface_review(category="api", severity="info") {
+    """Find public API methods matching common patterns."""
+
+    param similarity: float = 0.70;
+    param limit: int = 50;
+
+    # Get public methods (no underscore prefix)
+    reql {
+        SELECT ?m ?name ?file ?line ?line_count ?class_name ?param_count
+        WHERE {
+            ?m type {Method} .
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            ?m definedIn ?c .
+            ?c name ?class_name .
+            OPTIONAL { ?m lineCount ?line_count }
+            FILTER ( !REGEX(?name, "^_") )
+            FILTER ( !REGEX(?file, "test_") )
+        }
+    }
+    | join {
+        on: name,
+        right: rag { search, query: "public api endpoint handler request response create read update delete get set list find search", top_k: 200 },
+        type: inner
+    }
+    | filter { similarity >= {similarity} }
+    | select { name, file, line, line_count, class_name, similarity }
+    | map {
+        ...row,
+        issue: "api_method",
+        category_hint: name,
+        message: "Public API '{class_name}.{name}' matches API patterns ({similarity})",
+        suggestion: "Review for: documentation, input validation, error responses, versioning"
+    }
+    | order_by { -similarity }
+    | limit { {limit} }
+    | emit { findings }
+}

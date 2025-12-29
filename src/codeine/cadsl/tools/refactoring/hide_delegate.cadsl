@@ -1,0 +1,38 @@
+# hide_delegate - Detect opportunities to hide internal object delegation
+#
+# When a client calls a method on an object to get another object, then calls
+# a method on that object, consider adding a delegating method to hide the chain.
+
+detector hide_delegate(category="refactoring", severity="medium") {
+    """Detect opportunities to add delegating methods to hide dependencies."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?c ?class_name ?getter_name ?return_type ?file ?line (COUNT(?caller) AS ?usage_count)
+        WHERE {
+            ?c type {Class} .
+            ?c name ?class_name .
+            ?c inFile ?file .
+            ?c atLine ?line .
+            ?getter type {Method} .
+            ?getter definedIn ?c .
+            ?getter name ?getter_name .
+            ?getter returnType ?return_type .
+            ?caller calls ?getter .
+            FILTER ( STRSTARTS(?getter_name, "get_") || STRSTARTS(?getter_name, "get") )
+        }
+        GROUP BY ?c ?class_name ?getter_name ?return_type ?file ?line
+        HAVING (?usage_count >= 2)
+        ORDER BY DESC(?usage_count)
+        LIMIT {limit}
+    }
+    | select { class_name, getter_name, return_type, usage_count, file, line }
+    | map {
+        ...row,
+        refactoring: "hide_delegate",
+        message: "Getter '{getter_name}' in '{class_name}' returns '{return_type}' ({usage_count} usages)",
+        suggestion: "Add delegating methods to '{class_name}' to hide the delegate"
+    }
+    | emit { findings }
+}

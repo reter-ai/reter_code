@@ -1,0 +1,32 @@
+# error_codes_over_exceptions - Detect functions returning error codes
+#
+# Identifies functions that return error codes or status tuples
+# instead of raising exceptions.
+
+detector error_codes_over_exceptions(category="exception_handling", severity="medium") {
+    """Detect functions returning error codes instead of raising exceptions."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?f ?name ?file ?line ?return_pattern
+        WHERE {
+            { ?f type {Function} } UNION { ?f type {Method} }
+            ?f name ?name .
+            ?f inFile ?file .
+            ?f atLine ?line .
+            ?f returnsErrorCode true .
+            OPTIONAL { ?f returnPattern ?return_pattern }
+        }
+        ORDER BY ?file ?line
+        LIMIT {limit}
+    }
+    | select { name, file, line, return_pattern }
+    | map {
+        ...row,
+        issue: "error_codes_over_exceptions",
+        message: "Function '{name}' returns error codes instead of raising exceptions",
+        suggestion: "Consider using exceptions for error handling"
+    }
+    | emit { findings }
+}

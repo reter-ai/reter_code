@@ -1,0 +1,36 @@
+# encapsulate_collection - Detect methods returning mutable collections
+#
+# Returning raw mutable collections allows callers to modify internal state.
+# Collections should be encapsulated with add/remove methods.
+
+detector encapsulate_collection(category="refactoring", severity="medium") {
+    """Detect methods returning mutable collections without encapsulation."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?name ?class_name ?file ?line ?return_type ?attr_name
+        WHERE {
+            ?m type {Method} .
+            ?m name ?name .
+            ?m definedIn ?c .
+            ?c name ?class_name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            ?m returnType ?return_type .
+            ?m returnsAttribute ?attr_name .
+            FILTER ( REGEX(?return_type, "list|dict|set|List|Dict|Set|Collection") )
+            FILTER ( STRSTARTS(?name, "get") || ?name = ?attr_name )
+        }
+        ORDER BY ?class_name ?name
+        LIMIT {limit}
+    }
+    | select { name, class_name, file, line, return_type, attr_name }
+    | map {
+        ...row,
+        refactoring: "encapsulate_collection",
+        message: "Method '{class_name}.{name}' returns mutable {return_type}",
+        suggestion: "Return a copy or provide add/remove methods instead of exposing the collection"
+    }
+    | emit { findings }
+}

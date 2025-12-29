@@ -1,0 +1,25 @@
+# find_test_fixtures - Find pytest fixtures in the codebase
+#
+# Identifies all pytest fixtures and their usage.
+
+detector find_test_fixtures(category="test_coverage", severity="info") {
+    """Find pytest fixtures in the codebase."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?f ?name ?file ?line ?decorator
+        WHERE {
+            ?f type {Function} .
+            ?f name ?name .
+            ?f inFile ?file .
+            ?f atLine ?line .
+            ?f hasDecorator ?decorator .
+            FILTER ( CONTAINS(?decorator, "fixture") )
+        }
+        ORDER BY ?file ?name
+        LIMIT {limit}
+    }
+    | select { name, file, line, decorator }
+    | emit { findings }
+}

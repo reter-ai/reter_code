@@ -1,0 +1,32 @@
+# find_factory_pattern - Find classes/methods implementing factory pattern
+#
+# Identifies factory methods and factory classes.
+
+detector find_factory_pattern(category="patterns", severity="info") {
+    """Find factory pattern implementations."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?e ?name ?entity_type ?file ?line ?creates_type
+        WHERE {
+            {
+                ?e type {Method} .
+                ?e isFactoryMethod true
+            }
+            UNION
+            {
+                ?e type {Class} .
+                ?e isFactoryClass true
+            }
+            ?e name ?name .
+            ?e inFile ?file .
+            ?e atLine ?line .
+            OPTIONAL { ?e createsType ?creates_type }
+        }
+        ORDER BY ?entity_type ?name
+        LIMIT {limit}
+    }
+    | select { name, entity_type, file, line, creates_type }
+    | emit { findings }
+}

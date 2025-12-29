@@ -1,0 +1,37 @@
+# inline_method - Suggest Inline Method refactoring opportunities
+#
+# Identifies very short methods that are only called from one place
+# and could be inlined to simplify the code.
+
+detector inline_method(category="refactoring", severity="low") {
+    """Suggest Inline Method refactoring opportunities."""
+
+    param max_lines: int = 3;
+    param max_callers: int = 1;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?name ?class_name ?file ?line ?line_count (COUNT(?caller) AS ?caller_count)
+        WHERE {
+            ?m type {Method} .
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            ?m lineCount ?line_count .
+            OPTIONAL { ?m definedIn ?c . ?c name ?class_name }
+            OPTIONAL { ?caller calls ?m }
+        }
+        GROUP BY ?m ?name ?class_name ?file ?line ?line_count
+        HAVING (?line_count <= {max_lines} && ?caller_count <= {max_callers})
+        ORDER BY ?line_count
+        LIMIT {limit}
+    }
+    | select { name, class_name, file, line, line_count, caller_count, qualified_name: m }
+    | map {
+        ...row,
+        refactoring: "inline_method",
+        message: "Method '{name}' ({line_count} lines, {caller_count} caller) could be inlined",
+        suggestion: "Consider inlining this simple method if it doesn't add clarity"
+    }
+    | emit { findings }
+}

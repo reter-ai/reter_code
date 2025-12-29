@@ -1,0 +1,31 @@
+# find_interface_implementations - Find classes implementing interfaces/ABCs
+#
+# Identifies classes that implement abstract base classes or protocols.
+
+detector find_interface_implementations(category="patterns", severity="info") {
+    """Find classes implementing abstract base classes or interfaces."""
+
+    param interface_name: str = "";
+    param limit: int = 100;
+
+    reql {
+        SELECT ?c ?class_name ?parent_name ?file ?line
+        WHERE {
+            ?c type {Class} .
+            ?c name ?class_name .
+            ?c inFile ?file .
+            ?c atLine ?line .
+            ?c inheritsFrom ?parent_name .
+            FILTER ( REGEX(?parent_name, "Base|Abstract|ABC|Interface|Protocol") )
+        }
+        ORDER BY ?parent_name ?class_name
+        LIMIT {limit}
+    }
+    | select { class_name, file, line, parent: parent_name }
+    | map {
+        ...row,
+        interface_name: parent,
+        message: "Class '{class_name}' implements '{parent}'"
+    }
+    | emit { findings }
+}

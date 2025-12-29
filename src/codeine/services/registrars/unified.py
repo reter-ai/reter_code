@@ -535,7 +535,7 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
             if diagram_type in ("class_hierarchy", "class_diagram", "sequence", "dependencies", "call_graph", "coupling"):
                 try:
                     from ...dsl.core import Context
-                    from ...dsl.tools import diagrams
+                    from ...cadsl.tools_bridge import diagrams
                     extra = params or {}
 
                     # Get RETER instance

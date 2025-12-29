@@ -1,0 +1,36 @@
+# remove_subclass_candidates - Find trivial subclasses that can be removed
+#
+# Identifies subclasses that add minimal value and could be replaced
+# with configuration or removed entirely.
+
+detector remove_subclass_candidates(category="inheritance", severity="low") {
+    """Find trivial subclasses that could be removed."""
+
+    param max_methods: int = 2;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?c ?name ?parent_name ?file ?line (COUNT(?method) AS ?method_count)
+        WHERE {
+            ?c type {Class} .
+            ?c name ?name .
+            ?c inFile ?file .
+            ?c atLine ?line .
+            ?c inheritsFrom ?parent .
+            ?parent name ?parent_name .
+            OPTIONAL { ?method type {Method} . ?method definedIn ?c }
+        }
+        GROUP BY ?c ?name ?parent_name ?file ?line
+        HAVING (?method_count <= {max_methods})
+        ORDER BY ?method_count
+        LIMIT {limit}
+    }
+    | select { name, parent_name, file, line, method_count }
+    | map {
+        ...row,
+        refactoring: "remove_subclass",
+        message: "Subclass '{name}' has only {method_count} methods",
+        suggestion: "Consider removing and using '{parent_name}' with configuration"
+    }
+    | emit { findings }
+}

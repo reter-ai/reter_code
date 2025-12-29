@@ -1,0 +1,48 @@
+# class_diagram - Generate UML class diagram with methods and attributes
+#
+# Visualizes classes with their members as a Mermaid class diagram.
+# Uses native collect and render_mermaid for pure declarative implementation.
+
+diagram class_diagram() {
+    """Generate UML class diagram with methods and attributes."""
+
+    param classes: list = [];
+    param include_methods: bool = true;
+    param include_attributes: bool = true;
+    param format: str = "mermaid";
+
+    reql {
+        SELECT ?class ?class_name ?method_name ?attr_name ?parent_name ?file ?line
+        WHERE {
+            ?class type {Class} .
+            ?class name ?class_name .
+            ?class inFile ?file .
+            ?class atLine ?line .
+            OPTIONAL {
+                ?method type {Method} .
+                ?method definedIn ?class .
+                ?method name ?method_name
+            }
+            OPTIONAL {
+                ?attr type {Attribute} .
+                ?attr definedIn ?class .
+                ?attr name ?attr_name
+            }
+            OPTIONAL {
+                ?class inheritsFrom ?parent .
+                ?parent name ?parent_name
+            }
+        }
+        ORDER BY ?class_name ?method_name ?attr_name
+    }
+    | select { class_name, method_name, attr_name, parent_name, file, line }
+    | when { {classes} is not null } filter { class_name in {classes} }
+    | render_mermaid {
+        type: class,
+        classes: class_name,
+        methods: method_name,
+        attributes: attr_name,
+        inheritance: parent_name -> class_name
+    }
+    | emit { diagram }
+}

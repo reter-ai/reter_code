@@ -1,0 +1,38 @@
+# replace_inheritance_with_delegation - Suggest delegation over inheritance
+#
+# Identifies classes that inherit but only use a small portion of the
+# parent class, suggesting delegation might be more appropriate.
+
+detector replace_inheritance_with_delegation(category="refactoring", severity="medium") {
+    """Suggest Replace Inheritance with Delegation opportunities."""
+
+    param max_parent_calls: int = 2;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?c ?name ?parent_name ?file ?line (COUNT(?parent_call) AS ?parent_usage)
+        WHERE {
+            ?c type {Class} .
+            ?c name ?name .
+            ?c inFile ?file .
+            ?c atLine ?line .
+            ?c inheritsFrom ?parent .
+            ?parent name ?parent_name .
+            ?method definedIn ?c .
+            ?method calls ?parent_method .
+            ?parent_method definedIn ?parent
+        }
+        GROUP BY ?c ?name ?parent_name ?file ?line
+        HAVING (?parent_usage > 0 && ?parent_usage <= {max_parent_calls})
+        ORDER BY ?parent_usage
+        LIMIT {limit}
+    }
+    | select { name, parent_name, file, line, parent_usage, qualified_name: c }
+    | map {
+        ...row,
+        refactoring: "replace_inheritance_with_delegation",
+        message: "Class '{name}' uses only {parent_usage} parent methods",
+        suggestion: "Consider using delegation instead of inheriting from '{parent_name}'"
+    }
+    | emit { findings }
+}

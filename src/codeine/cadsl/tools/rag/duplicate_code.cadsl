@@ -1,0 +1,45 @@
+# duplicate_code - Find semantically similar code pairs using RAG embeddings
+#
+# Uses vector similarity to identify code that may be duplicated
+# across different files or classes, indicating refactoring opportunities.
+# Enriches RAG results with REQL metadata (line counts, complexity).
+
+detector find_duplicate_code(category="duplication", severity="high") {
+    """Find semantically similar code pairs using RAG embeddings."""
+
+    param similarity: float = 0.85;
+    param limit: int = 50;
+    param exclude_same_file: bool = true;
+    param exclude_same_class: bool = true;
+
+    # Get all methods/functions with their line counts for enrichment
+    reql {
+        SELECT ?e ?name ?file ?line ?line_count ?class_name
+        WHERE {
+            { ?e type {Method} } UNION { ?e type {Function} }
+            ?e name ?name .
+            ?e inFile ?file .
+            ?e atLine ?line .
+            OPTIONAL { ?e lineCount ?line_count }
+            OPTIONAL { ?e definedIn ?c . ?c name ?class_name }
+        }
+    }
+    | join {
+        on: name,
+        right: rag { duplicates, similarity: {similarity}, limit: {limit}, exclude_same_file: true, exclude_same_class: true },
+        right_key: entity1_name,
+        type: inner
+    }
+    | select {
+        entity1_name, entity1_file, entity2_name, entity2_file, similarity,
+        line_count, class_name
+    }
+    | map {
+        ...row,
+        issue: "duplicate_code",
+        message: "'{entity1_name}' ({line_count} lines) and '{entity2_name}' are {similarity} similar",
+        suggestion: "Consider extracting common logic into a shared function"
+    }
+    | order_by { -similarity }
+    | emit { findings }
+}

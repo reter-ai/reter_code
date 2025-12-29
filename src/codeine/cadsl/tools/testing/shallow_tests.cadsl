@@ -1,0 +1,37 @@
+# shallow_tests - Find test classes with too few test methods
+#
+# Identifies test classes that may not have adequate coverage.
+
+detector shallow_tests(category="test_coverage", severity="low") {
+    """Find test classes with too few test methods."""
+
+    param min_tests: int = 3;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?c ?name ?file ?line (COUNT(?test_method) AS ?test_count)
+        WHERE {
+            ?c type {Class} .
+            ?c name ?name .
+            ?c inFile ?file .
+            ?c atLine ?line .
+            ?test_method type {Method} .
+            ?test_method definedIn ?c .
+            ?test_method name ?method_name .
+            FILTER ( STRSTARTS(?method_name, "test_") || STRSTARTS(?method_name, "test") )
+            FILTER ( REGEX(?name, "^Test|Test$") )
+        }
+        GROUP BY ?c ?name ?file ?line
+        HAVING (?test_count > 0 && ?test_count < {min_tests})
+        ORDER BY ?test_count
+        LIMIT {limit}
+    }
+    | select { name, file, line, test_count }
+    | map {
+        ...row,
+        issue: "shallow_tests",
+        message: "Test class '{name}' has only {test_count} test methods",
+        suggestion: "Add more test methods for better coverage"
+    }
+    | emit { findings }
+}

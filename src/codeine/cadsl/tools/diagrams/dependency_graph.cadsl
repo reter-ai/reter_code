@@ -1,0 +1,30 @@
+# dependency_graph - Generate module dependency graph
+#
+# Visualizes module import dependencies as a Mermaid flowchart.
+
+diagram dependency_graph() {
+    """Generate module dependency graph."""
+
+    param target: str = "";
+    param show_external: bool = false;
+    param format: str = "mermaid";
+
+    reql {
+        SELECT ?module ?module_name ?imported ?imported_name ?file
+        WHERE {
+            ?module type {Module} .
+            ?module name ?module_name .
+            ?module inFile ?file .
+            ?module imports ?imported .
+            ?imported name ?imported_name
+        }
+        ORDER BY ?module_name
+    }
+    | select { from: module_name, to: imported_name, file }
+    | render_mermaid {
+        type: flowchart,
+        edges: from -> to,
+        direction: LR
+    }
+    | emit { diagram }
+}

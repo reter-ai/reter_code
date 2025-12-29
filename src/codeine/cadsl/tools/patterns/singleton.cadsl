@@ -1,0 +1,25 @@
+# find_singleton_pattern - Find classes implementing singleton pattern
+#
+# Identifies classes that use singleton pattern implementation.
+
+detector find_singleton_pattern(category="patterns", severity="info") {
+    """Find classes implementing singleton pattern."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?c ?name ?file ?line ?implementation_type
+        WHERE {
+            ?c type {Class} .
+            ?c name ?name .
+            ?c inFile ?file .
+            ?c atLine ?line .
+            ?c isSingleton true .
+            OPTIONAL { ?c singletonType ?implementation_type }
+        }
+        ORDER BY ?file ?line
+        LIMIT {limit}
+    }
+    | select { name, file, line, implementation_type }
+    | emit { findings }
+}

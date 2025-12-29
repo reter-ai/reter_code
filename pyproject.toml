@@ -53,7 +53,12 @@ Documentation = "https://github.com/codeine-ai/codeine#readme"
 where = ["src"]
 
 [tool.setuptools.package-data]
-codeine = ["resources/*", "resources/**/*"]
+codeine = [
+    "resources/*",
+    "resources/**/*",
+    "cadsl/tools/**/*.cadsl",
+    "cadsl/*.lark",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

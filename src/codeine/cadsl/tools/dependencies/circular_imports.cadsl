@@ -1,0 +1,32 @@
+# find_circular_imports - Find circular import dependencies
+#
+# Identifies modules that have circular import relationships using
+# native graph cycle detection.
+
+detector find_circular_imports(category="dependencies", severity="high") {
+    """Find circular import dependencies."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?module1 ?module2 ?file1 ?file2
+        WHERE {
+            ?m1 type {Module} .
+            ?m1 name ?module1 .
+            ?m1 inFile ?file1 .
+            ?m1 imports ?m2 .
+            ?m2 type {Module} .
+            ?m2 name ?module2 .
+            ?m2 inFile ?file2
+        }
+    }
+    | select { module1, module2, file1, file2 }
+    | graph_cycles { from: module1, to: module2 }
+    | map {
+        ...row,
+        issue: "circular_import",
+        suggestion: "Break the cycle by moving shared code to a separate module or using lazy imports"
+    }
+    | limit { {limit} }
+    | emit { findings }
+}

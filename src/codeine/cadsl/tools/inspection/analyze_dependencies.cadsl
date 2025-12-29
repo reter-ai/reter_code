@@ -1,0 +1,26 @@
+# analyze_dependencies - Analyze module dependency graph
+#
+# Returns the complete dependency graph including circular dependencies.
+
+query analyze_dependencies() {
+    """Analyze module dependency graph."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?module_name ?imports_name ?file
+        WHERE {
+            ?m type {Module} .
+            ?m name ?module_name .
+            ?m inFile ?file .
+            OPTIONAL {
+                ?m imports ?imported .
+                ?imported name ?imports_name
+            }
+        }
+        ORDER BY ?module_name
+        LIMIT {limit}
+    }
+    | select { module_name, imports_name, file, qualified_name: m }
+    | emit { dependencies }
+}

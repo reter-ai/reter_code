@@ -1,0 +1,26 @@
+# test_suggestions - Find methods similar to test patterns for test prioritization
+#
+# Uses semantic search to find methods that match common testing patterns.
+# Methods in non-test files that are similar to test patterns are good candidates
+# for test coverage improvement.
+
+detector test_suggestions(category="test_coverage", severity="medium") {
+    """Find methods similar to test patterns for test prioritization."""
+
+    param min_score: float = 0.5;
+    param limit: int = 30;
+
+    # Use RAG search to find methods matching test-related patterns
+    rag { search, query: "test assert mock validate verify check expect should", top_k: 200 }
+    | filter { score >= {min_score} }
+    | select { name, file, line, score, qualified_name, entity_type }
+    | map {
+        ...row,
+        issue: "test_candidate",
+        message: "'{name}' matches test patterns (score: {score})",
+        suggestion: "Consider adding test coverage"
+    }
+    | order_by { -score }
+    | limit { {limit} }
+    | emit { findings }
+}

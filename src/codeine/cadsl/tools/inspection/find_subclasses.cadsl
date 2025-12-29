@@ -1,0 +1,24 @@
+# find_subclasses - Find all subclasses of a class (direct and indirect)
+#
+# Returns the complete list of classes that inherit from the target.
+
+query find_subclasses() {
+    """Find all subclasses of a class (direct subclasses)."""
+
+    param target: str required;
+
+    reql {
+        SELECT ?sub ?name ?file ?line ?parent_name
+        WHERE {
+            ?sub type {Class} .
+            ?sub inheritsFrom ?parent_name .
+            ?sub name ?name .
+            ?sub inFile ?file .
+            ?sub atLine ?line .
+            FILTER CONTAINS(?parent_name, "{target}")
+        }
+        ORDER BY ?file
+    }
+    | select { name, file, line, parent_name, qualified_name: sub }
+    | emit { subclasses }
+}

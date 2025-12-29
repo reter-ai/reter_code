@@ -1,0 +1,51 @@
+# extraction_opportunities - Find similar code blocks for extraction
+#
+# Uses RAG semantic similarity to find code pairs that are good candidates
+# for extraction. Focuses on same-file/same-class matches for local extraction.
+# Joins with REQL to add line counts and param counts for prioritization.
+
+detector find_extraction_opportunities(category="refactoring", severity="high") {
+    """Find similar code blocks that can be extracted into shared functions."""
+
+    param similarity: float = 0.80;
+    param limit: int = 20;
+    param min_lines: int = 5;
+
+    # Get methods with line counts and parameter info
+    reql {
+        SELECT ?m ?name ?file ?line ?line_count ?class_name (COUNT(?param) AS ?param_count)
+        WHERE {
+            ?m type {Method} .
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            ?m definedIn ?c .
+            ?c name ?class_name .
+            OPTIONAL { ?m lineCount ?line_count }
+            OPTIONAL { ?param type {Parameter} . ?param ofFunction ?m }
+        }
+        GROUP BY ?m ?name ?file ?line ?line_count ?class_name
+    }
+    | join {
+        on: name,
+        right: rag { duplicates, similarity: {similarity}, limit: {limit}, exclude_same_file: false, exclude_same_class: false },
+        right_key: entity1_name,
+        type: inner
+    }
+    | filter { entity1_file == entity2_file }
+    | filter { line_count >= {min_lines} }
+    | select {
+        entity1_name, entity2_name, file: entity1_file, similarity,
+        line_count, param_count, class_name
+    }
+    | map {
+        ...row,
+        issue: "extraction_opportunity",
+        message: "'{entity1_name}' ({line_count} lines) similar to '{entity2_name}' ({similarity})",
+        suggestion: "Extract common logic into shared method in '{class_name}'",
+        refactoring: "Extract Function",
+        estimated_savings: line_count
+    }
+    | order_by { -line_count }
+    | emit { findings }
+}

@@ -1,0 +1,33 @@
+# silent_exception_swallowing - Detect empty except blocks
+#
+# Identifies except blocks that silently swallow exceptions with
+# empty bodies or just 'pass' statements.
+
+detector silent_exception_swallowing(category="exception_handling", severity="critical") {
+    """Detect empty except blocks that silently swallow exceptions."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?h ?exception_type ?func_name ?file ?line ?body_size
+        WHERE {
+            ?h type {CatchClause} .
+            ?h inFile ?file .
+            ?h atLine ?line .
+            ?h bodySize ?body_size .
+            OPTIONAL { ?h exceptionType ?exception_type }
+            OPTIONAL { ?h inFunction ?f . ?f name ?func_name }
+            FILTER ( ?body_size <= 1 )
+        }
+        ORDER BY ?file ?line
+        LIMIT {limit}
+    }
+    | select { exception_type, func_name, file, line, body_size }
+    | map {
+        ...row,
+        issue: "silent_exception_swallowing",
+        message: "Empty except block for '{exception_type}' in '{func_name}'",
+        suggestion: "Log the exception or handle it appropriately; avoid silently swallowing"
+    }
+    | emit { findings }
+}

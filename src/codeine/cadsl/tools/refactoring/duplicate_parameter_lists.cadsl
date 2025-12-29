@@ -1,0 +1,36 @@
+# duplicate_parameter_lists - Detect functions with identical parameter signatures
+#
+# Functions with the same parameter list often indicate a missing abstraction
+# or opportunity to introduce a parameter object.
+
+detector duplicate_parameter_lists(category="refactoring", severity="medium") {
+    """Detect functions sharing similar parameter signatures."""
+
+    param min_params: int = 3;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?name ?class_name ?file ?line (COUNT(?param) AS ?param_count)
+        WHERE {
+            { ?m type {Method} } UNION { ?m type {Function} }
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            ?param type {Parameter} .
+            ?param ofFunction ?m .
+            OPTIONAL { ?m definedIn ?c . ?c name ?class_name }
+        }
+        GROUP BY ?m ?name ?class_name ?file ?line
+        HAVING (?param_count >= {min_params})
+        ORDER BY DESC(?param_count)
+        LIMIT {limit}
+    }
+    | select { name, class_name, file, line, param_count, qualified_name: m }
+    | map {
+        ...row,
+        refactoring: "introduce_parameter_object",
+        message: "Function '{name}' has {param_count} parameters",
+        suggestion: "Introduce a parameter object to group these parameters"
+    }
+    | emit { findings }
+}

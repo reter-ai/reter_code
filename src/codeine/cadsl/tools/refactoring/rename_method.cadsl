@@ -1,0 +1,31 @@
+# rename_method - Suggest Rename Method refactoring opportunities
+#
+# Identifies methods with unclear or inconsistent names that could
+# benefit from renaming.
+
+detector rename_method(category="refactoring", severity="low") {
+    """Suggest Rename Method refactoring opportunities."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?name ?class_name ?file ?line
+        WHERE {
+            ?m type {Method} .
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            OPTIONAL { ?m definedIn ?c . ?c name ?class_name }
+            FILTER ( REGEX(?name, "^(do|process|handle|execute|run)$") )
+        }
+        LIMIT {limit}
+    }
+    | select { name, class_name, file, line, qualified_name: m }
+    | map {
+        ...row,
+        refactoring: "rename_method",
+        message: "Method '{name}' has an unclear name",
+        suggestion: "Use a more descriptive name that explains what the method does"
+    }
+    | emit { findings }
+}

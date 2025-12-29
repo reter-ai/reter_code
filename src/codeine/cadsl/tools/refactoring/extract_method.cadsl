@@ -1,0 +1,34 @@
+# extract_method - Suggest Extract Method refactoring opportunities
+#
+# Identifies long methods or methods with extractable code blocks
+# that could be refactored into smaller, reusable methods.
+
+detector extract_method(category="refactoring", severity="medium") {
+    """Suggest Extract Method refactoring opportunities."""
+
+    param min_lines: int = 20;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?name ?class_name ?file ?line ?line_count
+        WHERE {
+            ?m type {Method} .
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            ?m lineCount ?line_count .
+            OPTIONAL { ?m definedIn ?c . ?c name ?class_name }
+            FILTER ( ?line_count >= {min_lines} )
+        }
+        ORDER BY DESC(?line_count)
+        LIMIT {limit}
+    }
+    | select { name, class_name, file, line, line_count, qualified_name: m }
+    | map {
+        ...row,
+        refactoring: "extract_method",
+        message: "Method '{name}' ({line_count} lines) may benefit from Extract Method",
+        suggestion: "Identify cohesive code blocks and extract them into well-named methods"
+    }
+    | emit { findings }
+}

@@ -1,0 +1,34 @@
+# god_class - Detect classes that do too much (God Class anti-pattern)
+#
+# A God Class is a class that knows too much or does too much.
+# It typically has many methods, many attributes, and high coupling.
+
+detector god_class(category="design", severity="high") {
+    """Detect God Classes - classes that do too much."""
+
+    param max_methods: int = 15;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?c ?name ?file ?line (COUNT(?method) AS ?method_count)
+        WHERE {
+            ?c type {Class} .
+            ?c name ?name .
+            ?c inFile ?file .
+            ?c atLine ?line .
+            ?method type {Method} .
+            ?method definedIn ?c
+        }
+        GROUP BY ?c ?name ?file ?line
+        HAVING (?method_count > {max_methods})
+        ORDER BY DESC(?method_count)
+    }
+    | select { name, file, line, method_count, qualified_name: c }
+    | map {
+        ...row,
+        issue: "god_class",
+        message: "Class '{name}' appears to be a God Class with {method_count} methods",
+        suggestion: "Consider splitting responsibilities into smaller, focused classes"
+    }
+    | emit { findings }
+}
