@@ -11,7 +11,7 @@ This module provides operators for controlling pipeline execution:
 from typing import Callable, Any, Optional, List, TypeVar, Union
 from dataclasses import dataclass
 
-from .core import Pipeline, Step, Result, Ok, Err, Context
+from .core import Pipeline, Step, Result, Ok, Err, Context, PipelineResult, PipelineError
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -33,7 +33,7 @@ class ConditionalStep(Step[T, T]):
     condition: Callable[[], bool]
     negate: bool = False  # True for 'unless' behavior
 
-    def execute(self, data: T) -> Result[T]:
+    def execute(self, data: T) -> PipelineResult[T]:
         """Execute inner step if condition is met."""
         should_execute = self.condition()
         if self.negate:
@@ -123,7 +123,7 @@ class BranchStep(Step[T, U]):
     then_step: Step[T, U]
     else_step: Optional[Step[T, U]] = None
 
-    def execute(self, data: T) -> Result[U]:
+    def execute(self, data: T) -> PipelineResult[U]:
         """Execute appropriate branch based on condition."""
         try:
             if self.condition(data):
@@ -134,7 +134,7 @@ class BranchStep(Step[T, U]):
                 # No else branch, pass through unchanged
                 return Ok(data)  # type: ignore
         except Exception as e:
-            return Err("branch", f"Branch evaluation failed: {e}", e)
+            return Err(PipelineError("branch", f"Branch evaluation failed: {e}", e))
 
 
 def branch(
@@ -183,7 +183,7 @@ class MergeStep(Step[Any, List]):
     pipelines: List[Pipeline]
     merge_fn: Callable[[List[Any]], Any]
 
-    def execute(self, data: Any) -> Result[List]:
+    def execute(self, data: Any) -> PipelineResult[List]:
         """Execute all pipelines and merge results."""
         results = []
         # Note: data is not used here - each pipeline has its own source
@@ -230,7 +230,7 @@ def merge(*pipelines: Pipeline) -> MergeStep:
 class IdentityStep(Step[T, T]):
     """Pass-through step that returns input unchanged."""
 
-    def execute(self, data: T) -> Result[T]:
+    def execute(self, data: T) -> PipelineResult[T]:
         return Ok(data)
 
 
@@ -255,12 +255,12 @@ class TapStep(Step[T, T]):
     """
     fn: Callable[[T], None]
 
-    def execute(self, data: T) -> Result[T]:
+    def execute(self, data: T) -> PipelineResult[T]:
         try:
             self.fn(data)
             return Ok(data)
         except Exception as e:
-            return Err("tap", f"Side effect failed: {e}", e)
+            return Err(PipelineError("tap", f"Side effect failed: {e}", e))
 
 
 def tap(fn: Callable[[T], None]) -> TapStep[T]:
@@ -293,7 +293,7 @@ class CatchStep(Step[T, T]):
     """
     handler: Callable[[Err], T]
 
-    def execute(self, data: T) -> Result[T]:
+    def execute(self, data: T) -> PipelineResult[T]:
         # This step doesn't transform data - it's used in error recovery
         return Ok(data)
 
@@ -334,7 +334,7 @@ class ParallelStep(Step[T, List]):
     """
     steps: List[Step]
 
-    def execute(self, data: T) -> Result[List]:
+    def execute(self, data: T) -> PipelineResult[List]:
         results = []
         errors = []
 
@@ -411,7 +411,7 @@ def compose(*steps: Step) -> Step:
     class ComposedStep(Step):
         inner_steps: List[Step]
 
-        def execute(self, data: Any) -> Result[Any]:
+        def execute(self, data: Any) -> PipelineResult[Any]:
             current = data
             for step in self.inner_steps:
                 result = step.execute(current)
