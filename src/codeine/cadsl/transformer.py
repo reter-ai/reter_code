@@ -2169,12 +2169,16 @@ class GraphTraverseStep:
         self.root = root
 
     def execute(self, data, ctx=None):
-        """Execute graph traversal."""
+        """Execute graph traversal and filter edges to reachable subgraph."""
         from codeine.dsl.core import pipeline_ok, pipeline_err
         from collections import defaultdict, deque
+        import logging
+
+        logger = logging.getLogger(__name__)
 
         try:
-            # Convert to list if Arrow table
+            # Convert to list if Arrow table, preserve original for filtering
+            original_data = data
             if hasattr(data, 'to_pylist'):
                 data = data.to_pylist()
 
@@ -2190,51 +2194,79 @@ class GraphTraverseStep:
                     nodes.add(to_val)
 
             # Determine root nodes
-            if self.root and callable(self.root):
-                roots = [n for n in nodes if self.root({"node": n}, ctx)]
+            # BUG-002 FIX: Handle string root parameter correctly
+            if self.root:
+                if callable(self.root):
+                    # Root is a filter function
+                    roots = [n for n in nodes if self.root({"node": n}, ctx)]
+                elif isinstance(self.root, str):
+                    # Root is a specific node name
+                    if self.root in nodes:
+                        roots = [self.root]
+                    elif '::' in self.root:
+                        # Try partial matching for qualified names only
+                        # Match by suffix (last component) or full containment
+                        suffix = self.root.split('::')[-1]
+                        matching = [n for n in nodes if n.endswith('::' + suffix) or n == suffix or self.root in n]
+                        if matching:
+                            roots = matching[:1]  # Take first match
+                            logger.debug(f"Root '{self.root}' matched to '{roots[0]}'")
+                        else:
+                            logger.warning(f"Root node '{self.root}' not found in graph with {len(nodes)} nodes")
+                            return pipeline_ok([])
+                    else:
+                        # Non-qualified name - require exact match only
+                        logger.warning(f"Root node '{self.root}' not found in graph with {len(nodes)} nodes")
+                        return pipeline_ok([])
+                else:
+                    roots = [self.root] if self.root in nodes else []
             else:
-                # Find nodes with no incoming edges
+                # No root specified - find nodes with no incoming edges
                 has_incoming = set()
                 for neighbors in graph.values():
                     has_incoming.update(neighbors)
                 roots = [n for n in nodes if n not in has_incoming] or list(nodes)[:1]
 
-            # Traverse
-            result = []
+            if not roots:
+                logger.warning("No root nodes found for graph traversal")
+                return pipeline_ok([])
+
+            # Traverse to find reachable nodes
             visited = set()
 
             if self.algorithm == "bfs":
-                queue = deque([(r, 0, [r]) for r in roots])
+                queue = deque([(r, 0) for r in roots])
                 while queue:
-                    node, depth, path = queue.popleft()
+                    node, depth = queue.popleft()
                     if depth > self.max_depth or node in visited:
                         continue
                     visited.add(node)
-                    result.append({
-                        "node": node,
-                        "depth": depth,
-                        "path": path,
-                    })
                     for neighbor in graph.get(node, []):
                         if neighbor not in visited:
-                            queue.append((neighbor, depth + 1, path + [neighbor]))
+                            queue.append((neighbor, depth + 1))
             else:  # DFS
-                def dfs(node, depth, path):
+                def dfs(node, depth):
                     if depth > self.max_depth or node in visited:
                         return
                     visited.add(node)
-                    result.append({
-                        "node": node,
-                        "depth": depth,
-                        "path": path,
-                    })
                     for neighbor in graph.get(node, []):
-                        dfs(neighbor, depth + 1, path + [neighbor])
+                        dfs(neighbor, depth + 1)
 
                 for root in roots:
-                    dfs(root, 0, [root])
+                    dfs(root, 0)
 
-            return pipeline_ok(result)
+            # BUG-002 FIX: Filter original data to only edges within the visited subgraph
+            # Only include edges where BOTH endpoints are visited
+            # This ensures max_depth is respected (unvisited to_nodes mean depth exceeded)
+            filtered = []
+            for row in data:
+                from_val = row.get(self.from_field)
+                to_val = row.get(self.to_field)
+                # Include edge only if both from and to nodes are in visited set
+                if from_val in visited and to_val in visited:
+                    filtered.append(row)
+
+            return pipeline_ok(filtered)
         except Exception as e:
             return pipeline_err("graph_traverse", f"Graph traversal failed: {e}", e)
 

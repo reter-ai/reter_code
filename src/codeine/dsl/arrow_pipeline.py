@@ -216,11 +216,13 @@ class ArrowRAGSource(ArrowSource):
                 )
                 data = []
                 for cluster in result.get("clusters", []):
+                    unique_files = list(set(m["file"] for m in cluster["members"]))
                     data.append({
                         "cluster_id": cluster["cluster_id"],
                         "member_count": cluster["member_count"],
+                        "unique_files": len(unique_files),  # Count for CADSL templates
                         "members": [m["name"] for m in cluster["members"]],
-                        "files": list(set(m["file"] for m in cluster["members"])),
+                        "files": unique_files,
                     })
             else:
                 return pipeline_err("rag", f"Unknown RAG operation: {self.operation}")

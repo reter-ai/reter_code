@@ -2,6 +2,9 @@
 #
 # Visualizes function/method call relationships as a Mermaid flowchart.
 # Uses native graph_traverse and render_mermaid for pure declarative implementation.
+#
+# NOTE: Uses concept instead of type to support all languages (Python, C++, C#, JS)
+# and avoids double UNION which has join issues.
 
 diagram call_graph() {
     """Generate call graph from entry point."""
@@ -11,25 +14,23 @@ diagram call_graph() {
     param format: str = "mermaid";
 
     reql {
-        SELECT ?caller ?caller_name ?callee ?callee_name ?caller_class ?callee_class ?file ?line
+        SELECT ?caller ?callee ?caller_name ?callee_name ?file ?line
         WHERE {
-            { ?caller type {Method} } UNION { ?caller type {Function} }
+            ?caller calls ?callee .
             ?caller name ?caller_name .
             ?caller inFile ?file .
             ?caller atLine ?line .
-            ?caller calls ?callee .
-            { ?callee type {Method} } UNION { ?callee type {Function} }
+            ?caller concept ?caller_type .
             ?callee name ?callee_name .
-            OPTIONAL { ?caller definedIn ?cc . ?cc name ?caller_class }
-            OPTIONAL { ?callee definedIn ?tc . ?tc name ?callee_class }
+            ?callee concept ?callee_type .
+            FILTER(CONTAINS(?caller_type, "Method") || CONTAINS(?caller_type, "Function"))
+            FILTER(CONTAINS(?callee_type, "Method") || CONTAINS(?callee_type, "Function"))
+            FILTER(!CONTAINS(?caller_name, "::"))
+            FILTER(!CONTAINS(?callee_name, "::"))
         }
         ORDER BY ?caller_name
     }
-    | select { caller_name, callee_name, caller_class, callee_class, file, line }
-    | compute {
-        from_node: caller_class ? caller_class + "." + caller_name : caller_name,
-        to_node: callee_class ? callee_class + "." + callee_name : callee_name
-    }
+    | select { from_node: caller, to_node: callee, caller_name, callee_name, file, line }
     | graph_traverse {
         from: from_node,
         to: to_node,

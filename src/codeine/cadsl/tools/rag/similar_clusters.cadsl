@@ -13,11 +13,11 @@ detector find_similar_clusters(category="duplication", severity="medium") {
     param exclude_same_class: bool = true;
 
     rag { clusters, n_clusters: {n_clusters}, min_size: {min_size}, exclude_same_file: true, exclude_same_class: true }
+    | select { cluster_id, member_count, unique_files }
     | map {
         ...row,
         issue: "similar_cluster",
-        message: "Cluster of {member_count} similar code blocks across {unique_files} files",
-        suggestion: "Review cluster for potential abstraction"
+        suggestion: "Review cluster for potential abstraction or refactoring"
     }
     | emit { findings }
 }
