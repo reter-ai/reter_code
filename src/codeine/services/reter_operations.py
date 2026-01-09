@@ -601,61 +601,72 @@ class ReterOperations:
             total_file_count = sum(len(files) for files in all_files.values())
             processed_count = 0
 
-            # Load Python files
-            for py_file in all_files["python"]:
-                try:
-                    wme_count, source_id, time_ms, file_errors = reter.load_python_file(str(py_file), str(directory_path))
-                    total_wmes += wme_count
-                    files_loaded["python"] += 1
-                    if file_errors:
-                        all_errors[str(py_file)] = [{"line": 0, "message": err} for err in file_errors]
-                except Exception as e:
-                    all_errors[str(py_file)] = [{"line": 0, "message": str(e)}]
-                processed_count += 1
-                if ctx:
-                    ctx.report_progress(processed_count, total_file_count)
+            # Enable entity accumulation for cross-file deduplication
+            # This handles C++ header/source pairs, C# partial classes, etc.
+            reter.begin_entity_accumulation()
 
-            # Load JavaScript files
-            for js_file in all_files["javascript"]:
-                try:
-                    wme_count, source_id, time_ms, file_errors = reter.load_javascript_file(str(js_file), str(directory_path))
-                    total_wmes += wme_count
-                    files_loaded["javascript"] += 1
-                    if file_errors:
-                        all_errors[str(js_file)] = [{"line": 0, "message": err} for err in file_errors]
-                except Exception as e:
-                    all_errors[str(js_file)] = [{"line": 0, "message": str(e)}]
-                processed_count += 1
-                if ctx:
-                    ctx.report_progress(processed_count, total_file_count)
+            try:
+                # Load Python files
+                for py_file in all_files["python"]:
+                    try:
+                        wme_count, source_id, time_ms, file_errors = reter.load_python_file(str(py_file), str(directory_path))
+                        total_wmes += wme_count
+                        files_loaded["python"] += 1
+                        if file_errors:
+                            all_errors[str(py_file)] = [{"line": 0, "message": err} for err in file_errors]
+                    except Exception as e:
+                        all_errors[str(py_file)] = [{"line": 0, "message": str(e)}]
+                    processed_count += 1
+                    if ctx:
+                        ctx.report_progress(processed_count, total_file_count)
 
-            # Load HTML files
-            for html_file in all_files["html"]:
-                try:
-                    wme_count, source_id, time_ms, file_errors = reter.load_html_file(str(html_file), str(directory_path))
-                    total_wmes += wme_count
-                    files_loaded["html"] += 1
-                    if file_errors:
-                        all_errors[str(html_file)] = [{"line": 0, "message": err} for err in file_errors]
-                except Exception as e:
-                    all_errors[str(html_file)] = [{"line": 0, "message": str(e)}]
-                processed_count += 1
-                if ctx:
-                    ctx.report_progress(processed_count, total_file_count)
+                # Load JavaScript files
+                for js_file in all_files["javascript"]:
+                    try:
+                        wme_count, source_id, time_ms, file_errors = reter.load_javascript_file(str(js_file), str(directory_path))
+                        total_wmes += wme_count
+                        files_loaded["javascript"] += 1
+                        if file_errors:
+                            all_errors[str(js_file)] = [{"line": 0, "message": err} for err in file_errors]
+                    except Exception as e:
+                        all_errors[str(js_file)] = [{"line": 0, "message": str(e)}]
+                    processed_count += 1
+                    if ctx:
+                        ctx.report_progress(processed_count, total_file_count)
 
-            # Load C# files
-            for cs_file in all_files["csharp"]:
-                try:
-                    wme_count, source_id, time_ms, file_errors = reter.load_csharp_file(str(cs_file), str(directory_path))
-                    total_wmes += wme_count
-                    files_loaded["csharp"] += 1
-                    if file_errors:
-                        all_errors[str(cs_file)] = [{"line": 0, "message": err} for err in file_errors]
-                except Exception as e:
-                    all_errors[str(cs_file)] = [{"line": 0, "message": str(e)}]
-                processed_count += 1
-                if ctx:
-                    ctx.report_progress(processed_count, total_file_count)
+                # Load HTML files
+                for html_file in all_files["html"]:
+                    try:
+                        wme_count, source_id, time_ms, file_errors = reter.load_html_file(str(html_file), str(directory_path))
+                        total_wmes += wme_count
+                        files_loaded["html"] += 1
+                        if file_errors:
+                            all_errors[str(html_file)] = [{"line": 0, "message": err} for err in file_errors]
+                    except Exception as e:
+                        all_errors[str(html_file)] = [{"line": 0, "message": str(e)}]
+                    processed_count += 1
+                    if ctx:
+                        ctx.report_progress(processed_count, total_file_count)
+
+                # Load C# files
+                for cs_file in all_files["csharp"]:
+                    try:
+                        wme_count, source_id, time_ms, file_errors = reter.load_csharp_file(str(cs_file), str(directory_path))
+                        total_wmes += wme_count
+                        files_loaded["csharp"] += 1
+                        if file_errors:
+                            all_errors[str(cs_file)] = [{"line": 0, "message": err} for err in file_errors]
+                    except Exception as e:
+                        all_errors[str(cs_file)] = [{"line": 0, "message": str(e)}]
+                    processed_count += 1
+                    if ctx:
+                        ctx.report_progress(processed_count, total_file_count)
+
+            finally:
+                # Finalize entity accumulation - merges duplicate entities
+                accumulated_count = reter.accumulated_entity_count()
+                reter.end_entity_accumulation()
+                logger.info(f"Entity accumulation: {accumulated_count} unique entities merged")
 
             files_with_errors = list(all_errors.keys())
 

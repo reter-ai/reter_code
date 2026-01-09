@@ -197,10 +197,12 @@ These metrics are **NOT emitted by the parser** and cannot be easily computed vi
 
 Reference of properties available from `PythonFactExtractionVisitor.cpp`:
 
+Note: Entity IDs ARE the qualified names. For methods with overloads, the ID
+includes the parameter signature: `module.Class.method(ParamType1,ParamType2)`.
+
 | Property | Description | Available For |
 |----------|-------------|---------------|
 | `name` | Entity name | All entities |
-| `qualifiedName` | Full qualified name | All entities |
 | `inFile` | Source file path | All entities |
 | `atLine` | Start line | All entities |
 | `endLine` | End line | Class, Function, Method |

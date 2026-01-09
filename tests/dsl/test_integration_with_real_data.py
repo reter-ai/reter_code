@@ -329,12 +329,12 @@ class TestCodeInspectionQueriesIntegration:
 
     def test_list_classes_query(self, real_reter):
         """Query for listing classes should work."""
+        # Note: Entity ID (?c) is the qualified name, no separate qualifiedName attribute
         query = """
-        SELECT ?c ?name ?qualifiedName ?file ?line
+        SELECT ?c ?name ?file ?line
         WHERE {
             ?c type oo:Class .
             ?c name ?name .
-            ?c qualifiedName ?qualifiedName .
             ?c inFile ?file .
             ?c atLine ?line .
         }

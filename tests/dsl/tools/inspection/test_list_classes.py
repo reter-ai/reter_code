@@ -205,23 +205,24 @@ class TestListClassesVsReference:
                 "Consider adding methodCount field or secondary query."
             )
 
-    def test_reference_has_qualified_name_property(self, pipeline):
+    def test_uses_entity_id_as_qualified_name(self, pipeline):
         """
-        ISSUE: Reference queries qualifiedName property.
+        Entity IDs are the qualified names.
 
-        Reference returns full_qualified_name from:
-            ?class qualifiedName ?qualifiedName
+        The entity ID (?c) is used directly as the qualified name instead of
+        querying a separate qualifiedName attribute. This is achieved via
+        the select step: `qualified_name: c`
         """
-        query = pipeline._source.query
+        # Check that the select step maps entity ID to qualified_name
+        select_step = None
+        for step in pipeline._steps:
+            if hasattr(step, 'fields'):
+                select_step = step
+                break
 
-        has_qualified_name = "qualifiedName" in query
-
-        if not has_qualified_name:
-            pytest.fail(
-                "MISSING: qualifiedName property not queried.\n"
-                "Reference queries: ?c qualifiedName ?qualifiedName\n"
-                "Add to REQL query."
-            )
+        assert select_step is not None, "Should have select step"
+        assert "qualified_name" in select_step.fields, \
+            "Select should include qualified_name mapped from entity ID"
 
 
 class TestListClassesExecution:

@@ -10,19 +10,18 @@ query list_classes() {
     param offset: int = 0;
 
     reql {
-        SELECT ?c ?name ?qualifiedName ?file ?line (COUNT(?method) AS ?methodCount)
+        SELECT ?c ?name ?file ?line (COUNT(?method) AS ?methodCount)
         WHERE {
             ?c type {Class} .
             ?c name ?name .
-            ?c qualifiedName ?qualifiedName .
             ?c inFile ?file .
             ?c atLine ?line .
             OPTIONAL { ?method type {Method} . ?method definedIn ?c }
         }
-        GROUP BY ?c ?name ?qualifiedName ?file ?line
+        GROUP BY ?c ?name ?file ?line
         ORDER BY ?name
     }
     | filter { "{module}" == "" or row.file contains "{module}" }
-    | select { name, qualifiedName, file, line, methodCount, qualified_name: c }
+    | select { name, file, line, methodCount, qualified_name: c }
     | emit { classes }
 }

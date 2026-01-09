@@ -98,7 +98,6 @@ prefixes (py:, cpp:, cs:, js:) only when specifically asked about one language.
 
 ### Common Predicates (work across all languages)
 - `name` - Entity name (string)
-- `qualifiedName` - Fully qualified name
 - `inFile` - Source file path
 - `atLine` - Line number
 - `definedIn` - Class/module where defined
@@ -107,6 +106,10 @@ prefixes (py:, cpp:, cs:, js:) only when specifically asked about one language.
 - `hasParameter` - Function has parameter
 - `ofFunction` - Parameter belongs to function
 - `visibility` - "public", "protected", "private"
+
+NOTE: Entity IDs ARE the fully qualified names. For methods with overloads,
+the ID includes the parameter signature: `Module.Class.method(ParamType1,ParamType2)`.
+Use `STR(?entity)` to access the qualified name when needed in FILTER expressions.
 
 ### Import Predicates (oo:Import, py:Import, js:Import, cs:Using)
 - `modulePath` - The imported module/package path (e.g., "watchdog.observers", "os.path")

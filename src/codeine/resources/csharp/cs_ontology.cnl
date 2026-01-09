@@ -1,0 +1,76 @@
+% C# Code Ontology - CNL Format
+% Natural English syntax for semantic code analysis
+%
+% This ontology extends the OO meta-ontology (oo_ontology.cnl) with
+% C#-specific concepts. All cs:* types are subclasses of oo:* types,
+% enabling language-independent queries using the oo: prefix.
+
+% ============================================================================
+% Class Hierarchy (C#-specific)
+% ============================================================================
+
+Every `cs:Method` is a `cs:Function`.
+Every `cs:Constructor` is a `cs:Method`.
+
+% ============================================================================
+% Meta-Ontology Integration (extends oo_ontology.cnl)
+% ============================================================================
+
+Every `cs:CompilationUnit` is a `oo:Module`.
+Every `cs:Namespace` is a `oo:Namespace`.
+Every `cs:Class` is a `oo:Class`.
+Every `cs:Interface` is a `oo:Interface`.
+Every `cs:Struct` is a `oo:Class`.
+Every `cs:Enum` is a `oo:Enum`.
+Every `cs:Delegate` is a `oo:TypeAlias`.
+Every `cs:Function` is a `oo:Function`.
+Every `cs:Method` is a `oo:Method`.
+Every `cs:Constructor` is a `oo:Constructor`.
+Every `cs:Property` is a `oo:Field`.
+Every `cs:Field` is a `oo:Field`.
+Every `cs:Event` is a `oo:Field`.
+Every `cs:Parameter` is a `oo:Parameter`.
+Every `cs:Using` is a `oo:Import`.
+Every `cs:Attribute` is a `oo:Decorator`.
+
+% ============================================================================
+% Exception Handling (Try/Catch/Finally)
+% ============================================================================
+
+Every `cs:TryBlock` is a `oo:TryBlock`.
+Every `cs:CatchClause` is a `oo:CatchClause`.
+Every `cs:FinallyClause` is a `oo:FinallyClause`.
+
+% ============================================================================
+% Statements
+% ============================================================================
+
+Every `cs:ThrowStatement` is a `oo:ThrowStatement`.
+Every `cs:ReturnStatement` is a `oo:ReturnStatement`.
+
+% ============================================================================
+% Expressions and Literals
+% ============================================================================
+
+% Note: Call tracking uses "calls" role relationships instead of cs:Call instances
+% This enables uniform call graph analysis across all languages
+
+Every `cs:Literal` is a `oo:Literal`.
+
+% ============================================================================
+% C# Built-in Types
+% ============================================================================
+
+Every `cs:int` is a `cs:Type`.
+Every `cs:string` is a `cs:Type`.
+Every `cs:bool` is a `cs:Type`.
+Every `cs:float` is a `cs:Type`.
+Every `cs:double` is a `cs:Type`.
+Every `cs:decimal` is a `cs:Type`.
+Every `cs:long` is a `cs:Type`.
+Every `cs:short` is a `cs:Type`.
+Every `cs:byte` is a `cs:Type`.
+Every `cs:char` is a `cs:Type`.
+Every `cs:object` is a `cs:Type`.
+Every `cs:void` is a `cs:Type`.
+Every `cs:dynamic` is a `cs:Type`.

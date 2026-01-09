@@ -11,18 +11,17 @@ query describe_class() {
     param include_docstrings: bool = true;
 
     reql {
-        SELECT ?c ?name ?qualifiedName ?file ?line ?docstring ?parent_name
+        SELECT ?c ?name ?file ?line ?docstring ?parent_name
         WHERE {
             ?c type {Class} .
             ?c name ?name .
-            ?c qualifiedName ?qualifiedName .
             ?c inFile ?file .
             ?c atLine ?line .
             OPTIONAL { ?c docstring ?docstring }
             OPTIONAL { ?c inheritsFrom ?parent . ?parent name ?parent_name }
-            FILTER ( CONTAINS(?qualifiedName, "{target}") || ?name = "{target}" )
+            FILTER ( CONTAINS(STR(?c), "{target}") || ?name = "{target}" )
         }
     }
-    | select { name, qualifiedName, file, line, docstring, parent: parent_name, qualified_name: c }
+    | select { name, file, line, docstring, parent: parent_name, qualified_name: c }
     | emit { class_info }
 }

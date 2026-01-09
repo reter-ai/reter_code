@@ -48,10 +48,13 @@ for method_id, method_name in rows:
 
 ## Core Concepts Extracted
 
+Note: Entity IDs ARE the qualified names. For methods with overloads, the ID
+includes the parameter signature: `module.Class.method(ParamType1,ParamType2)`.
+
 ### 1. Classes
 - `concept: "py:Class"`
 - `name: str` - Simple class name
-- `qualifiedName: str` - Full path like "mymodule.MyClass"
+- Entity ID = qualified name (e.g., `mymodule.MyClass`)
 - `atLine: str` - Line number where defined
 - `atColumn: str` - Column number
 - `hasDocstring: str` - Class docstring (if present)
@@ -59,7 +62,7 @@ for method_id, method_name in rows:
 ### 2. Methods
 - `concept: "py:Method"`
 - `name: str` - Method name
-- `qualifiedName: str` - Full path like "mymodule.MyClass.method_name"
+- Entity ID = qualified name with signature (e.g., `mymodule.MyClass.method_name(arg1_type,arg2_type)`)
 - `definedIn: str` - Parent class qualified name
 - `atLine: str` - Line number
 - `returnType: str` - Return type annotation (if present)

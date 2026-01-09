@@ -1,0 +1,35 @@
+% Object-Oriented Meta-Ontology - CNL Format
+% Language-independent concepts for semantic code analysis
+%
+% This ontology defines generic OO concepts that language-specific ontologies
+% (py_ontology.cnl, js_ontology.cnl) extend via subsumption relationships.
+%
+% Example: py:Class is a oo:Class
+%          js:Class is a oo:Class
+%
+% This allows queries like "FIND ?c WHERE oo:Class(?c)" to match both
+% Python and JavaScript classes.
+
+% ============================================================================
+% Core Entity Hierarchy
+% ============================================================================
+
+Every `oo:Method` is a `oo:Function`.
+Every `oo:Constructor` is a `oo:Method`.
+Every `oo:Destructor` is a `oo:Method`.
+
+% ============================================================================
+% Statement Hierarchy
+% ============================================================================
+
+% Base statement type - language-specific statements extend this
+% oo:Statement is the root for all statement types
+
+% Exception handling
+Every `oo:CatchClause` is a `oo:Statement`.
+Every `oo:FinallyClause` is a `oo:Statement`.
+Every `oo:TryBlock` is a `oo:Statement`.
+Every `oo:ThrowStatement` is a `oo:Statement`.
+
+% Control flow
+Every `oo:ReturnStatement` is a `oo:Statement`.

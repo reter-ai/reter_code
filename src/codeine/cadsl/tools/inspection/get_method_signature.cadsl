@@ -8,11 +8,10 @@ query get_method_signature() {
     param target: str required;
 
     reql {
-        SELECT ?m ?name ?qualifiedName ?file ?line ?return_type ?param_name ?param_type ?param_default
+        SELECT ?m ?name ?file ?line ?return_type ?param_name ?param_type ?param_default
         WHERE {
             { ?m type {Method} } UNION { ?m type {Function} }
             ?m name ?name .
-            ?m qualifiedName ?qualifiedName .
             ?m inFile ?file .
             ?m atLine ?line .
             OPTIONAL { ?m returnType ?return_type }
@@ -22,9 +21,9 @@ query get_method_signature() {
                 OPTIONAL { ?p typeAnnotation ?param_type }
                 OPTIONAL { ?p defaultValue ?param_default }
             }
-            FILTER ( ?name = "{target}" || CONTAINS(?qualifiedName, "{target}") )
+            FILTER ( ?name = "{target}" || CONTAINS(STR(?m), "{target}") )
         }
     }
-    | select { name, qualifiedName, file, line, return_type, param_name, param_type, param_default, qualified_name: m }
+    | select { name, file, line, return_type, param_name, param_type, param_default, qualified_name: m }
     | emit { signature }
 }

@@ -598,7 +598,7 @@ class DefaultInstanceManager:
         if changes.to_add or changes.to_modify:
             self._package_roots = ReterWrapper.scan_package_roots(str(self._project_root))
 
-        # Process deletions first
+        # Process deletions first (before entity accumulation)
         for file_info in changes.to_delete:
             if file_info.reter_source_id:
                 print(f"[default] Forgetting deleted file: {file_info.rel_path}", file=sys.stderr, flush=True)
@@ -614,51 +614,66 @@ class DefaultInstanceManager:
                     print(f"[default]   ✗ {error_msg}", file=sys.stderr, flush=True)
                     errors.append(error_msg)
 
-        # Process modifications (forget then reload)
-        for new_info, old_info in changes.to_modify:
-            print(f"[default] Reloading modified file: {new_info.rel_path}", file=sys.stderr, flush=True)
-            try:
-                # Forget old version
-                if old_info.reter_source_id:
-                    reter.forget_source(old_info.reter_source_id)
-                    track_deleted_source(old_info.rel_path, old_info.reter_source_id)
+        # Enable entity accumulation for batch loading of new/modified files
+        # This is especially important for C++ where same entity appears in .h and .cpp
+        use_accumulation = len(changes.to_add) + len(changes.to_modify) > 1
+        if use_accumulation:
+            reter.begin_entity_accumulation()
 
-                # Load new version
-                self._load_code_file(reter, new_info.abs_path, new_info.rel_path)
-                modified_count += 1
+        try:
+            # Process modifications (forget then reload)
+            for new_info, old_info in changes.to_modify:
+                print(f"[default] Reloading modified file: {new_info.rel_path}", file=sys.stderr, flush=True)
+                try:
+                    # Forget old version
+                    if old_info.reter_source_id:
+                        reter.forget_source(old_info.reter_source_id)
+                        track_deleted_source(old_info.rel_path, old_info.reter_source_id)
 
-                # Update state
-                source_id = f"{new_info.md5}|{new_info.rel_path}"
-                new_info.in_reter = True
-                new_info.reter_source_id = source_id
-                if self._source_state:
-                    self._source_state.set_file(new_info)
-                track_changed_source(new_info.rel_path, source_id)
+                    # Load new version
+                    self._load_code_file(reter, new_info.abs_path, new_info.rel_path)
+                    modified_count += 1
 
-            except Exception as e:
-                error_msg = f"Error reloading {new_info.rel_path}: {type(e).__name__}: {e}"
-                print(f"[default]   ✗ {error_msg}", file=sys.stderr, flush=True)
-                errors.append(error_msg)
+                    # Update state
+                    source_id = f"{new_info.md5}|{new_info.rel_path}"
+                    new_info.in_reter = True
+                    new_info.reter_source_id = source_id
+                    if self._source_state:
+                        self._source_state.set_file(new_info)
+                    track_changed_source(new_info.rel_path, source_id)
 
-        # Process additions
-        for file_info in changes.to_add:
-            print(f"[default] Adding new file: {file_info.rel_path}", file=sys.stderr, flush=True)
-            try:
-                self._load_code_file(reter, file_info.abs_path, file_info.rel_path)
-                added_count += 1
+                except Exception as e:
+                    error_msg = f"Error reloading {new_info.rel_path}: {type(e).__name__}: {e}"
+                    print(f"[default]   ✗ {error_msg}", file=sys.stderr, flush=True)
+                    errors.append(error_msg)
 
-                # Update state
-                source_id = f"{file_info.md5}|{file_info.rel_path}"
-                file_info.in_reter = True
-                file_info.reter_source_id = source_id
-                if self._source_state:
-                    self._source_state.set_file(file_info)
-                track_changed_source(file_info.rel_path, source_id)
+            # Process additions
+            for file_info in changes.to_add:
+                print(f"[default] Adding new file: {file_info.rel_path}", file=sys.stderr, flush=True)
+                try:
+                    self._load_code_file(reter, file_info.abs_path, file_info.rel_path)
+                    added_count += 1
 
-            except Exception as e:
-                error_msg = f"Error loading {file_info.rel_path}: {type(e).__name__}: {e}"
-                print(f"[default]   ✗ {error_msg}", file=sys.stderr, flush=True)
-                errors.append(error_msg)
+                    # Update state
+                    source_id = f"{file_info.md5}|{file_info.rel_path}"
+                    file_info.in_reter = True
+                    file_info.reter_source_id = source_id
+                    if self._source_state:
+                        self._source_state.set_file(file_info)
+                    track_changed_source(file_info.rel_path, source_id)
+
+                except Exception as e:
+                    error_msg = f"Error loading {file_info.rel_path}: {type(e).__name__}: {e}"
+                    print(f"[default]   ✗ {error_msg}", file=sys.stderr, flush=True)
+                    errors.append(error_msg)
+
+        finally:
+            # Finalize entity accumulation - merges duplicate entities
+            if use_accumulation:
+                accumulated = reter.accumulated_entity_count()
+                reter.end_entity_accumulation()
+                if accumulated > 0:
+                    print(f"[default] Entity accumulation: {accumulated} unique entities merged", file=sys.stderr, flush=True)
 
         if errors:
             print(f"[default] Sync completed with {len(errors)} errors", file=sys.stderr, flush=True)
@@ -1058,46 +1073,62 @@ class DefaultInstanceManager:
         for i, (rel_path, (abs_path, current_md5)) in enumerate(list(current_files.items())[:5]):
             debug_log(f"[default]   current[{i}]: {rel_path} -> md5={current_md5[:8]}...")
 
-        # Find new and modified files
-        for rel_path, (abs_path, current_md5) in current_files.items():
-            if rel_path not in existing_sources:
-                # New file - load it using the appropriate loader
-                debug_log(f"[default] NEW file (not in existing): {rel_path}")
-                print(f"[default] Adding new file: {rel_path}", file=sys.stderr, flush=True)
-                try:
-                    self._load_code_file(reter, abs_path, rel_path)
-                    added_count += 1
-                    print(f"[default]   ✓ Added {rel_path}", file=sys.stderr, flush=True)
-                    # Track for RAG: construct source_id from md5 and rel_path
-                    new_source_id = f"{current_md5}|{rel_path}"
-                    track_changed_source(rel_path, new_source_id)
-                except Exception as e:
-                    # Log error but continue with other files (don't re-raise)
-                    error_msg = f"Error loading {rel_path}: {type(e).__name__}: {e}"
-                    print(f"[default]   ✗ {error_msg}", file=sys.stderr, flush=True)
-                    errors.append(error_msg)
-            else:
-                old_md5, old_source_id = existing_sources[rel_path]
-                if old_md5 != current_md5:
-                    # Modified file - forget and reload
-                    debug_log(f"[default] MD5 MISMATCH: {rel_path} old={old_md5[:8]}... new={current_md5[:8]}...")
-                    print(f"[default] Reloading modified file: {rel_path}", file=sys.stderr, flush=True)
+        # Count files to add/modify for deciding on entity accumulation
+        files_to_load = sum(1 for rel_path in current_files if rel_path not in existing_sources or
+                           existing_sources[rel_path][0] != current_files[rel_path][1])
+        use_accumulation = files_to_load > 1
+        if use_accumulation:
+            reter.begin_entity_accumulation()
+
+        try:
+            # Find new and modified files
+            for rel_path, (abs_path, current_md5) in current_files.items():
+                if rel_path not in existing_sources:
+                    # New file - load it using the appropriate loader
+                    debug_log(f"[default] NEW file (not in existing): {rel_path}")
+                    print(f"[default] Adding new file: {rel_path}", file=sys.stderr, flush=True)
                     try:
-                        reter.forget_source(old_source_id)
                         self._load_code_file(reter, abs_path, rel_path)
-                        modified_count += 1
-                        print(f"[default]   ✓ Reloaded {rel_path}", file=sys.stderr, flush=True)
-                        # Track for RAG: old source deleted, new source added
-                        track_deleted_source(rel_path, old_source_id)
+                        added_count += 1
+                        print(f"[default]   ✓ Added {rel_path}", file=sys.stderr, flush=True)
+                        # Track for RAG: construct source_id from md5 and rel_path
                         new_source_id = f"{current_md5}|{rel_path}"
                         track_changed_source(rel_path, new_source_id)
                     except Exception as e:
                         # Log error but continue with other files (don't re-raise)
-                        error_msg = f"Error reloading {rel_path}: {type(e).__name__}: {e}"
+                        error_msg = f"Error loading {rel_path}: {type(e).__name__}: {e}"
                         print(f"[default]   ✗ {error_msg}", file=sys.stderr, flush=True)
                         errors.append(error_msg)
+                else:
+                    old_md5, old_source_id = existing_sources[rel_path]
+                    if old_md5 != current_md5:
+                        # Modified file - forget and reload
+                        debug_log(f"[default] MD5 MISMATCH: {rel_path} old={old_md5[:8]}... new={current_md5[:8]}...")
+                        print(f"[default] Reloading modified file: {rel_path}", file=sys.stderr, flush=True)
+                        try:
+                            reter.forget_source(old_source_id)
+                            self._load_code_file(reter, abs_path, rel_path)
+                            modified_count += 1
+                            print(f"[default]   ✓ Reloaded {rel_path}", file=sys.stderr, flush=True)
+                            # Track for RAG: old source deleted, new source added
+                            track_deleted_source(rel_path, old_source_id)
+                            new_source_id = f"{current_md5}|{rel_path}"
+                            track_changed_source(rel_path, new_source_id)
+                        except Exception as e:
+                            # Log error but continue with other files (don't re-raise)
+                            error_msg = f"Error reloading {rel_path}: {type(e).__name__}: {e}"
+                            print(f"[default]   ✗ {error_msg}", file=sys.stderr, flush=True)
+                            errors.append(error_msg)
 
-        # Find deleted files
+        finally:
+            # Finalize entity accumulation - merges duplicate entities
+            if use_accumulation:
+                accumulated = reter.accumulated_entity_count()
+                reter.end_entity_accumulation()
+                if accumulated > 0:
+                    print(f"[default] Entity accumulation: {accumulated} unique entities merged", file=sys.stderr, flush=True)
+
+        # Find deleted files (after accumulation finalized)
         for rel_path, (old_md5, old_source_id) in existing_sources.items():
             if rel_path not in current_files:
                 # Deleted file - forget it
@@ -1187,6 +1218,9 @@ class DefaultInstanceManager:
         remove_source operations. The C++ RETE layer doesn't compact network
         structures when sources are removed, causing ~20% bloat per modify cycle.
 
+        Uses entity accumulation mode to deduplicate entities that appear in
+        multiple files (e.g., C++ method declared in .h and defined in .cpp).
+
         Args:
             current_files: Dict mapping rel_path to (abs_path, md5_hash)
 
@@ -1200,17 +1234,28 @@ class DefaultInstanceManager:
         # Create fresh ReterWrapper with new RETE network
         fresh_reter = ReterWrapper()
 
+        # Enable entity accumulation for cross-file deduplication
+        # This is especially important for C++ where methods are declared in .h
+        # and defined in .cpp - both would otherwise create duplicate entities
+        fresh_reter.begin_entity_accumulation()
+
         # Load all current files
         loaded = 0
         errors = []
-        for rel_path, (abs_path, _) in current_files.items():
-            try:
-                self._load_code_file(fresh_reter, abs_path, rel_path)
-                loaded += 1
-            except Exception as e:
-                error_msg = f"Error loading {rel_path}: {type(e).__name__}: {e}"
-                print(f"[default]   ✗ {error_msg}", file=sys.stderr, flush=True)
-                errors.append(error_msg)
+        try:
+            for rel_path, (abs_path, _) in current_files.items():
+                try:
+                    self._load_code_file(fresh_reter, abs_path, rel_path)
+                    loaded += 1
+                except Exception as e:
+                    error_msg = f"Error loading {rel_path}: {type(e).__name__}: {e}"
+                    print(f"[default]   ✗ {error_msg}", file=sys.stderr, flush=True)
+                    errors.append(error_msg)
+        finally:
+            # Finalize accumulated entities - creates merged facts
+            accumulated = fresh_reter.accumulated_entity_count()
+            fresh_reter.end_entity_accumulation()
+            print(f"[default] Entity accumulation: {accumulated} unique entities merged", file=sys.stderr, flush=True)
 
         # Reset modification count
         self._modification_count = 0

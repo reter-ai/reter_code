@@ -138,22 +138,24 @@ class TestListFunctionsVsReference:
                 "Add: FILTER { CONTAINS(?file, \"{module}\") }"
             )
 
-    def test_reference_has_qualified_name(self, pipeline):
+    def test_uses_entity_id_as_qualified_name(self, pipeline):
         """
-        Reference queries qualifiedName property.
+        Entity IDs are the qualified names.
 
-        Reference (python_tools.py:888):
-            ?function qualifiedName ?qualifiedName
+        The entity ID (?f) is used directly as the qualified name instead of
+        querying a separate qualifiedName attribute. This is achieved via
+        the select step: `qualified_name: f`
         """
-        query = pipeline._source.query
+        # Check that the select step maps entity ID to qualified_name
+        select_step = None
+        for step in pipeline._steps:
+            if hasattr(step, 'fields'):
+                select_step = step
+                break
 
-        has_qn = "qualifiedName" in query
-
-        if not has_qn:
-            pytest.fail(
-                "MISSING: qualifiedName property not queried.\n"
-                "Reference has: ?function qualifiedName ?qualifiedName"
-            )
+        assert select_step is not None, "Should have select step"
+        assert "qualified_name" in select_step.fields, \
+            "Select should include qualified_name mapped from entity ID"
 
     def test_reference_has_return_type(self, pipeline):
         """

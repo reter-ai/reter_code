@@ -1,0 +1,68 @@
+% Python Code Ontology - CNL Format
+% Natural English syntax for semantic code analysis
+%
+% This ontology extends the OO meta-ontology (oo_ontology.cnl) with
+% Python-specific concepts. All py:* types are subclasses of oo:* types,
+% enabling language-independent queries using the oo: prefix.
+
+% ============================================================================
+% Class Hierarchy (Python-specific)
+% ============================================================================
+
+Every `py:Method` is a `py:Function`.
+
+% ============================================================================
+% Meta-Ontology Integration (extends oo_ontology.cnl)
+% ============================================================================
+
+Every `py:Module` is a `oo:Module`.
+
+Every `py:Class` is a `oo:Class`.
+
+Every `py:Function` is a `oo:Function`.
+
+Every `py:Method` is a `oo:Method`.
+
+Every `py:Parameter` is a `oo:Parameter`.
+
+Every `py:Import` is a `oo:Import`.
+
+Every `py:Assignment` is a `oo:Assignment`.
+
+Every `py:Attribute` is a `oo:Field`.
+
+% ============================================================================
+% Exception Handling (extends oo_ontology.cnl)
+% ============================================================================
+
+Every `py:TryBlock` is a `oo:TryBlock`.
+
+Every `py:ExceptHandler` is a `oo:CatchClause`.
+
+Every `py:FinallyBlock` is a `oo:FinallyClause`.
+
+Every `py:TryElseBlock` is a `oo:Statement`.
+
+% ============================================================================
+% Statements (extends oo_ontology.cnl)
+% ============================================================================
+
+Every `py:RaiseStatement` is a `oo:ThrowStatement`.
+
+Every `py:ReturnStatement` is a `oo:ReturnStatement`.
+
+Every `py:WithStatement` is a `oo:Statement`.
+
+% ============================================================================
+% Type Hierarchy
+% ============================================================================
+
+Every `py:int` is a `py:Type`.
+Every `py:str` is a `py:Type`.
+Every `py:bool` is a `py:Type`.
+Every `py:float` is a `py:Type`.
+Every `py:list` is a `py:Type`.
+Every `py:dict` is a `py:Type`.
+Every `py:set` is a `py:Type`.
+Every `py:tuple` is a `py:Type`.
+Every `py:None` is a `py:Type`.

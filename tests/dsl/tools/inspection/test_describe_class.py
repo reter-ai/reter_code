@@ -111,39 +111,42 @@ class TestDescribeClassVsReference:
         ctx = Context(reter=None, params={"target": "TestClass"}, language="oo", instance_name="default")
         return spec.pipeline_factory(ctx)
 
-    def test_reference_has_qualified_name(self, pipeline):
+    def test_uses_entity_id_as_qualified_name(self, pipeline):
         """
-        Reference queries qualifiedName.
+        Entity IDs are the qualified names.
 
-        Reference (python_tools.py:295-299):
-            ?class qualifiedName ?qualifiedName
+        The entity ID (?c) is used directly as the qualified name instead of
+        querying a separate qualifiedName attribute. This is achieved via
+        the select step: `qualified_name: c`
+        """
+        # Check that the select step maps entity ID to qualified_name
+        select_step = None
+        for step in pipeline._steps:
+            if hasattr(step, 'fields'):
+                select_step = step
+                break
+
+        assert select_step is not None, "Should have select step"
+        assert "qualified_name" in select_step.fields, \
+            "Select should include qualified_name mapped from entity ID"
+
+    def test_supports_qualified_name_filter(self, pipeline):
+        """
+        Should support finding by qualified name using CONTAINS on entity ID.
+
+        The query filters using:
+            FILTER(CONTAINS(STR(?c), target) || ?name = target)
+        This allows finding class by module.ClassName
         """
         query = pipeline._source.query
 
-        has_qn = "qualifiedName" in query
-
-        if not has_qn:
-            pytest.fail(
-                "MISSING: qualifiedName property not queried.\n"
-                "Reference has: ?class qualifiedName ?qualifiedName"
-            )
-
-    def test_reference_supports_qualified_name_filter(self, pipeline):
-        """
-        Reference supports finding by qualified name using CONTAINS.
-
-        Reference (python_tools.py:303):
-            FILTER(CONTAINS(?qualifiedName, class_name) || ?name = class_name)
-        """
-        query = pipeline._source.query
-
-        # Reference uses CONTAINS to match qualified names
+        # Reference uses CONTAINS to match qualified names (via STR(?c))
         has_contains = "CONTAINS" in query
 
         if not has_contains:
             pytest.fail(
                 "MISSING: Qualified name filter not implemented.\n"
-                "Reference uses: FILTER(CONTAINS(?qualifiedName, class_name) || ?name = class_name)\n"
+                "Should use: FILTER(CONTAINS(STR(?c), target) || ?name = target)\n"
                 "This allows finding class by module.ClassName"
             )
 

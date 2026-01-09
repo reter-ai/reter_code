@@ -1,0 +1,52 @@
+% JavaScript Code Ontology - CNL Format
+% Natural English syntax for semantic code analysis
+%
+% This ontology extends the OO meta-ontology (oo_ontology.cnl) with
+% JavaScript-specific concepts. All js:* types are subclasses of oo:* types,
+% enabling language-independent queries using the oo: prefix.
+
+% ============================================================================
+% Class Hierarchy (JavaScript-specific)
+% ============================================================================
+
+Every `js:Method` is a `js:Function`.
+Every `js:Constructor` is a `js:Method`.
+Every `js:ArrowFunction` is a `js:Function`.
+
+% ============================================================================
+% Meta-Ontology Integration (extends oo_ontology.cnl)
+% ============================================================================
+
+Every `js:Module` is a `oo:Module`.
+Every `js:Class` is a `oo:Class`.
+Every `js:Function` is a `oo:Function`.
+Every `js:Method` is a `oo:Method`.
+Every `js:Constructor` is a `oo:Constructor`.
+Every `js:ArrowFunction` is a `oo:Function`.
+Every `js:Parameter` is a `oo:Parameter`.
+Every `js:Field` is a `oo:Field`.
+Every `js:Import` is a `oo:Import`.
+Every `js:Export` is a `oo:Export`.
+Every `js:Assignment` is a `oo:Assignment`.
+
+% ============================================================================
+% Exception Handling
+% ============================================================================
+
+Every `js:TryBlock` is a `oo:TryBlock`.
+Every `js:CatchClause` is a `oo:CatchClause`.
+Every `js:ThrowStatement` is a `oo:ThrowStatement`.
+Every `js:ReturnStatement` is a `oo:ReturnStatement`.
+
+% Note: Call tracking uses "calls" role relationships instead of js:Call instances
+% This enables uniform call graph analysis across all languages
+
+% ============================================================================
+% TypeScript-specific Meta-Ontology Integration
+% ============================================================================
+
+Every `js:Interface` is a `oo:Interface`.
+Every `js:Enum` is a `oo:Enum`.
+Every `js:EnumMember` is a `oo:EnumMember`.
+Every `js:TypeAlias` is a `oo:TypeAlias`.
+Every `js:Namespace` is a `oo:Namespace`.

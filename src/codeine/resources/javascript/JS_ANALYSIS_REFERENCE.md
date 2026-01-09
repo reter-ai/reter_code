@@ -77,15 +77,15 @@ For entities of type `js:Module`:
 | Predicate | Type | Description | Example |
 |-----------|------|-------------|---------|
 | `name` | string | Module name | `"mymodule"` |
-| `qualifiedName` | string | Qualified name | `"mymodule"` |
+
+Note: The entity ID IS the qualified name (e.g., `mymodule`).
 
 **Example Module Entity**:
 ```
-module_0  type         "instance_of"
-module_0  individual   "module_0"
-module_0  concept      "js:Module"
-module_0  name         "mymodule"
-module_0  qualifiedName "mymodule"
+mymodule  type         "instance_of"
+mymodule  individual   "mymodule"
+mymodule  concept      "js:Module"
+mymodule  name         "mymodule"
 ```
 
 ### Class Predicates
@@ -95,7 +95,6 @@ For entities of type `js:Class`:
 | Predicate | Type | Description | Example |
 |-----------|------|-------------|---------|
 | `name` | string | Simple class name | `"Calculator"` |
-| `qualifiedName` | string | Fully qualified name | `"mymodule.Calculator"` |
 | `inModule` | string | Parent module | `"mymodule"` |
 | `atLine` | string | Line number | `"10"` |
 | `lineCount` | string | Number of lines | `"25"` |
@@ -103,25 +102,26 @@ For entities of type `js:Class`:
 | `noConstructor` | string | Has no constructor? | `"true"` |
 | `hasPrivateFields` | string | Has private fields? | `"true"` |
 
+Note: The entity ID IS the qualified name (e.g., `mymodule.Calculator`).
+
 **Inheritance Relationship** (separate fact):
 ```
 rel_fact  type         "role_assertion"
-rel_fact  subject      "class_5"
+rel_fact  subject      "mymodule.ChildClass"
 rel_fact  role         "inheritsFrom"
-rel_fact  object       "class_3"
+rel_fact  object       "mymodule.ParentClass"
 ```
 
 **Example Class Entity**:
 ```
-class_1  type           "instance_of"
-class_1  individual     "class_1"
-class_1  concept        "js:Class"
-class_1  name           "Calculator"
-class_1  qualifiedName  "mymodule.Calculator"
-class_1  inModule       "mymodule"
-class_1  atLine         "10"
-class_1  lineCount      "25"
-class_1  hasDocstring   "Calculator for math operations"
+mymodule.Calculator  type           "instance_of"
+mymodule.Calculator  individual     "mymodule.Calculator"
+mymodule.Calculator  concept        "js:Class"
+mymodule.Calculator  name           "Calculator"
+mymodule.Calculator  inModule       "mymodule"
+mymodule.Calculator  atLine         "10"
+mymodule.Calculator  lineCount      "25"
+mymodule.Calculator  hasDocstring   "Calculator for math operations"
 ```
 
 ### Function Predicates
@@ -131,7 +131,6 @@ For entities of type `js:Function`:
 | Predicate | Type | Description | Example |
 |-----------|------|-------------|---------|
 | `name` | string | Function name | `"calculate"` |
-| `qualifiedName` | string | Fully qualified name | `"mymodule.calculate"` |
 | `inModule` | string | Parent module | `"mymodule"` |
 | `atLine` | string | Line number | `"25"` |
 | `lineCount` | string | Number of lines | `"10"` |
@@ -140,18 +139,20 @@ For entities of type `js:Function`:
 | `hasDocstring` | string | JSDoc comment | `"Calculates result"` |
 | `parameterCount` | string | Number of parameters | `"3"` |
 
+Note: The entity ID IS the qualified name (e.g., `mymodule.calculate()`).
+For overloaded functions, the ID includes parameter types: `module.func(Type1,Type2)`.
+
 **Example Function Entity**:
 ```
-function_1  type           "instance_of"
-function_1  individual     "function_1"
-function_1  concept        "js:Function"
-function_1  name           "calculate"
-function_1  qualifiedName  "mymodule.calculate"
-function_1  inModule       "mymodule"
-function_1  atLine         "25"
-function_1  lineCount      "10"
-function_1  isAsync        "false"
-function_1  isGenerator    "false"
+mymodule.calculate()  type           "instance_of"
+mymodule.calculate()  individual     "mymodule.calculate()"
+mymodule.calculate()  concept        "js:Function"
+mymodule.calculate()  name           "calculate"
+mymodule.calculate()  inModule       "mymodule"
+mymodule.calculate()  atLine         "25"
+mymodule.calculate()  lineCount      "10"
+mymodule.calculate()  isAsync        "false"
+mymodule.calculate()  isGenerator    "false"
 ```
 
 ### Method Predicates

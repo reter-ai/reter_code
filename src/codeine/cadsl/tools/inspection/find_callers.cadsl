@@ -8,18 +8,17 @@ query find_callers() {
     param target: str required;
 
     reql {
-        SELECT ?caller ?caller_name ?caller_file ?caller_line ?caller_type
+        SELECT ?caller ?caller_name ?caller_file ?caller_line ?callee
         WHERE {
             { ?caller type {Method} } UNION { ?caller type {Function} }
-            ?caller calls ?target .
-            ?target name "{target}" .
-            ?caller type ?caller_type .
+            ?caller calls ?callee .
+            FILTER(CONTAINS(?callee, "{target}"))
             ?caller name ?caller_name .
             ?caller inFile ?caller_file .
             ?caller atLine ?caller_line
         }
     }
-    | select { caller_name, caller_file, caller_line, caller_type, qualified_name: caller }
+    | select { caller_name, caller_file, caller_line, callee, qualified_name: caller }
     | order_by { caller_file }
     | emit { callers }
 }

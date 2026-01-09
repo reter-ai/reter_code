@@ -1588,12 +1588,11 @@ class RAGIndexManager:
 
         # Query classes
         class_query = f'''
-        SELECT DISTINCT ?entity ?name ?qualifiedName ?line ?endLine ?docstring
+        SELECT DISTINCT ?entity ?name ?line ?endLine ?docstring
         WHERE {{
             ?entity inFile "{in_file}" .
             ?entity type {prefix}:Class .
             ?entity name ?name .
-            ?entity qualifiedName ?qualifiedName .
             ?entity atLine ?line .
             ?entity endLine ?endLine .
             OPTIONAL {{ ?entity hasDocstring ?docstring }}
@@ -1612,7 +1611,7 @@ class RAGIndexManager:
                     entities.append({
                         "entity_type": "class",
                         "name": row.get("?name", ""),
-                        "qualified_name": row.get("?qualifiedName", ""),
+                        "qualified_name": row.get("?entity", ""),
                         "line": line,
                         "end_line": end_line,
                         "docstring": row.get("?docstring"),
@@ -1626,12 +1625,11 @@ class RAGIndexManager:
         # Query methods
         # Note: definedIn is required (not OPTIONAL) because REQL OPTIONAL doesn't return bound values
         method_query = f'''
-        SELECT DISTINCT ?entity ?name ?qualifiedName ?line ?endLine ?docstring ?className
+        SELECT DISTINCT ?entity ?name ?line ?endLine ?docstring ?className
         WHERE {{
             ?entity inFile "{in_file}" .
             ?entity type {prefix}:Method .
             ?entity name ?name .
-            ?entity qualifiedName ?qualifiedName .
             ?entity atLine ?line .
             ?entity endLine ?endLine .
             ?entity definedIn ?className .
@@ -1652,7 +1650,7 @@ class RAGIndexManager:
                     entities.append({
                         "entity_type": "method",
                         "name": row.get("?name", ""),
-                        "qualified_name": row.get("?qualifiedName", ""),
+                        "qualified_name": row.get("?entity", ""),
                         "line": line,
                         "end_line": end_line,
                         "docstring": row.get("?docstring"),
@@ -1667,12 +1665,11 @@ class RAGIndexManager:
         # Query functions (excluding methods - methods are already indexed separately)
         # Note: py:Method is_subclass_of py:Function, so we need to exclude methods
         func_query = f'''
-        SELECT DISTINCT ?entity ?name ?qualifiedName ?line ?endLine ?docstring
+        SELECT DISTINCT ?entity ?name ?line ?endLine ?docstring
         WHERE {{
             ?entity inFile "{in_file}" .
             ?entity type {prefix}:Function .
             ?entity name ?name .
-            ?entity qualifiedName ?qualifiedName .
             ?entity atLine ?line .
             ?entity endLine ?endLine .
             OPTIONAL {{ ?entity hasDocstring ?docstring }}
@@ -1692,7 +1689,7 @@ class RAGIndexManager:
                     entities.append({
                         "entity_type": "function",
                         "name": row.get("?name", ""),
-                        "qualified_name": row.get("?qualifiedName", ""),
+                        "qualified_name": row.get("?entity", ""),
                         "line": line,
                         "end_line": end_line,
                         "docstring": row.get("?docstring"),
@@ -3744,11 +3741,10 @@ class RAGIndexManager:
         # Bulk query all classes
         debug_log(f"[RAG] _query_all_entities_bulk: Querying all {language} classes...")
         class_query = f'''
-        SELECT DISTINCT ?entity ?name ?qualifiedName ?line ?endLine ?docstring ?inFile
+        SELECT DISTINCT ?entity ?name ?line ?endLine ?docstring ?inFile
         WHERE {{
             ?entity type {prefix}:Class .
             ?entity name ?name .
-            ?entity qualifiedName ?qualifiedName .
             ?entity atLine ?line .
             ?entity inFile ?inFile .
             ?entity endLine ?endLine .
@@ -3761,7 +3757,7 @@ class RAGIndexManager:
                 class_results = class_table.to_pylist()
                 debug_log(f"[RAG] _query_all_entities_bulk: Found {len(class_results)} classes")
                 for row in class_results:
-                    qualified_name = row.get("?qualifiedName", "")
+                    qualified_name = row.get("?entity", "")
                     if qualified_name in seen_entities:
                         continue
                     seen_entities.add(qualified_name)
@@ -3787,11 +3783,10 @@ class RAGIndexManager:
         # doesn't return bound values. All methods should have a defining class.
         debug_log(f"[RAG] _query_all_entities_bulk: Querying all {language} methods...")
         method_query = f'''
-        SELECT DISTINCT ?entity ?name ?qualifiedName ?line ?endLine ?docstring ?className ?inFile
+        SELECT DISTINCT ?entity ?name ?line ?endLine ?docstring ?className ?inFile
         WHERE {{
             ?entity type {prefix}:Method .
             ?entity name ?name .
-            ?entity qualifiedName ?qualifiedName .
             ?entity atLine ?line .
             ?entity inFile ?inFile .
             ?entity endLine ?endLine .
@@ -3805,7 +3800,7 @@ class RAGIndexManager:
                 method_results = method_table.to_pylist()
                 debug_log(f"[RAG] _query_all_entities_bulk: Found {len(method_results)} methods")
                 for row in method_results:
-                    qualified_name = row.get("?qualifiedName", "")
+                    qualified_name = row.get("?entity", "")
                     if qualified_name in seen_entities:
                         continue
                     seen_entities.add(qualified_name)
@@ -3833,11 +3828,10 @@ class RAGIndexManager:
         # Note: Method is_subclass_of Function, so we need to exclude methods
         debug_log(f"[RAG] _query_all_entities_bulk: Querying all {language} functions...")
         func_query = f'''
-        SELECT DISTINCT ?entity ?name ?qualifiedName ?line ?endLine ?docstring ?inFile
+        SELECT DISTINCT ?entity ?name ?line ?endLine ?docstring ?inFile
         WHERE {{
             ?entity type {prefix}:Function .
             ?entity name ?name .
-            ?entity qualifiedName ?qualifiedName .
             ?entity atLine ?line .
             ?entity inFile ?inFile .
             ?entity endLine ?endLine .
@@ -3851,7 +3845,7 @@ class RAGIndexManager:
                 func_results = func_table.to_pylist()
                 debug_log(f"[RAG] _query_all_entities_bulk: Found {len(func_results)} functions")
                 for row in func_results:
-                    qualified_name = row.get("?qualifiedName", "")
+                    qualified_name = row.get("?entity", "")
                     if qualified_name in seen_entities:
                         continue
                     seen_entities.add(qualified_name)

@@ -84,12 +84,12 @@ class TestGetMethodSignatureVsReference:
         ctx = Context(reter=None, params={"target": "test_method"}, language="oo", instance_name="default")
         return spec.pipeline_factory(ctx)
 
-    def test_reference_has_contains_filter(self, pipeline):
+    def test_has_contains_filter(self, pipeline):
         """
-        Reference uses CONTAINS for flexible name matching.
+        Should use CONTAINS for flexible name matching.
 
-        Reference (python_tools.py:684):
-            FILTER(?name = method_name || CONTAINS(?qualifiedName, method_name))
+        Uses FILTER(?name = target || CONTAINS(STR(?m), target))
+        to match by entity ID (which is the qualified name)
         """
         query = pipeline._source.query
 
@@ -98,25 +98,27 @@ class TestGetMethodSignatureVsReference:
         if not has_contains:
             pytest.fail(
                 "MISSING: CONTAINS filter for flexible name matching.\n"
-                "Reference uses: FILTER(?name = method_name || CONTAINS(?qualifiedName, method_name))"
+                "Should use: FILTER(?name = target || CONTAINS(STR(?m), target))"
             )
 
-    def test_reference_has_qualified_name(self, pipeline):
+    def test_uses_entity_id_as_qualified_name(self, pipeline):
         """
-        Reference queries qualifiedName.
+        Entity IDs are the qualified names.
 
-        Reference (python_tools.py:681):
-            ?method qualifiedName ?qualifiedName
+        The entity ID (?m) is used directly as the qualified name instead of
+        querying a separate qualifiedName attribute. This is achieved via
+        the select step: `qualified_name: m`
         """
-        query = pipeline._source.query
+        # Check that the select step maps entity ID to qualified_name
+        select_step = None
+        for step in pipeline._steps:
+            if hasattr(step, 'fields'):
+                select_step = step
+                break
 
-        has_qn = "qualifiedName" in query
-
-        if not has_qn:
-            pytest.fail(
-                "MISSING: qualifiedName property not queried.\n"
-                "Reference has: ?method qualifiedName ?qualifiedName"
-            )
+        assert select_step is not None, "Should have select step"
+        assert "qualified_name" in select_step.fields, \
+            "Select should include qualified_name mapped from entity ID"
 
 
 class TestGetMethodSignatureExecution:

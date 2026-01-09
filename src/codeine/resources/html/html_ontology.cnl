@@ -1,0 +1,37 @@
+% HTML Document Ontology - CNL Format
+% Natural English syntax for semantic HTML analysis
+%
+% This ontology provides concepts for HTML document analysis:
+% - Document structure (documents, elements, forms)
+% - Scripts and event handlers (with JavaScript integration)
+% - Framework detection (Vue, Angular, HTMX, Alpine)
+% - Links and resources (stylesheets, external scripts)
+
+% ============================================================================
+% Class Hierarchy (HTML-specific)
+% ============================================================================
+
+Every `html:DocumentEntity` is a `owl:Thing`.
+Every `html:Document` is a `html:DocumentEntity`.
+Every `html:Element` is a `html:DocumentEntity`.
+Every `html:Script` is a `html:DocumentEntity`.
+Every `html:ScriptReference` is a `html:DocumentEntity`.
+Every `html:StyleSheet` is a `html:DocumentEntity`.
+Every `html:Form` is a `html:Element`.
+Every `html:FormInput` is a `html:Element`.
+Every `html:Link` is a `html:Element`.
+Every `html:Meta` is a `html:Element`.
+Every `html:EventHandler` is a `html:DocumentEntity`.
+Every `html:Image` is a `html:Element`.
+Every `html:Iframe` is a `html:Element`.
+
+% ============================================================================
+% Framework Directives
+% ============================================================================
+
+Every `html:FrameworkIndicator` is a `html:DocumentEntity`.
+Every `html:VueDirective` is a `html:FrameworkIndicator`.
+Every `html:AngularDirective` is a `html:FrameworkIndicator`.
+Every `html:HtmxAttribute` is a `html:FrameworkIndicator`.
+Every `html:AlpineDirective` is a `html:FrameworkIndicator`.
+Every `html:DataAttribute` is a `html:DocumentEntity`.

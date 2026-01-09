@@ -390,21 +390,21 @@ class ReterWrapper:
         """
         debug_log("_load_oo_ontology starting...")
         try:
-            # Get path to ontology file relative to this module
+            # Get path to CNL ontology file relative to this module
             # Resources are now inside the package: src/codeine/resources/
-            ontology_path = Path(__file__).parent / "resources" / "oo_ontology.reol"
+            ontology_path = Path(__file__).parent / "resources" / "oo_ontology.cnl"
             debug_log(f"OO ontology path: {ontology_path}")
 
             if ontology_path.exists():
-                debug_log("Reading OO ontology file...")
+                debug_log("Reading OO CNL ontology file...")
                 with open(ontology_path, 'r', encoding='utf-8') as f:
                     ontology_content = f.read()
                 debug_log(f"OO ontology content length: {len(ontology_content)} chars")
 
-                # Load the ontology into RETER - wrap with safe call for C++ protection
-                debug_log("Calling safe_cpp_call(load_ontology) for OO...")
-                wme_count = safe_cpp_call(self.reasoner.load_ontology, ontology_content, "oo_ontology")
-                debug_log(f"load_ontology returned: {wme_count} WMEs")
+                # Load the CNL ontology into RETER - wrap with safe call for C++ protection
+                debug_log("Calling safe_cpp_call(load_cnl) for OO...")
+                wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, "oo_ontology")
+                debug_log(f"load_cnl returned: {wme_count} WMEs")
                 self._session_stats["total_wmes"] += wme_count
                 self._session_stats["total_sources"] += 1
 
@@ -430,21 +430,21 @@ class ReterWrapper:
         """
         debug_log("_load_python_ontology starting...")
         try:
-            # Get path to ontology file relative to this module
+            # Get path to CNL ontology file relative to this module
             # Resources are now inside the package: src/codeine/resources/
-            ontology_path = Path(__file__).parent / "resources" / "python" / "py_ontology.reol"
+            ontology_path = Path(__file__).parent / "resources" / "python" / "py_ontology.cnl"
             debug_log(f"Ontology path: {ontology_path}")
 
             if ontology_path.exists():
-                debug_log("Reading ontology file...")
+                debug_log("Reading CNL ontology file...")
                 with open(ontology_path, 'r', encoding='utf-8') as f:
                     ontology_content = f.read()
                 debug_log(f"Ontology content length: {len(ontology_content)} chars")
 
-                # Load the ontology into RETER - wrap with safe call for C++ protection
-                debug_log("Calling safe_cpp_call(load_ontology)...")
-                wme_count = safe_cpp_call(self.reasoner.load_ontology, ontology_content, "python_ontology")
-                debug_log(f"load_ontology returned: {wme_count} WMEs")
+                # Load the CNL ontology into RETER - wrap with safe call for C++ protection
+                debug_log("Calling safe_cpp_call(load_cnl)...")
+                wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, "python_ontology")
+                debug_log(f"load_cnl returned: {wme_count} WMEs")
                 self._session_stats["total_wmes"] += wme_count
                 self._session_stats["total_sources"] += 1
 
@@ -471,21 +471,21 @@ class ReterWrapper:
         """
         debug_log("_load_javascript_ontology starting...")
         try:
-            # Get path to ontology file relative to this module
+            # Get path to CNL ontology file relative to this module
             # Resources are now inside the package: src/codeine/resources/
-            ontology_path = Path(__file__).parent / "resources" / "javascript" / "js_ontology.reol"
+            ontology_path = Path(__file__).parent / "resources" / "javascript" / "js_ontology.cnl"
             debug_log(f"JavaScript ontology path: {ontology_path}")
 
             if ontology_path.exists():
-                debug_log("Reading JavaScript ontology file...")
+                debug_log("Reading JavaScript CNL ontology file...")
                 with open(ontology_path, 'r', encoding='utf-8') as f:
                     ontology_content = f.read()
                 debug_log(f"JavaScript ontology content length: {len(ontology_content)} chars")
 
-                # Load the ontology into RETER - wrap with safe call for C++ protection
-                debug_log("Calling safe_cpp_call(load_ontology) for JavaScript...")
-                wme_count = safe_cpp_call(self.reasoner.load_ontology, ontology_content, "javascript_ontology")
-                debug_log(f"load_ontology returned: {wme_count} WMEs")
+                # Load the CNL ontology into RETER - wrap with safe call for C++ protection
+                debug_log("Calling safe_cpp_call(load_cnl) for JavaScript...")
+                wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, "javascript_ontology")
+                debug_log(f"load_cnl returned: {wme_count} WMEs")
                 self._session_stats["total_wmes"] += wme_count
                 self._session_stats["total_sources"] += 1
 
@@ -512,21 +512,21 @@ class ReterWrapper:
         """
         debug_log("_load_html_ontology starting...")
         try:
-            # Get path to ontology file relative to this module
+            # Get path to CNL ontology file relative to this module
             # Resources are now inside the package: src/codeine/resources/
-            ontology_path = Path(__file__).parent / "resources" / "html" / "html_ontology.reol"
+            ontology_path = Path(__file__).parent / "resources" / "html" / "html_ontology.cnl"
             debug_log(f"HTML ontology path: {ontology_path}")
 
             if ontology_path.exists():
-                debug_log("Reading HTML ontology file...")
+                debug_log("Reading HTML CNL ontology file...")
                 with open(ontology_path, 'r', encoding='utf-8') as f:
                     ontology_content = f.read()
                 debug_log(f"HTML ontology content length: {len(ontology_content)} chars")
 
-                # Load the ontology into RETER - wrap with safe call for C++ protection
-                debug_log("Calling safe_cpp_call(load_ontology) for HTML...")
-                wme_count = safe_cpp_call(self.reasoner.load_ontology, ontology_content, "html_ontology")
-                debug_log(f"load_ontology returned: {wme_count} WMEs")
+                # Load the CNL ontology into RETER - wrap with safe call for C++ protection
+                debug_log("Calling safe_cpp_call(load_cnl) for HTML...")
+                wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, "html_ontology")
+                debug_log(f"load_cnl returned: {wme_count} WMEs")
                 self._session_stats["total_wmes"] += wme_count
                 self._session_stats["total_sources"] += 1
 
@@ -553,21 +553,21 @@ class ReterWrapper:
         """
         debug_log("_load_csharp_ontology starting...")
         try:
-            # Get path to ontology file relative to this module
+            # Get path to CNL ontology file relative to this module
             # Resources are now inside the package: src/codeine/resources/
-            ontology_path = Path(__file__).parent / "resources" / "csharp" / "cs_ontology.reol"
+            ontology_path = Path(__file__).parent / "resources" / "csharp" / "cs_ontology.cnl"
             debug_log(f"C# ontology path: {ontology_path}")
 
             if ontology_path.exists():
-                debug_log("Reading C# ontology file...")
+                debug_log("Reading C# CNL ontology file...")
                 with open(ontology_path, 'r', encoding='utf-8') as f:
                     ontology_content = f.read()
                 debug_log(f"C# ontology content length: {len(ontology_content)} chars")
 
-                # Load the ontology into RETER - wrap with safe call for C++ protection
-                debug_log("Calling safe_cpp_call(load_ontology) for C#...")
-                wme_count = safe_cpp_call(self.reasoner.load_ontology, ontology_content, "csharp_ontology")
-                debug_log(f"load_ontology returned: {wme_count} WMEs")
+                # Load the CNL ontology into RETER - wrap with safe call for C++ protection
+                debug_log("Calling safe_cpp_call(load_cnl) for C#...")
+                wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, "csharp_ontology")
+                debug_log(f"load_cnl returned: {wme_count} WMEs")
                 self._session_stats["total_wmes"] += wme_count
                 self._session_stats["total_sources"] += 1
 
@@ -595,21 +595,21 @@ class ReterWrapper:
         """
         debug_log("_load_cpp_ontology starting...")
         try:
-            # Get path to ontology file relative to this module
+            # Get path to CNL ontology file relative to this module
             # Resources are now inside the package: src/codeine/resources/
-            ontology_path = Path(__file__).parent / "resources" / "cpp" / "cpp_ontology.reol"
+            ontology_path = Path(__file__).parent / "resources" / "cpp" / "cpp_ontology.cnl"
             debug_log(f"C++ ontology path: {ontology_path}")
 
             if ontology_path.exists():
-                debug_log("Reading C++ ontology file...")
+                debug_log("Reading C++ CNL ontology file...")
                 with open(ontology_path, 'r', encoding='utf-8') as f:
                     ontology_content = f.read()
                 debug_log(f"C++ ontology content length: {len(ontology_content)} chars")
 
-                # Load the ontology into RETER - wrap with safe call for C++ protection
-                debug_log("Calling safe_cpp_call(load_ontology) for C++...")
-                wme_count = safe_cpp_call(self.reasoner.load_ontology, ontology_content, "cpp_ontology")
-                debug_log(f"load_ontology returned: {wme_count} WMEs")
+                # Load the CNL ontology into RETER - wrap with safe call for C++ protection
+                debug_log("Calling safe_cpp_call(load_cnl) for C++...")
+                wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, "cpp_ontology")
+                debug_log(f"load_cnl returned: {wme_count} WMEs")
                 self._session_stats["total_wmes"] += wme_count
                 self._session_stats["total_sources"] += 1
 
@@ -1959,6 +1959,77 @@ class ReterWrapper:
             Unix timestamp of last save
         """
         return self._last_save_time
+
+    # =========================================================================
+    # Entity Accumulation API (for cross-file deduplication)
+    # =========================================================================
+
+    def begin_entity_accumulation(self) -> None:
+        """
+        Begin entity accumulation mode for deduplicating entities across multiple files.
+
+        When loading multiple files (especially C++ header/source pairs), the same
+        entity (method, class, etc.) may appear multiple times with different attributes.
+        Entity accumulation mode collects these and merges them into single facts.
+
+        Usage:
+            reter.begin_entity_accumulation()
+            try:
+                for file in files:
+                    reter.load_cpp_file(file, base_path)
+            finally:
+                reter.end_entity_accumulation()  # Finalizes and adds merged facts
+
+        While active:
+        - Entity facts (instance_of facts) are accumulated instead of added directly
+        - Attributes are merged using intelligent strategies (prefer longer docs, OR booleans, etc.)
+        - Non-entity facts (role assertions) are added directly as usual
+
+        Call end_entity_accumulation() to finalize and add all merged entity facts.
+        """
+        safe_cpp_call(self.reasoner.network.begin_entity_accumulation)
+
+    def end_entity_accumulation(self) -> None:
+        """
+        End entity accumulation mode and add all merged entity facts to the network.
+
+        This finalizes the accumulated entities by:
+        1. Merging collected attribute values (e.g., comma-separated file lists)
+        2. Creating one fact per unique entity with merged attributes
+        3. Adding these facts to the network
+
+        Merge strategies applied:
+        - Documentation: Prefer longer (more complete)
+        - Boolean flags: OR operation (true if any occurrence is true)
+        - Type info: Prefer definition over declaration
+        - File location: Collect all unique files as comma-separated list
+        - Start line: Keep first seen
+        - End line: Keep last seen (definition has body)
+
+        Must be called after begin_entity_accumulation(), even if no files were loaded.
+        """
+        safe_cpp_call(self.reasoner.network.end_entity_accumulation)
+        # Mark dirty since we've modified the network
+        self._dirty = True
+
+    def is_entity_accumulation_active(self) -> bool:
+        """
+        Check if entity accumulation mode is currently active.
+
+        Returns:
+            True if begin_entity_accumulation() has been called without
+            a corresponding end_entity_accumulation()
+        """
+        return safe_cpp_call(self.reasoner.network.is_entity_accumulation_active)
+
+    def accumulated_entity_count(self) -> int:
+        """
+        Get number of entities currently accumulated (before finalization).
+
+        Returns:
+            Number of unique entities collected so far
+        """
+        return safe_cpp_call(self.reasoner.network.accumulated_entity_count)
 
     def shutdown(self):
         """
