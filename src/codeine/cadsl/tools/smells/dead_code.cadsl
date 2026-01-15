@@ -9,24 +9,27 @@ detector dead_code(category="maintenance", severity="low") {
     param include_private: bool = false;
     param limit: int = 100;
 
+    # Only use oo:Method to avoid double-counting (entities have both py:Method and oo:Method)
     reql {
-        SELECT ?e ?name ?entity_type ?file ?line
+        SELECT ?e ?name ?file ?line
         WHERE {
-            { ?e type {Method} } UNION { ?e type {Function} }
-            ?e type ?entity_type .
+            ?e type oo:Method .
             ?e name ?name .
             ?e inFile ?file .
             ?e atLine ?line .
             FILTER NOT EXISTS { ?caller calls ?e }
             FILTER ( !REGEX(?name, "^__") )
+            FILTER ( {include_private} || !REGEX(?name, "^_") )
+            FILTER ( !REGEX(?file, "test") )
         }
         ORDER BY ?file ?line
+        LIMIT {limit}
     }
-    | select { name, entity_type, file, line, qualified_name: e }
+    | select { name, file, line, qualified_name: e }
     | map {
         ...row,
         issue: "dead_code",
-        message: "Unused {entity_type} '{name}' - no callers found",
+        message: "Unused method '{name}' - no callers found",
         suggestion: "Consider removing if truly unused"
     }
     | emit { findings }

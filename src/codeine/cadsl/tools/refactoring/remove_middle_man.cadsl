@@ -12,11 +12,11 @@ detector remove_middle_man(category="refactoring", severity="low") {
     reql {
         SELECT ?c ?name ?file ?line ?delegate_class (COUNT(?delegation) AS ?delegation_count)
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?name .
             ?c inFile ?file .
             ?c atLine ?line .
-            ?delegation type {Method} .
+            ?delegation type oo:Method .
             ?delegation definedIn ?c .
             ?delegation calls ?target .
             ?target definedIn ?delegate .

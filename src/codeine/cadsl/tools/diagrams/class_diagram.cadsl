@@ -14,17 +14,17 @@ diagram class_diagram() {
     reql {
         SELECT ?class ?class_name ?method_name ?attr_name ?parent_name ?file ?line
         WHERE {
-            ?class type {Class} .
+            ?class type oo:Class .
             ?class name ?class_name .
             ?class inFile ?file .
             ?class atLine ?line .
             OPTIONAL {
-                ?method type {Method} .
+                ?method type oo:Method .
                 ?method definedIn ?class .
                 ?method name ?method_name
             }
             OPTIONAL {
-                ?attr type {Attribute} .
+                ?attr type oo:Attribute .
                 ?attr definedIn ?class .
                 ?attr name ?attr_name
             }

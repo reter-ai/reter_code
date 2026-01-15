@@ -10,7 +10,7 @@ detector untested_functions(category="test_coverage", severity="medium") {
     reql {
         SELECT ?f ?name ?file ?line ?line_count
         WHERE {
-            ?f type {Function} .
+            ?f type oo:Function .
             ?f name ?name .
             ?f inFile ?file .
             ?f atLine ?line .

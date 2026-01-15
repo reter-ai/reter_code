@@ -12,13 +12,13 @@ detector pull_up_method(category="refactoring", severity="medium") {
     reql {
         SELECT ?m1 ?name ?class1 ?class2 ?parent_class ?file ?line ?similarity
         WHERE {
-            ?m1 type {Method} .
+            ?m1 type oo:Method .
             ?m1 name ?name .
             ?m1 inFile ?file .
             ?m1 atLine ?line .
             ?m1 definedIn ?c1 .
             ?c1 name ?class1 .
-            ?m2 type {Method} .
+            ?m2 type oo:Method .
             ?m2 name ?name .
             ?m2 definedIn ?c2 .
             ?c2 name ?class2 .

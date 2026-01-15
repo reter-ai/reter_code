@@ -10,7 +10,7 @@ query get_exceptions() {
     reql {
         SELECT ?e ?name ?parent_name ?file ?line
         WHERE {
-            ?e type {Class} .
+            ?e type oo:Class .
             ?e name ?name .
             ?e inFile ?file .
             ?e atLine ?line .

@@ -12,14 +12,14 @@ detector untyped_functions(category="code_smell", severity="low") {
     reql {
         SELECT ?e ?name ?file ?line ?class_name (COUNT(?param) AS ?param_count) (COUNT(?typed_param) AS ?typed_params)
         WHERE {
-            ?e type {Method} .
+            ?e type oo:Method .
             ?e definedIn ?c .
             ?c name ?class_name .
             ?e name ?name .
             ?e inFile ?file .
             ?e atLine ?line .
-            OPTIONAL { ?param type {Parameter} . ?param ofFunction ?e }
-            OPTIONAL { ?typed_param type {Parameter} . ?typed_param ofFunction ?e . ?typed_param typeAnnotation ?ptype }
+            OPTIONAL { ?param type oo:Parameter . ?param ofFunction ?e }
+            OPTIONAL { ?typed_param type oo:Parameter . ?typed_param ofFunction ?e . ?typed_param typeAnnotation ?ptype }
             FILTER ( {include_private} || !STRSTARTS(?name, "_") )
             FILTER ( !REGEX(?file, "test") )
         }

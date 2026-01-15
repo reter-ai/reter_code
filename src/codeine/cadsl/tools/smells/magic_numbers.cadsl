@@ -13,7 +13,7 @@ detector magic_numbers(category="code_smell", severity="medium") {
     reql {
         SELECT ?value (COUNT(?p) AS ?occurrences)
         WHERE {
-            ?p type {Parameter} .
+            ?p type oo:Parameter .
             ?p defaultValue ?value .
             FILTER ( REGEX(?value, "^-?[0-9]+[.]?[0-9]*$") )
             FILTER ( !{exclude_common} || (?value != "0" && ?value != "1" && ?value != "-1" && ?value != "2") )

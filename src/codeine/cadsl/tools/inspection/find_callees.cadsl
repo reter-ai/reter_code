@@ -11,10 +11,10 @@ query find_callees() {
     reql {
         SELECT ?callee ?callee_name ?callee_file ?callee_line
         WHERE {
-            ?caller type {Method} .
+            ?caller type oo:Method .
             ?caller name "{target}" .
             ?caller calls ?callee .
-            ?callee type {Method} .
+            ?callee type oo:Method .
             ?callee name ?callee_name .
             ?callee inFile ?callee_file .
             ?callee atLine ?callee_line

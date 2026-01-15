@@ -12,7 +12,7 @@ diagram dependency_graph() {
     reql {
         SELECT ?module ?module_name ?imported ?imported_name ?file
         WHERE {
-            ?module type {Module} .
+            ?module type oo:Module .
             ?module name ?module_name .
             ?module inFile ?file .
             ?module imports ?imported .

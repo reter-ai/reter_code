@@ -2,7 +2,6 @@
 Code Inspection Tools Registrar
 
 Consolidates code analysis tools into a single code_inspection MCP tool.
-Supports multiple languages: Python, JavaScript, HTML, C#, C++, and language-independent (oo).
 UML diagram tools have been moved to the unified 'diagram' tool.
 
 Uses CADSL (Code Analysis DSL) tools from cadsl/tools/inspection.
@@ -18,7 +17,6 @@ from ..initialization_progress import (
     ComponentNotReadyError,
 )
 from ..response_truncation import truncate_response
-from ..language_support import LanguageSupport, LanguageType
 
 
 # Action categories and their descriptions
@@ -86,18 +84,11 @@ class CodeInspectionToolsRegistrar(ToolRegistrarBase):
             include_docstrings: bool = True,
             summary_only: bool = False,
             params: Optional[Dict[str, Any]] = None,
-            language: str = "oo"
         ) -> Dict[str, Any]:
             """
             Unified code inspection tool for Python analysis.
 
             **See: python://reter/tools for complete documentation**
-
-            Supports multiple languages via the `language` parameter:
-            - "oo" (default): Language-independent queries (matches all languages)
-            - "python" or "py": Python-specific queries
-            - "javascript" or "js": JavaScript-specific queries
-            - "html" or "htm": HTML document queries (for documents, forms, scripts, event handlers)
 
             For UML diagrams, use the 'diagram' tool instead.
 
@@ -172,25 +163,10 @@ class CodeInspectionToolsRegistrar(ToolRegistrarBase):
                 include_docstrings: Include docstrings (default: True)
                 summary_only: Return summary only for smaller response (default: False)
                 params: Additional action-specific parameters as dict
-                language: Programming language to analyze (default: "oo")
-                    - "oo": Language-independent (matches Python + JavaScript)
-                    - "python" or "py": Python only
-                    - "javascript" or "js": JavaScript only
-                    - "html" or "htm": HTML documents only
 
             Returns:
                 Action-specific results with success status
             """
-            # Validate language parameter
-            try:
-                LanguageSupport.get_language(language)
-            except ValueError as e:
-                return {
-                    "success": False,
-                    "error": str(e),
-                    "supported_languages": LanguageSupport.supported_languages()
-                }
-
             # Code inspection requires RETER to be ready
             try:
                 require_default_instance()
@@ -233,7 +209,6 @@ class CodeInspectionToolsRegistrar(ToolRegistrarBase):
                     "summary_only": summary_only,
                     **extra
                 },
-                language=language,
                 instance_name="default"
             )
 

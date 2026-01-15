@@ -10,7 +10,7 @@ query get_class_hierarchy() {
     reql {
         SELECT ?c ?name ?parent_name ?child_name
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?name .
             OPTIONAL { ?c inheritsFrom ?parent . ?parent name ?parent_name }
             OPTIONAL { ?child inheritsFrom ?c . ?child name ?child_name }

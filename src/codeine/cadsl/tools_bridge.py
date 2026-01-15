@@ -173,7 +173,6 @@ class CADSLToolModule:
             ctx_with_defaults = Context(
                 reter=ctx.reter,
                 params=merged_params,
-                language=ctx.language,
                 instance_name=ctx.instance_name,
             )
 

@@ -11,7 +11,7 @@ detector speculative_generality(category="code_smell", severity="low") {
     reql {
         SELECT ?c ?name ?file ?line ?subclass_name (COUNT(?sub) AS ?subclass_count)
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?name .
             ?c inFile ?file .
             ?c atLine ?line .

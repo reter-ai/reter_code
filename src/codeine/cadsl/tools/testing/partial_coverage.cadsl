@@ -10,11 +10,11 @@ detector partial_class_coverage(category="test_coverage", severity="low") {
     reql {
         SELECT ?c ?name ?file ?line (COUNT(?method) AS ?total_methods) (COUNT(?tested) AS ?tested_methods)
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?name .
             ?c inFile ?file .
             ?c atLine ?line .
-            ?method type {Method} .
+            ?method type oo:Method .
             ?method definedIn ?c .
             ?method name ?method_name .
             FILTER ( !STRSTARTS(?method_name, "_") )

@@ -42,7 +42,7 @@ def test_load_simple_query():
         param limit: int = 100;
 
         reql {
-            SELECT ?x ?name WHERE { ?x type {Item} . ?x name ?name }
+            SELECT ?x ?name WHERE { ?x type oo:Item . ?x name ?name }
         }
         | select { name }
         | limit { {limit} }
@@ -78,7 +78,7 @@ def test_load_detector_with_python():
         param threshold: int = 10;
 
         reql {
-            SELECT ?c ?name WHERE { ?c type {Class} . ?c name ?name }
+            SELECT ?c ?name WHERE { ?c type oo:Class . ?c name ?name }
         }
         | python {
             # Process results
@@ -114,20 +114,20 @@ def test_load_multiple_tools():
     source = '''
     query get_modules() {
         """Get all modules."""
-        reql { SELECT ?m WHERE { ?m type {Module} } }
+        reql { SELECT ?m WHERE { ?m type oo:Module } }
         | emit { modules }
     }
 
     query get_classes() {
         """Get all classes."""
-        reql { SELECT ?c WHERE { ?c type {Class} } }
+        reql { SELECT ?c WHERE { ?c type oo:Class } }
         | emit { classes }
     }
 
     detector find_god_classes(category="design", severity="high") {
         """Find god classes."""
         param max_methods: int = 15;
-        reql { SELECT ?c WHERE { ?c type {Class} } }
+        reql { SELECT ?c WHERE { ?c type oo:Class } }
         | filter { method_count > {max_methods} }
         | emit { findings }
     }
@@ -157,7 +157,7 @@ def test_load_from_file():
     source = '''
     query file_test() {
         """Tool loaded from file."""
-        reql { SELECT ?x WHERE { ?x type {Test} } }
+        reql { SELECT ?x WHERE { ?x type oo:Test } }
         | emit { results }
     }
     '''
@@ -193,7 +193,7 @@ def test_load_from_directory():
     tool1 = '''
     query dir_tool1() {
         """First tool in directory."""
-        reql { SELECT ?x WHERE { ?x type {A} } }
+        reql { SELECT ?x WHERE { ?x type oo:A } }
         | emit { results }
     }
     '''
@@ -201,13 +201,13 @@ def test_load_from_directory():
     tool2 = '''
     query dir_tool2() {
         """Second tool in directory."""
-        reql { SELECT ?x WHERE { ?x type {B} } }
+        reql { SELECT ?x WHERE { ?x type oo:B } }
         | emit { results }
     }
 
     detector dir_detector() {
         """Detector in directory."""
-        reql { SELECT ?x WHERE { ?x type {C} } }
+        reql { SELECT ?x WHERE { ?x type oo:C } }
         | emit { findings }
     }
     '''
@@ -246,7 +246,7 @@ def test_load_directory_recursive():
     tool1 = '''
     query top_level() {
         """Top level tool."""
-        reql { SELECT ?x WHERE { ?x type {A} } }
+        reql { SELECT ?x WHERE { ?x type oo:A } }
         | emit { results }
     }
     '''
@@ -254,7 +254,7 @@ def test_load_directory_recursive():
     tool2 = '''
     query nested() {
         """Nested tool."""
-        reql { SELECT ?x WHERE { ?x type {B} } }
+        reql { SELECT ?x WHERE { ?x type oo:B } }
         | emit { results }
     }
     '''
@@ -340,7 +340,7 @@ def test_validation_error():
         """Tool with invalid param type."""
         param x: unknown_type = 10;
 
-        reql { SELECT ?x WHERE { ?x type {A} } }
+        reql { SELECT ?x WHERE { ?x type oo:A } }
         | emit { results }
     }
     '''
@@ -386,7 +386,7 @@ def test_convenience_functions():
     source = '''
     query test_alias() {
         """Test alias."""
-        reql { SELECT ?x WHERE { ?x type {A} } }
+        reql { SELECT ?x WHERE { ?x type oo:A } }
         | emit { results }
     }
     '''
@@ -428,7 +428,7 @@ def test_load_result_bool():
 
     source = '''
     query test() {
-        reql { SELECT ?x WHERE { ?x type {A} } }
+        reql { SELECT ?x WHERE { ?x type oo:A } }
         | emit { results }
     }
     '''

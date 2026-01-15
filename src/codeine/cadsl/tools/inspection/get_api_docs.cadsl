@@ -10,11 +10,11 @@ query get_api_docs() {
     reql {
         SELECT ?e ?name ?entity_type ?docstring ?file ?line
         WHERE {
-            { ?e type {Class} }
+            { ?e type oo:Class }
             UNION
-            { ?e type {Method} }
+            { ?e type oo:Method }
             UNION
-            { ?e type {Function} }
+            { ?e type oo:Function }
             ?e name ?name .
             ?e inFile ?file .
             ?e atLine ?line .

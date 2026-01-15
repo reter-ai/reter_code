@@ -14,7 +14,7 @@ detector data_class_semantic(category="design", severity="low") {
     reql {
         SELECT ?c ?name ?file ?line
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?name .
             ?c inFile ?file .
             ?c atLine ?line

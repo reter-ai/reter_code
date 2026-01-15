@@ -35,7 +35,7 @@ query list_modules() {
     reql {
         SELECT ?m ?name ?file
         WHERE {
-            ?m type {Module} .
+            ?m type oo:Module .
             ?m name ?name .
             ?m inFile ?file
         }
@@ -57,9 +57,9 @@ detector god_class(category="design", severity="high") {
     reql {
         SELECT ?c ?name (COUNT(?m) AS ?method_count)
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?name .
-            ?m type {Method} .
+            ?m type oo:Method .
             ?m definedIn ?c
         }
         GROUP BY ?c ?name
@@ -84,8 +84,8 @@ detector circular_imports(category="dependencies", severity="high", security="st
     reql {
         SELECT ?m1 ?m2 ?name1 ?name2
         WHERE {
-            ?m1 type {Module} . ?m1 name ?name1 .
-            ?m2 type {Module} . ?m2 name ?name2 .
+            ?m1 type oo:Module . ?m1 name ?name1 .
+            ?m2 type oo:Module . ?m2 name ?name2 .
             ?m1 imports ?m2
         }
     }
@@ -113,7 +113,7 @@ diagram class_hierarchy() {
     reql {
         SELECT ?c ?className ?base ?baseName
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?className .
             OPTIONAL {
                 ?c inheritsFrom ?base .
@@ -131,12 +131,12 @@ diagram class_hierarchy() {
 MULTIPLE_TOOLS = '''
 query list_classes() {
     param limit: int = 50;
-    reql { SELECT ?c WHERE { ?c type {Class} } LIMIT {limit} }
+    reql { SELECT ?c WHERE { ?c type oo:Class } LIMIT {limit} }
     | emit { classes }
 }
 
 detector empty_class(category="code_smell", severity="low") {
-    reql { SELECT ?c WHERE { ?c type {Class} } }
+    reql { SELECT ?c WHERE { ?c type oo:Class } }
     | filter { method_count == 0 }
     | emit { findings }
 }
@@ -146,7 +146,7 @@ COMPLEX_CONDITIONS = '''
 detector complex_filter(category="test", severity="medium") {
     param threshold: int = 10;
 
-    reql { SELECT ?x ?name ?count WHERE { ?x type {Class} } }
+    reql { SELECT ?x ?name ?count WHERE { ?x type oo:Class } }
     | filter { count > {threshold} and not (name starts_with "_") }
     | filter { name matches "^[A-Z]" or count >= 100 }
     | filter { status in ["active", "pending"] }
@@ -164,7 +164,7 @@ detector broken {
 INVALID_TYPE = '''
 query bad_types() {
     param count: integer = 10;
-    reql { SELECT ?x WHERE { ?x type {Class} } }
+    reql { SELECT ?x WHERE { ?x type oo:Class } }
     | emit { results }
 }
 '''
@@ -174,8 +174,8 @@ query bad_types() {
 # TEST RUNNER
 # ============================================================
 
-def test_case(name: str, source: str, expect_success: bool = True) -> bool:
-    """Run a single test case."""
+def run_test_case(name: str, source: str, expect_success: bool = True) -> bool:
+    """Run a single test case (helper function, not a pytest test)."""
     print(f"\n{'='*60}")
     print(f"TEST: {name}")
     print(f"{'='*60}")
@@ -250,7 +250,7 @@ def run_all_tests() -> int:
 
     for name, source, expect_success in tests:
         try:
-            if test_case(name, source, expect_success):
+            if run_test_case(name, source, expect_success):
                 passed += 1
             else:
                 failed += 1

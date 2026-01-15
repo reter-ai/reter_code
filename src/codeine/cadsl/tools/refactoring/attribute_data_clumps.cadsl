@@ -12,11 +12,11 @@ detector attribute_data_clumps(category="refactoring", severity="medium") {
     reql {
         SELECT ?c ?name ?file ?line (COUNT(?attr) AS ?attr_count)
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?name .
             ?c inFile ?file .
             ?c atLine ?line .
-            ?attr type {Field} .
+            ?attr type oo:Field .
             ?attr definedIn ?c
         }
         GROUP BY ?c ?name ?file ?line

@@ -10,9 +10,9 @@ detector feature_envy(category="design", severity="medium") {
     param limit: int = 100;
 
     reql {
-        SELECT ?m ?name ?class_name ?file ?line (COUNT(?ext_call) AS ?external_calls)
+        SELECT ?m ?name ?class_name ?ext_class_name ?file ?line (COUNT(?ext_call) AS ?external_calls)
         WHERE {
-            ?m type {Method} .
+            ?m type oo:Method .
             ?m name ?name .
             ?m inFile ?file .
             ?m atLine ?line .
@@ -20,9 +20,10 @@ detector feature_envy(category="design", severity="medium") {
             ?c name ?class_name .
             ?m calls ?ext_call .
             ?ext_call definedIn ?ext_class .
-            FILTER ( ?ext_class != ?c )
+            ?ext_class name ?ext_class_name .
+            FILTER ( ?class_name != ?ext_class_name )
         }
-        GROUP BY ?m ?name ?class_name ?file ?line
+        GROUP BY ?m ?name ?class_name ?ext_class_name ?file ?line
         HAVING (?external_calls >= {min_external})
         ORDER BY DESC(?external_calls)
         LIMIT {limit}

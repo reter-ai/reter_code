@@ -15,14 +15,14 @@ detector find_extraction_opportunities(category="refactoring", severity="high") 
     reql {
         SELECT ?m ?name ?file ?line ?line_count ?class_name (COUNT(?param) AS ?param_count)
         WHERE {
-            ?m type {Method} .
+            ?m type oo:Method .
             ?m name ?name .
             ?m inFile ?file .
             ?m atLine ?line .
             ?m definedIn ?c .
             ?c name ?class_name .
             OPTIONAL { ?m lineCount ?line_count }
-            OPTIONAL { ?param type {Parameter} . ?param ofFunction ?m }
+            OPTIONAL { ?param type oo:Parameter . ?param ofFunction ?m }
         }
         GROUP BY ?m ?name ?file ?line ?line_count ?class_name
     }

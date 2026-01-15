@@ -11,7 +11,7 @@ detector push_down_method(category="refactoring", severity="low") {
     reql {
         SELECT ?m ?name ?class_name ?file ?line
         WHERE {
-            ?m type {Method} .
+            ?m type oo:Method .
             ?m name ?name .
             ?m inFile ?file .
             ?m atLine ?line .

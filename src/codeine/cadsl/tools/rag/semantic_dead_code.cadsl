@@ -14,7 +14,7 @@ detector semantic_dead_code(category="maintenance", severity="medium") {
     reql {
         SELECT ?e ?name ?file ?line ?line_count ?class_name
         WHERE {
-            ?e type {Method} .
+            ?e type oo:Method .
             ?e name ?name .
             ?e inFile ?file .
             ?e atLine ?line .

@@ -12,25 +12,25 @@ detector flag_arguments(category="code_smell", severity="medium") {
         SELECT ?func ?name ?file ?line ?param_name ?class_name
         WHERE {
             {
-                ?func type {Function} .
+                ?func type oo:Function .
                 ?func name ?name .
                 ?func inFile ?file .
                 ?func atLine ?line .
-                ?param parameterOf ?func .
+                ?param ofFunction ?func .
                 ?param name ?param_name .
-                ?param parameterType ?ptype .
+                ?param paramType ?ptype .
                 FILTER ( ?ptype = "bool" || ?ptype = "boolean" )
                 OPTIONAL { ?func definedIn ?c . ?c name ?class_name }
             }
             UNION
             {
-                ?func type {Method} .
+                ?func type oo:Method .
                 ?func name ?name .
                 ?func inFile ?file .
                 ?func atLine ?line .
-                ?param parameterOf ?func .
+                ?param ofFunction ?func .
                 ?param name ?param_name .
-                ?param parameterType ?ptype .
+                ?param paramType ?ptype .
                 FILTER ( ?ptype = "bool" || ?ptype = "boolean" )
                 OPTIONAL { ?func definedIn ?c . ?c name ?class_name }
             }

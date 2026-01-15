@@ -11,7 +11,7 @@ detector silent_exception_swallowing(category="exception_handling", severity="cr
     reql {
         SELECT ?h ?exception_type ?func_name ?file ?line ?body_size
         WHERE {
-            ?h type {CatchClause} .
+            ?h type oo:CatchClause .
             ?h inFile ?file .
             ?h atLine ?line .
             ?h bodySize ?body_size .

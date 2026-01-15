@@ -10,7 +10,7 @@ detector find_unused_imports(category="dependencies", severity="low") {
     reql {
         SELECT ?i ?import_name ?file ?line
         WHERE {
-            ?i type {Import} .
+            ?i type oo:Import .
             ?i name ?import_name .
             ?i inFile ?file .
             ?i atLine ?line .

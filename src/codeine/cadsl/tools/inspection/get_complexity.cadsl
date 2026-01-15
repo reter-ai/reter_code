@@ -12,10 +12,10 @@ query get_complexity() {
     reql {
         SELECT ?c ?name ?file (COUNT(?method) AS ?method_count)
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?name .
             ?c inFile ?file .
-            OPTIONAL { ?method type {Method} . ?method definedIn ?c }
+            OPTIONAL { ?method type oo:Method . ?method definedIn ?c }
         }
         GROUP BY ?c ?name ?file
         ORDER BY DESC(?method_count)

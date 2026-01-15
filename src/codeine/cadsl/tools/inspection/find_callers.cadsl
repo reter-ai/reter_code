@@ -10,7 +10,7 @@ query find_callers() {
     reql {
         SELECT ?caller ?caller_name ?caller_file ?caller_line ?callee
         WHERE {
-            { ?caller type {Method} } UNION { ?caller type {Function} }
+            { ?caller type oo:Method } UNION { ?caller type oo:Function }
             ?caller calls ?callee .
             FILTER(CONTAINS(?callee, "{target}"))
             ?caller name ?caller_name .

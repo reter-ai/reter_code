@@ -667,7 +667,7 @@ INT: /[0-9]+/
 // Uses a custom pattern to match balanced braces up to 3 levels deep
 // Level 0: outer braces
 // Level 1: WHERE { ... }, OPTIONAL { ... }
-// Level 2: {Class}, {Module}, {param}
+// Level 2: {param} for parameter placeholders (e.g., {limit}, {target})
 // Level 3: for safety
 REQL_BLOCK.2: /\{(?:[^{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*\}/
 

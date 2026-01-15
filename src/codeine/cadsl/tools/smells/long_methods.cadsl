@@ -12,7 +12,7 @@ detector long_methods(category="size", severity="medium") {
     reql {
         SELECT ?m ?name ?class_name ?file ?line ?line_count
         WHERE {
-            ?m type {Method} .
+            ?m type oo:Method .
             ?m name ?name .
             ?m inFile ?file .
             ?m atLine ?line .

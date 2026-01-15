@@ -11,7 +11,7 @@ detector error_codes_over_exceptions(category="exception_handling", severity="me
     reql {
         SELECT ?f ?name ?file ?line ?return_pattern
         WHERE {
-            { ?f type {Function} } UNION { ?f type {Method} }
+            { ?f type oo:Function } UNION { ?f type oo:Method }
             ?f name ?name .
             ?f inFile ?file .
             ?f atLine ?line .

@@ -11,7 +11,7 @@ detector too_general_exceptions(category="exception_handling", severity="high") 
     reql {
         SELECT ?h ?exception_type ?func_name ?file ?line
         WHERE {
-            ?h type {CatchClause} .
+            ?h type oo:CatchClause .
             ?h inFile ?file .
             ?h atLine ?line .
             ?h exceptionType ?exception_type .

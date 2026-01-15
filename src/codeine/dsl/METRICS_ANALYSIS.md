@@ -24,7 +24,7 @@ The Python fact extraction (`PythonFactExtractionVisitor.cpp`) emits the followi
 ```sql
 SELECT ?m ?name ?line_count
 WHERE {
-    ?m type {Method} .
+    ?m type oo:Method .
     ?m name ?name .
     ?m lineCount ?line_count .
 }
@@ -49,9 +49,9 @@ FILTER { ?method_count > 15 }
 ```sql
 SELECT ?c ?name (COUNT(?method) AS ?method_count)
 WHERE {
-    ?c type {Class} .
+    ?c type oo:Class .
     ?c name ?name .
-    ?method type {Method} .
+    ?method type oo:Method .
     ?method definedIn ?c .
 }
 GROUP BY ?c ?name
@@ -69,9 +69,9 @@ HAVING (?method_count > 15)
 ```sql
 SELECT ?m ?name (COUNT(?param) AS ?param_count)
 WHERE {
-    ?m type {Method} .
+    ?m type oo:Method .
     ?m name ?name .
-    ?param type {Parameter} .
+    ?param type oo:Parameter .
     ?param ofFunction ?m .
 }
 GROUP BY ?m ?name
@@ -89,9 +89,9 @@ HAVING (?param_count > 5)
 ```sql
 SELECT ?c ?name (COUNT(?attr) AS ?attr_count)
 WHERE {
-    ?c type {Class} .
+    ?c type oo:Class .
     ?c name ?name .
-    ?attr type {Field} .
+    ?attr type oo:Field .
     ?attr definedIn ?c .
 }
 GROUP BY ?c ?name
@@ -108,7 +108,7 @@ GROUP BY ?c ?name
 ```sql
 SELECT ?m ?name (COUNT(?caller) AS ?caller_count)
 WHERE {
-    ?m type {Method} .
+    ?m type oo:Method .
     ?m name ?name .
     ?caller calls ?m .
 }
@@ -126,7 +126,7 @@ GROUP BY ?m ?name
 ```sql
 SELECT ?m ?name (COUNT(?callee) AS ?fanout)
 WHERE {
-    ?m type {Method} .
+    ?m type oo:Method .
     ?m name ?name .
     ?m calls ?callee .
 }
@@ -144,7 +144,7 @@ GROUP BY ?m ?name
 ```sql
 SELECT ?c ?name (COUNT(?sub) AS ?subclass_count)
 WHERE {
-    ?c type {Class} .
+    ?c type oo:Class .
     ?c name ?name .
     ?sub inheritsFrom ?c .
 }
@@ -157,9 +157,9 @@ GROUP BY ?c ?name
 ```sql
 SELECT ?c ?name (COUNT(?setter) AS ?setter_count)
 WHERE {
-    ?c type {Class} .
+    ?c type oo:Class .
     ?c name ?name .
-    ?setter type {Method} .
+    ?setter type oo:Method .
     ?setter definedIn ?c .
     ?setter name ?setter_name .
     FILTER { STRSTARTS(?setter_name, "set_") || STRSTARTS(?setter_name, "set") }
@@ -233,10 +233,10 @@ Some metrics not directly emitted can be computed via REQL patterns:
 ```sql
 SELECT ?c1 ?class1 ?c2 ?class2 (COUNT(?shared_name) AS ?shared_methods)
 WHERE {
-    ?c1 type {Class} . ?c1 name ?class1 .
-    ?c2 type {Class} . ?c2 name ?class2 .
-    ?m1 type {Method} . ?m1 definedIn ?c1 . ?m1 name ?shared_name .
-    ?m2 type {Method} . ?m2 definedIn ?c2 . ?m2 name ?shared_name .
+    ?c1 type oo:Class . ?c1 name ?class1 .
+    ?c2 type oo:Class . ?c2 name ?class2 .
+    ?m1 type oo:Method . ?m1 definedIn ?c1 . ?m1 name ?shared_name .
+    ?m2 type oo:Method . ?m2 definedIn ?c2 . ?m2 name ?shared_name .
     FILTER { ?c1 != ?c2 }
 }
 GROUP BY ?c1 ?class1 ?c2 ?class2
@@ -333,11 +333,11 @@ WHERE {
 reql('''
     SELECT ?c ?name ?file ?line (COUNT(?method) AS ?method_count)
     WHERE {
-        ?c type {Class} .
+        ?c type oo:Class .
         ?c name ?name .
         ?c inFile ?file .
         ?c atLine ?line .
-        ?method type {Method} .
+        ?method type oo:Method .
         ?method definedIn ?c .
     }
     GROUP BY ?c ?name ?file ?line
@@ -352,12 +352,12 @@ reql('''
 reql('''
     SELECT ?c ?name ?file ?line (COUNT(?method) AS ?method_count) (COUNT(?attr) AS ?attr_count)
     WHERE {
-        ?c type {Class} .
+        ?c type oo:Class .
         ?c name ?name .
         ?c inFile ?file .
         ?c atLine ?line .
-        OPTIONAL { ?method type {Method} . ?method definedIn ?c }
-        OPTIONAL { ?attr type {Field} . ?attr definedIn ?c }
+        OPTIONAL { ?method type oo:Method . ?method definedIn ?c }
+        OPTIONAL { ?attr type oo:Field . ?attr definedIn ?c }
     }
     GROUP BY ?c ?name ?file ?line
     HAVING (?attr_count >= {min_attributes} && ?method_count <= {max_methods})
@@ -370,11 +370,11 @@ reql('''
 reql('''
     SELECT ?c ?name ?file ?line (COUNT(?setter) AS ?setter_count)
     WHERE {
-        ?c type {Class} .
+        ?c type oo:Class .
         ?c name ?name .
         ?c inFile ?file .
         ?c atLine ?line .
-        ?setter type {Method} .
+        ?setter type oo:Method .
         ?setter definedIn ?c .
         ?setter name ?setter_name .
         FILTER { STRSTARTS(?setter_name, "set_") || STRSTARTS(?setter_name, "set") }
@@ -390,11 +390,11 @@ reql('''
 reql('''
     SELECT ?m ?name ?file ?line (COUNT(?primitive_param) AS ?primitive_params)
     WHERE {
-        ?m type {Method} .
+        ?m type oo:Method .
         ?m name ?name .
         ?m inFile ?file .
         ?m atLine ?line .
-        ?primitive_param type {Parameter} .
+        ?primitive_param type oo:Parameter .
         ?primitive_param ofFunction ?m .
         ?primitive_param typeAnnotation ?ptype .
         FILTER { REGEX(?ptype, "^(str|int|float|bool|bytes)$") }
@@ -410,7 +410,7 @@ reql('''
 reql('''
     SELECT ?m ?name ?file ?line ?line_count
     WHERE {
-        ?m type {Method} .
+        ?m type oo:Method .
         ?m name ?name .
         ?m inFile ?file .
         ?m atLine ?line .

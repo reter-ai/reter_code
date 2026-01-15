@@ -11,9 +11,9 @@ query find_tests() {
     reql {
         SELECT ?t ?test_name ?test_type ?file ?line
         WHERE {
-            { ?t type {Class} }
+            { ?t type oo:Class }
             UNION
-            { ?t type {Function} }
+            { ?t type oo:Function }
             ?t name ?test_name .
             ?t inFile ?file .
             ?t atLine ?line .

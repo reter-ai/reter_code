@@ -11,14 +11,14 @@ diagram coupling_matrix() {
     reql {
         SELECT ?class ?class_name ?method ?method_name ?calls ?calls_name ?target_class
         WHERE {
-            ?class type {Class} .
+            ?class type oo:Class .
             ?class name ?class_name .
-            ?method type {Method} .
+            ?method type oo:Method .
             ?method definedIn ?class .
             ?method name ?method_name .
             OPTIONAL {
                 ?method calls ?calls .
-                ?calls type {Method} .
+                ?calls type oo:Method .
                 ?calls name ?calls_name .
                 ?calls definedIn ?tc .
                 ?tc name ?target_class

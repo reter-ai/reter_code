@@ -13,7 +13,7 @@ query describe_class() {
     reql {
         SELECT ?c ?name ?file ?line ?docstring ?parent_name
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?name .
             ?c inFile ?file .
             ?c atLine ?line .

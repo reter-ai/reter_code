@@ -13,11 +13,11 @@ detector alternative_interfaces(category="code_smell", severity="medium") {
     reql {
         SELECT ?c ?class_name ?method_name ?file ?line
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?class_name .
             ?c inFile ?file .
             ?c atLine ?line .
-            ?m type {Method} .
+            ?m type oo:Method .
             ?m definedIn ?c .
             ?m name ?method_name .
             FILTER ( !STRSTARTS(?method_name, "_") )

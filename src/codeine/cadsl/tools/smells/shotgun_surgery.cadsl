@@ -12,7 +12,7 @@ detector shotgun_surgery(category="design", severity="high") {
     reql {
         SELECT ?e ?name ?file ?line (COUNT(?caller) AS ?dependent_count)
         WHERE {
-            { ?e type {Class} } UNION { ?e type {Method} }
+            { ?e type oo:Class } UNION { ?e type oo:Method }
             ?e name ?name .
             ?e inFile ?file .
             ?e atLine ?line .

@@ -12,7 +12,7 @@ query list_functions() {
     reql {
         SELECT ?f ?name ?file ?line ?returnType
         WHERE {
-            ?f type {Function} .
+            ?f type oo:Function .
             ?f name ?name .
             ?f inFile ?file .
             ?f atLine ?line .

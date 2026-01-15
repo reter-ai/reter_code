@@ -14,7 +14,7 @@ detector auth_review(category="security", severity="high") {
     reql {
         SELECT ?m ?name ?file ?line ?line_count ?class_name ?docstring
         WHERE {
-            ?m type {Method} .
+            ?m type oo:Method .
             ?m name ?name .
             ?m inFile ?file .
             ?m atLine ?line .

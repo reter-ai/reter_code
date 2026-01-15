@@ -12,7 +12,7 @@ detector replace_conditional_with_polymorphism(category="refactoring", severity=
     reql {
         SELECT ?m ?name ?class_name ?file ?line ?branch_count
         WHERE {
-            ?m type {Method} .
+            ?m type oo:Method .
             ?m name ?name .
             ?m inFile ?file .
             ?m atLine ?line .

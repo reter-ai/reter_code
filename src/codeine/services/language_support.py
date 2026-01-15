@@ -4,6 +4,9 @@ Language Support Module for Multi-Language Code Analysis.
 This module provides utilities for language-independent code analysis by managing
 ontology prefixes (oo:, py:, js:) used in REQL queries.
 
+NOTE: REQL queries should use explicit prefixes directly (e.g., oo:Class, py:Method).
+The placeholder resolution mechanism has been removed.
+
 Usage:
     from codeine.services.language_support import LanguageSupport, lang
 
@@ -11,12 +14,8 @@ Usage:
     prefix = LanguageSupport.get_prefix("python")  # Returns "py"
     prefix = LanguageSupport.get_prefix("oo")      # Returns "oo" (default)
 
-    # Build concept string
-    concept = lang.concept("Class", "python")      # Returns 'py:Class'
-    concept = lang.concept("Class")                # Returns 'oo:Class' (default)
-
-    # Build REQL query fragment
-    query = lang.query_concept("?c", "Class", "js")  # Returns '?c type js:Class'
+    # Build relation string
+    relation = lang.relation("inheritsFrom", "py")  # Returns 'py:inheritsFrom'
 """
 
 from typing import Literal, Optional, Dict, List
@@ -209,29 +208,6 @@ class LanguageSupport:
         return cls.PREFIXES[lang]
 
     @classmethod
-    def concept(cls, entity: str, language: LanguageType = "oo") -> str:
-        """
-        Build a concept string for an entity type.
-
-        Args:
-            entity: Entity type name (e.g., "Class", "Method", "Function")
-            language: Target language ("oo", "python", "javascript", etc.)
-
-        Returns:
-            Fully qualified concept string (e.g., "py:Class", "oo:Method")
-        """
-        prefix = cls.get_prefix(language)
-
-        # Check for entity mapping
-        if entity in cls.ENTITY_MAPPINGS:
-            lang = cls.get_language(language)
-            mapped_entity = cls.ENTITY_MAPPINGS[entity].get(lang)
-            return f"{prefix}:{mapped_entity}"
-
-        # Default: use entity name as-is with prefix
-        return f"{prefix}:{entity}"
-
-    @classmethod
     def relation(cls, rel: str, language: LanguageType = "oo") -> str:
         """
         Build a relation/property string.
@@ -245,22 +221,6 @@ class LanguageSupport:
         """
         prefix = cls.get_prefix(language)
         return f"{prefix}:{rel}"
-
-    @classmethod
-    def query_concept(cls, var: str, entity: str, language: LanguageType = "oo") -> str:
-        """
-        Build a REQL concept clause.
-
-        Args:
-            var: Variable name (e.g., "?c", "?method")
-            entity: Entity type (e.g., "Class", "Method")
-            language: Target language
-
-        Returns:
-            REQL clause (e.g., '?c type py:Class')
-        """
-        concept = cls.concept(entity, language)
-        return f'{var} type {concept}'
 
     @classmethod
     def query_relation(cls, subj: str, rel: str, obj: str, language: LanguageType = "oo") -> str:
@@ -278,24 +238,6 @@ class LanguageSupport:
         """
         relation = cls.relation(rel, language)
         return f'{subj} {relation} {obj}'
-
-    @classmethod
-    def filter_type(cls, var: str, *entity_types: str, language: LanguageType = "oo") -> str:
-        """
-        Build a FILTER clause for entity types.
-
-        Args:
-            var: Variable to filter (e.g., "?type")
-            entity_types: One or more entity types to match
-            language: Target language
-
-        Returns:
-            FILTER clause (e.g., 'FILTER(?type = "py:Function" || ?type = "py:Method")')
-        """
-        conditions = [f'{var} = "{cls.concept(t, language)}"' for t in entity_types]
-        if len(conditions) == 1:
-            return f"FILTER({conditions[0]})"
-        return f"FILTER({' || '.join(conditions)})"
 
     @classmethod
     def supported_languages(cls) -> List[str]:

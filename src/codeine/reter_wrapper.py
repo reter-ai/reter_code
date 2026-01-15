@@ -2012,6 +2012,55 @@ class ReterWrapper:
         # Mark dirty since we've modified the network
         self._dirty = True
 
+    def end_entity_accumulation_with_progress(
+        self,
+        batch_size: int = 1000,
+        progress_callback: callable = None
+    ) -> int:
+        """
+        End entity accumulation mode with progress reporting.
+
+        Processes facts in batches and calls progress_callback after each batch.
+
+        Args:
+            batch_size: Number of facts to process per batch (default 1000)
+            progress_callback: Optional callback(processed, total) called after each batch
+
+        Returns:
+            Total number of facts processed
+
+        Example:
+            def on_progress(processed, total):
+                print(f"Inserting facts: {processed}/{total} ({100*processed//total}%)")
+
+            total = reter.end_entity_accumulation_with_progress(
+                batch_size=1000,
+                progress_callback=on_progress
+            )
+        """
+        total = 0
+        while True:
+            total_count, processed_count = safe_cpp_call(
+                self.reasoner.network.end_entity_accumulation_batched,
+                batch_size
+            )
+
+            # First call sets total
+            if total == 0:
+                total = total_count
+
+            # Report progress
+            if progress_callback and total > 0:
+                progress_callback(processed_count, total)
+
+            # Done when all processed
+            if processed_count >= total_count:
+                break
+
+        # Mark dirty since we've modified the network
+        self._dirty = True
+        return total
+
     def is_entity_accumulation_active(self) -> bool:
         """
         Check if entity accumulation mode is currently active.

@@ -11,7 +11,7 @@ query get_package_structure() {
     reql {
         SELECT ?m ?name ?file
         WHERE {
-            ?m type {Module} .
+            ?m type oo:Module .
             ?m name ?name .
             ?m inFile ?file
         }

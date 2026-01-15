@@ -12,13 +12,13 @@ detector collapse_hierarchy_candidates(category="inheritance", severity="low") {
     reql {
         SELECT ?child ?child_name ?parent_name ?file ?line (COUNT(?added_method) AS ?added_methods)
         WHERE {
-            ?child type {Class} .
+            ?child type oo:Class .
             ?child name ?child_name .
             ?child inFile ?file .
             ?child atLine ?line .
             ?child inheritsFrom ?parent .
             ?parent name ?parent_name .
-            ?added_method type {Method} .
+            ?added_method type oo:Method .
             ?added_method definedIn ?child
         }
         GROUP BY ?child ?child_name ?parent_name ?file ?line

@@ -109,35 +109,19 @@ class ArrowSource(ABC):
 
 @dataclass
 class ArrowREQLSource(ArrowSource):
-    """REQL query source that returns Arrow table directly."""
-    query: str
+    """REQL query source that returns Arrow table directly.
 
-    # Language-specific concept placeholders
-    CONCEPT_PLACEHOLDERS = [
-        "CodeEntity", "Module", "Class", "Function", "Method", "Constructor",
-        "Parameter", "Import", "Export", "Assignment", "Field", "Attribute",
-        "TryBlock", "CatchClause", "ThrowStatement", "ReturnStatement", "Call",
-        "ExceptHandler", "RaiseStatement", "FinallyBlock", "ArrowFunction",
-        "Variable", "FinallyClause", "Namespace", "TranslationUnit", "Struct",
-        "Destructor", "Operator", "Enum", "EnumClass", "Enumerator",
-        "UsingDirective", "UsingDeclaration", "Inheritance",
-        "Document", "Element", "Script", "ScriptReference", "StyleSheet",
-        "Form", "FormInput", "Link", "EventHandler", "Meta", "Image", "Iframe",
-    ]
+    REQL queries must use explicit ontology prefixes for entity types:
+    - oo:Class, oo:Method, oo:Function (language-independent)
+    - py:Class, py:Method (Python-specific)
+    - js:Class, js:Function (JavaScript-specific)
+    """
+    query: str
 
     def execute(self, ctx: Context) -> PipelineResult[pa.Table]:
         """Execute REQL query and return Arrow table directly."""
         try:
-            from codeine.services.language_support import LanguageSupport
-
             query = self.query
-
-            # Substitute language-specific concept placeholders
-            for concept in self.CONCEPT_PLACEHOLDERS:
-                placeholder = "{" + concept + "}"
-                if placeholder in query:
-                    resolved = LanguageSupport.concept(concept, ctx.language)
-                    query = query.replace(placeholder, resolved)
 
             # Substitute parameters
             for key, value in ctx.params.items():

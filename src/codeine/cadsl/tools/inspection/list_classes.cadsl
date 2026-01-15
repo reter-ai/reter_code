@@ -12,11 +12,11 @@ query list_classes() {
     reql {
         SELECT ?c ?name ?file ?line (COUNT(?method) AS ?methodCount)
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?name .
             ?c inFile ?file .
             ?c atLine ?line .
-            OPTIONAL { ?method type {Method} . ?method definedIn ?c }
+            OPTIONAL { ?method type oo:Method . ?method definedIn ?c }
         }
         GROUP BY ?c ?name ?file ?line
         ORDER BY ?name

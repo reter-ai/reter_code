@@ -15,7 +15,7 @@ detector feature_envy_semantic(category="design", severity="medium") {
     reql {
         SELECT ?e ?name ?class_name ?file ?line
         WHERE {
-            ?e type {Method} .
+            ?e type oo:Method .
             ?e name ?name .
             ?e inFile ?file .
             ?e atLine ?line .

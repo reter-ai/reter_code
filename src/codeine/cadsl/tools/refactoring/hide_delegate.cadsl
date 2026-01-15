@@ -11,11 +11,11 @@ detector hide_delegate(category="refactoring", severity="medium") {
     reql {
         SELECT ?c ?class_name ?getter_name ?return_type ?file ?line (COUNT(?caller) AS ?usage_count)
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?class_name .
             ?c inFile ?file .
             ?c atLine ?line .
-            ?getter type {Method} .
+            ?getter type oo:Method .
             ?getter definedIn ?c .
             ?getter name ?getter_name .
             ?getter returnType ?return_type .

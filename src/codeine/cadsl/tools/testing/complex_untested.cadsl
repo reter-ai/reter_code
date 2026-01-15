@@ -11,7 +11,7 @@ detector complex_untested(category="test_coverage", severity="high") {
     reql {
         SELECT ?e ?name ?class_name ?file ?line ?line_count
         WHERE {
-            { ?e type {Method} } UNION { ?e type {Function} }
+            { ?e type oo:Method } UNION { ?e type oo:Function }
             ?e name ?name .
             ?e inFile ?file .
             ?e atLine ?line .

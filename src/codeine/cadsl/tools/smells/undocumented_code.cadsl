@@ -13,7 +13,7 @@ detector undocumented_code(category="code_smell", severity="low") {
     reql {
         SELECT ?e ?name ?file ?line
         WHERE {
-            ?e type {Class} .
+            ?e type oo:Class .
             ?e name ?name .
             ?e inFile ?file .
             ?e atLine ?line

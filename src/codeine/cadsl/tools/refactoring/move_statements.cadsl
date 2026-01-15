@@ -12,7 +12,7 @@ detector move_statements(category="refactoring", severity="medium") {
     reql {
         SELECT ?func ?func_name ?file ?line (COUNT(?caller) AS ?caller_count)
         WHERE {
-            ?func type {Function} .
+            ?func type oo:Function .
             ?func name ?func_name .
             ?func inFile ?file .
             ?func atLine ?line .

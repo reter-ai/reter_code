@@ -10,7 +10,7 @@ detector find_magic_methods(category="patterns", severity="info") {
     reql {
         SELECT ?m ?method_name ?class_name ?file ?line
         WHERE {
-            ?m type {Method} .
+            ?m type oo:Method .
             ?m name ?method_name .
             ?m inFile ?file .
             ?m atLine ?line .

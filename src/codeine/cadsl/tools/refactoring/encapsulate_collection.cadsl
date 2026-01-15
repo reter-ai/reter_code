@@ -11,7 +11,7 @@ detector encapsulate_collection(category="refactoring", severity="medium") {
     reql {
         SELECT ?m ?name ?class_name ?file ?line ?return_type ?attr_name
         WHERE {
-            ?m type {Method} .
+            ?m type oo:Method .
             ?m name ?name .
             ?m definedIn ?c .
             ?c name ?class_name .

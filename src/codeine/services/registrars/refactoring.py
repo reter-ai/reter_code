@@ -204,7 +204,6 @@ class RecommenderToolsRegistrar(ToolRegistrarBase):
             ctx = Context(
                 reter=reter,
                 params=extra,
-                language="oo",
                 instance_name=session_instance
             )
 

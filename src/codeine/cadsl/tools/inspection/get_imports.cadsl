@@ -10,7 +10,7 @@ query get_imports() {
     reql {
         SELECT ?i ?module ?imported ?line
         WHERE {
-            ?i type {Import} .
+            ?i type oo:Import .
             ?i inModule ?module .
             ?i imports ?imported .
             OPTIONAL { ?i atLine ?line }

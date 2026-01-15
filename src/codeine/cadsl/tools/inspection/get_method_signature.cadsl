@@ -10,7 +10,7 @@ query get_method_signature() {
     reql {
         SELECT ?m ?name ?file ?line ?return_type ?param_name ?param_type ?param_default
         WHERE {
-            { ?m type {Method} } UNION { ?m type {Function} }
+            { ?m type oo:Method } UNION { ?m type oo:Function }
             ?m name ?name .
             ?m inFile ?file .
             ?m atLine ?line .

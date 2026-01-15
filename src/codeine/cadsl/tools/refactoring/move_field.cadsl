@@ -12,7 +12,7 @@ detector move_field(category="refactoring", severity="medium") {
     reql {
         SELECT ?attr ?name ?class_name ?target_class ?file ?line ?own_usage ?external_usage
         WHERE {
-            ?attr type {Attribute} .
+            ?attr type oo:Attribute .
             ?attr name ?name .
             ?attr definedIn ?c .
             ?c name ?class_name .

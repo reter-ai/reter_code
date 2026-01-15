@@ -13,7 +13,7 @@ Example::
         param limit: int = 100;
 
         reql {
-            SELECT ?m ?name WHERE { ?m type {Module} . ?m name ?name }
+            SELECT ?m ?name WHERE { ?m type oo:Module . ?m name ?name }
         }
         | select { name }
         | emit { modules }

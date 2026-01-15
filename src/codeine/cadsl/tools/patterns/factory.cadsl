@@ -11,12 +11,12 @@ detector find_factory_pattern(category="patterns", severity="info") {
         SELECT ?e ?name ?entity_type ?file ?line ?creates_type
         WHERE {
             {
-                ?e type {Method} .
+                ?e type oo:Method .
                 ?e isFactoryMethod true
             }
             UNION
             {
-                ?e type {Class} .
+                ?e type oo:Class .
                 ?e isFactoryClass true
             }
             ?e name ?name .

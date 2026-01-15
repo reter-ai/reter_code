@@ -11,7 +11,7 @@ detector finally_without_context_manager(category="exception_handling", severity
     reql {
         SELECT ?t ?func_name ?file ?line ?cleanup_type
         WHERE {
-            ?t type {TryBlock} .
+            ?t type oo:TryBlock .
             ?t inFile ?file .
             ?t atLine ?line .
             ?t hasFinally true .

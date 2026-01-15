@@ -15,13 +15,13 @@ detector primitive_obsession(category="design", severity="medium") {
     reql {
         SELECT ?m ?name ?class_name ?file ?line (COUNT(?param) AS ?param_count)
         WHERE {
-            ?m type {Method} .
+            ?m type oo:Method .
             ?m name ?name .
             ?m inFile ?file .
             ?m atLine ?line .
             ?m definedIn ?c .
             ?c name ?class_name .
-            ?param type {Parameter} .
+            ?param type oo:Parameter .
             ?param ofFunction ?m
             FILTER ( !REGEX(?name, "^__") )
         }

@@ -11,7 +11,7 @@ detector find_interface_implementations(category="patterns", severity="info") {
     reql {
         SELECT ?c ?class_name ?parent_name ?file ?line
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?class_name .
             ?c inFile ?file .
             ?c atLine ?line .

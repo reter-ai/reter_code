@@ -12,7 +12,7 @@ detector parallel_inheritance(category="code_smell", severity="medium") {
     reql {
         SELECT ?c ?name ?base_name ?file ?line
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?name .
             ?c inFile ?file .
             ?c atLine ?line .

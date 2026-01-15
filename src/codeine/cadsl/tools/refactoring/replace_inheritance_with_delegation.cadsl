@@ -12,7 +12,7 @@ detector replace_inheritance_with_delegation(category="refactoring", severity="m
     reql {
         SELECT ?c ?name ?parent_name ?file ?line (COUNT(?parent_call) AS ?parent_usage)
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?name .
             ?c inFile ?file .
             ?c atLine ?line .

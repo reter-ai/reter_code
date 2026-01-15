@@ -14,7 +14,7 @@ detector api_surface_review(category="api", severity="info") {
     reql {
         SELECT ?m ?name ?file ?line ?line_count ?class_name ?param_count
         WHERE {
-            ?m type {Method} .
+            ?m type oo:Method .
             ?m name ?name .
             ?m inFile ?file .
             ?m atLine ?line .

@@ -10,7 +10,7 @@ detector public_api_untested(category="test_coverage", severity="high") {
     reql {
         SELECT ?e ?name ?entity_type ?file ?line
         WHERE {
-            { ?e type {Class} } UNION { ?e type {Function} }
+            { ?e type oo:Class } UNION { ?e type oo:Function }
             ?e name ?name .
             ?e inFile ?file .
             ?e atLine ?line .

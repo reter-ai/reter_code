@@ -10,7 +10,7 @@ detector find_external_dependencies(category="dependencies", severity="info") {
     reql {
         SELECT ?m ?module_name ?package_name ?file
         WHERE {
-            ?m type {Module} .
+            ?m type oo:Module .
             ?m name ?module_name .
             ?m inFile ?file .
             ?m imports ?package_name

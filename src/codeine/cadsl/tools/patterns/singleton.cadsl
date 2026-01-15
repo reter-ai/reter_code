@@ -10,7 +10,7 @@ detector find_singleton_pattern(category="patterns", severity="info") {
     reql {
         SELECT ?c ?name ?file ?line ?implementation_type
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?name .
             ?c inFile ?file .
             ?c atLine ?line .

@@ -10,7 +10,7 @@ query get_docstring() {
     reql {
         SELECT ?e ?name ?docstring ?file ?line ?type
         WHERE {
-            { ?e type {Class} } UNION { ?e type {Method} } UNION { ?e type {Function} }
+            { ?e type oo:Class } UNION { ?e type oo:Method } UNION { ?e type oo:Function }
             ?e type ?type .
             ?e name ?name .
             ?e inFile ?file .

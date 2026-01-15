@@ -13,11 +13,11 @@ detector trivial_commands(category="code_smell", severity="low") {
     reql {
         SELECT ?c ?name ?file ?line (COUNT(?method) AS ?method_count)
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?name .
             ?c inFile ?file .
             ?c atLine ?line .
-            ?method type {Method} .
+            ?method type oo:Method .
             ?method definedIn ?c
             FILTER ( !REGEX(?name, "^_") )
         }

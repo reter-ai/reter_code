@@ -11,7 +11,7 @@ detector generic_exception_raising(category="exception_handling", severity="medi
     reql {
         SELECT ?r ?exception_type ?func_name ?file ?line
         WHERE {
-            ?r type {ThrowStatement} .
+            ?r type oo:ThrowStatement .
             ?r inFile ?file .
             ?r atLine ?line .
             ?r exceptionType ?exception_type .

@@ -12,16 +12,16 @@ detector extract_superclass_candidates(category="inheritance", severity="medium"
     reql {
         SELECT ?c1 ?class1 ?c2 ?class2 ?file1 ?line1 (COUNT(?shared_name) AS ?shared_methods)
         WHERE {
-            ?c1 type {Class} .
+            ?c1 type oo:Class .
             ?c1 name ?class1 .
             ?c1 inFile ?file1 .
             ?c1 atLine ?line1 .
-            ?c2 type {Class} .
+            ?c2 type oo:Class .
             ?c2 name ?class2 .
-            ?m1 type {Method} .
+            ?m1 type oo:Method .
             ?m1 definedIn ?c1 .
             ?m1 name ?shared_name .
-            ?m2 type {Method} .
+            ?m2 type oo:Method .
             ?m2 definedIn ?c2 .
             ?m2 name ?shared_name .
             FILTER ( ?c1 != ?c2 )

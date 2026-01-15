@@ -16,7 +16,7 @@ detector find_duplicate_code(category="duplication", severity="high") {
     reql {
         SELECT ?e ?name ?file ?line ?line_count ?class_name
         WHERE {
-            { ?e type {Method} } UNION { ?e type {Function} }
+            { ?e type oo:Method } UNION { ?e type oo:Function }
             ?e name ?name .
             ?e inFile ?file .
             ?e atLine ?line .

@@ -12,7 +12,7 @@ detector message_chains(category="code_smell", severity="medium") {
     reql {
         SELECT ?m ?name ?class_name ?file ?line (COUNT(?callee) AS ?call_count)
         WHERE {
-            ?m type {Method} .
+            ?m type oo:Method .
             ?m name ?name .
             ?m inFile ?file .
             ?m atLine ?line .

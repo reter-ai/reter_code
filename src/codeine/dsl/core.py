@@ -109,7 +109,6 @@ class Context:
     """Execution context for pipelines."""
     reter: Any  # RETER instance
     params: Dict[str, Any] = field(default_factory=dict)
-    language: str = "oo"
     instance_name: str = "default"
 
     def get_param(self, name: str, default: Any = None) -> Any:
@@ -126,7 +125,6 @@ class Context:
         return Context(
             reter=self.reter,
             params=new_params,
-            language=self.language,
             instance_name=self.instance_name
         )
 
@@ -165,35 +163,22 @@ class MappedSource(Source[U], Generic[T, U]):
 
 @dataclass
 class REQLSource(Source[pa.Table]):
-    """REQL query source - returns PyArrow table for vectorized operations."""
-    query: str
+    """REQL query source - returns PyArrow table for vectorized operations.
 
-    # Language-specific concept placeholders that get resolved
-    CONCEPT_PLACEHOLDERS = [
-        "CodeEntity", "Module", "Class", "Function", "Method", "Constructor",
-        "Parameter", "Import", "Export", "Assignment", "Field", "Attribute",
-        "TryBlock", "CatchClause", "ThrowStatement", "ReturnStatement", "Call",
-        "ExceptHandler", "RaiseStatement", "FinallyBlock", "ArrowFunction",
-        "Variable", "FinallyClause", "Namespace", "TranslationUnit", "Struct",
-        "Destructor", "Operator", "Enum", "EnumClass", "Enumerator",
-        "UsingDirective", "UsingDeclaration", "Inheritance",
-        "Document", "Element", "Script", "ScriptReference", "StyleSheet",
-        "Form", "FormInput", "Link", "EventHandler", "Meta", "Image", "Iframe",
-    ]
+    REQL queries must use explicit ontology prefixes for entity types:
+    - oo:Class, oo:Method, oo:Function (language-independent)
+    - py:Class, py:Method (Python-specific)
+    - js:Class, js:Function (JavaScript-specific)
+
+    Parameter placeholders like {limit}, {target} are still supported
+    and resolved from ctx.params at runtime.
+    """
+    query: str
 
     def execute(self, ctx: Context) -> PipelineResult[pa.Table]:
         """Execute REQL query against RETER - returns PyArrow table."""
         try:
-            from codeine.services.language_support import LanguageSupport
-
             query = self.query
-
-            # Substitute language-specific concept placeholders: {Class} -> py:Class
-            for concept in self.CONCEPT_PLACEHOLDERS:
-                placeholder = "{" + concept + "}"
-                if placeholder in query:
-                    resolved = LanguageSupport.concept(concept, ctx.language)
-                    query = query.replace(placeholder, resolved)
 
             # Substitute parameters in query: {target} -> actual value
             for key, value in ctx.params.items():

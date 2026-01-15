@@ -670,10 +670,7 @@ class DefaultInstanceManager:
         finally:
             # Finalize entity accumulation - merges duplicate entities
             if use_accumulation:
-                accumulated = reter.accumulated_entity_count()
-                reter.end_entity_accumulation()
-                if accumulated > 0:
-                    print(f"[default] Entity accumulation: {accumulated} unique entities merged", file=sys.stderr, flush=True)
+                self._finalize_entity_accumulation_with_progress(reter)
 
         if errors:
             print(f"[default] Sync completed with {len(errors)} errors", file=sys.stderr, flush=True)
@@ -997,6 +994,43 @@ class DefaultInstanceManager:
         else:
             raise ValueError(f"Unsupported file type: {rel_path}")
 
+    def _finalize_entity_accumulation_with_progress(
+        self,
+        reter: ReterWrapper,
+        batch_size: int = 1000
+    ) -> int:
+        """
+        Finalize entity accumulation with progress reporting.
+
+        Args:
+            reter: ReterWrapper instance with active entity accumulation
+            batch_size: Number of facts to process per batch (for progress updates)
+
+        Returns:
+            Total number of entities processed
+        """
+        accumulated = reter.accumulated_entity_count()
+        if accumulated == 0:
+            reter.end_entity_accumulation()
+            return 0
+
+        # Print initial progress line (will be updated in-place)
+        print(f"\r[default] Inserting entities: 0/{accumulated} (0%)", end="", file=sys.stderr, flush=True)
+
+        def on_progress(processed: int, total: int) -> None:
+            pct = 100 * processed // total if total > 0 else 0
+            print(f"\r[default] Inserting entities: {processed}/{total} ({pct}%)", end="", file=sys.stderr, flush=True)
+
+        total = reter.end_entity_accumulation_with_progress(
+            batch_size=batch_size,
+            progress_callback=on_progress
+        )
+
+        # Print final newline to complete the progress line
+        print(f"\r[default] Entity accumulation: {total} unique entities merged    ", file=sys.stderr, flush=True)
+
+        return total
+
     def _sync_files(
         self,
         reter: ReterWrapper,
@@ -1123,10 +1157,7 @@ class DefaultInstanceManager:
         finally:
             # Finalize entity accumulation - merges duplicate entities
             if use_accumulation:
-                accumulated = reter.accumulated_entity_count()
-                reter.end_entity_accumulation()
-                if accumulated > 0:
-                    print(f"[default] Entity accumulation: {accumulated} unique entities merged", file=sys.stderr, flush=True)
+                self._finalize_entity_accumulation_with_progress(reter)
 
         # Find deleted files (after accumulation finalized)
         for rel_path, (old_md5, old_source_id) in existing_sources.items():
@@ -1253,9 +1284,7 @@ class DefaultInstanceManager:
                     errors.append(error_msg)
         finally:
             # Finalize accumulated entities - creates merged facts
-            accumulated = fresh_reter.accumulated_entity_count()
-            fresh_reter.end_entity_accumulation()
-            print(f"[default] Entity accumulation: {accumulated} unique entities merged", file=sys.stderr, flush=True)
+            self._finalize_entity_accumulation_with_progress(fresh_reter)
 
         # Reset modification count
         self._modification_count = 0

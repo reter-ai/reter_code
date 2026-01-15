@@ -761,14 +761,14 @@ You have tools available to help you:
 
 CRITICAL RULES:
 1. CADSL uses `query`, `detector`, or `diagram` as tool types
-2. Inside reql {} blocks, use `type` predicate: `?x type {Class}` or `?x type oo:Class`
-3. In CADSL, use curly braces for cross-language types: `{Class}`, `{Method}`, `{Module}`
+2. Inside reql {} blocks, use `type` predicate with oo: prefix: `?x type oo:Class`
+3. Entity types use `oo:` prefix: `oo:Class`, `oo:Method`, `oo:Module`, `oo:Function`
 4. Predicates have NO prefix: `name`, `inFile`, `definedIn`, `calls`, `imports`
 5. Pipeline steps use `|` operator: `| filter { }`, `| emit { }`
 
 COMMON MISTAKE - NEVER do this in REQL blocks:
   WRONG: `?m1 oo:Module .`           <- missing `type` predicate!
-  RIGHT: `?m1 type {Module} .`       <- always include `type`
+  RIGHT: `?m1 type oo:Module .`      <- always include `type`
 
 RECOMMENDED: Call get_example() to see the EXACT syntax used in working examples.
 

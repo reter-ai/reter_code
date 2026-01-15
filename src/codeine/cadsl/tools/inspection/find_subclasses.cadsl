@@ -10,7 +10,7 @@ query find_subclasses() {
     reql {
         SELECT ?sub ?name ?file ?line ?parent_name
         WHERE {
-            ?sub type {Class} .
+            ?sub type oo:Class .
             ?sub inheritsFrom ?parent_name .
             ?sub name ?name .
             ?sub inFile ?file .

@@ -11,7 +11,7 @@ detector global_data(category="code_smell", severity="high") {
     reql {
         SELECT ?a ?target ?value ?module ?line
         WHERE {
-            ?a type {Assignment} .
+            ?a type oo:Assignment .
             ?a target ?target .
             ?a inModule ?module .
             OPTIONAL { ?a value ?value }

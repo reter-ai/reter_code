@@ -13,8 +13,8 @@ query predict_impact() {
         SELECT ?dependent ?dep_name ?dep_file ?dep_line
         WHERE {
             ?t name "{target}" .
-            ?t type {Method} .
-            ?dependent type {Method} .
+            ?t type oo:Method .
+            ?dependent type oo:Method .
             ?dependent calls ?t .
             ?dependent name ?dep_name .
             ?dependent inFile ?dep_file .

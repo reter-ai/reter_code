@@ -10,7 +10,7 @@ query get_type_hints() {
     reql {
         SELECT ?e ?entity_name ?entity_type ?param_name ?param_type ?return_type ?file ?line
         WHERE {
-            { ?e type {Method} } UNION { ?e type {Function} }
+            { ?e type oo:Method } UNION { ?e type oo:Function }
             ?e name ?entity_name .
             ?e inFile ?file .
             ?e atLine ?line .

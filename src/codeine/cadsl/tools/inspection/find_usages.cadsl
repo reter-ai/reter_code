@@ -10,7 +10,7 @@ query find_usages() {
     reql {
         SELECT ?caller ?caller_name ?caller_file ?caller_line ?callee_name
         WHERE {
-            { ?caller type {Method} } UNION { ?caller type {Function} }
+            { ?caller type oo:Method } UNION { ?caller type oo:Function }
             ?caller name ?caller_name .
             ?caller inFile ?caller_file .
             ?caller atLine ?caller_line .

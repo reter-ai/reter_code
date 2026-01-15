@@ -11,7 +11,7 @@ detector pipeline_conversion(category="refactoring", severity="low") {
     reql {
         SELECT ?m ?name ?class_name ?file ?line ?callee
         WHERE {
-            ?m type {Method} .
+            ?m type oo:Method .
             ?m name ?name .
             ?m inFile ?file .
             ?m atLine ?line .

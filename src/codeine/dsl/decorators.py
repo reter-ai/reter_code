@@ -31,7 +31,7 @@ def query(name: str, description: str = "") -> Callable:
         @query("list_modules")
         def list_modules(p: Pipeline) -> Pipeline:
             return (
-                p.reql("SELECT ?m ?name WHERE { ?m type {Module} }")
+                p.reql("SELECT ?m ?name WHERE { ?m type oo:Module }")
                 .select("name", "file")
                 .emit("modules")
             )
@@ -78,7 +78,6 @@ def query(name: str, description: str = "") -> Callable:
                 ctx = Context(
                     reter=kwargs.pop("reter", None),
                     params=kwargs,
-                    language=kwargs.pop("language", "oo"),
                     instance_name=kwargs.pop("instance_name", "default")
                 )
             else:
@@ -161,7 +160,6 @@ def detector(name: str, description: str = "", *, category: str = "", severity: 
                 ctx = Context(
                     reter=kwargs.pop("reter", None),
                     params=kwargs,
-                    language=kwargs.pop("language", "oo"),
                     instance_name=kwargs.pop("instance_name", "default")
                 )
             else:
@@ -234,7 +232,6 @@ def diagram(name: str, description: str = "") -> Callable:
                 ctx = Context(
                     reter=kwargs.pop("reter", None),
                     params=kwargs,
-                    language=kwargs.pop("language", "oo"),
                     instance_name=kwargs.pop("instance_name", "default")
                 )
             else:
@@ -434,7 +431,6 @@ class ToolBuilder:
                 ctx = Context(
                     reter=kwargs.pop("reter", None),
                     params=kwargs,
-                    language=kwargs.pop("language", "oo"),
                     instance_name=kwargs.pop("instance_name", "default")
                 )
             else:

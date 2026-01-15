@@ -12,12 +12,12 @@ detector replace_inline_code(category="refactoring", severity="medium") {
     reql {
         SELECT ?c ?class_name ?file ?line (COUNT(?m) AS ?method_count)
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?class_name .
             ?c inFile ?file .
             ?c atLine ?line .
             ?m definedIn ?c .
-            ?m type {Method} .
+            ?m type oo:Method .
             FILTER ( REGEX(?file, "\\.py$") )
         }
         GROUP BY ?c ?class_name ?file ?line

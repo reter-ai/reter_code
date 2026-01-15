@@ -928,8 +928,8 @@ When you have enough information, output the final query in a code block.
                         reql {
                             SELECT ?c ?name (COUNT(?m) AS ?method_count)
                             WHERE {
-                                ?c type {Class} . ?c name ?name .
-                                ?m type {Method} . ?m definedIn ?c
+                                ?c type oo:Class . ?c name ?name .
+                                ?m type oo:Method . ?m definedIn ?c
                             }
                             GROUP BY ?c ?name
                             HAVING (?method_count > 10)

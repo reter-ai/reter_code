@@ -36,7 +36,7 @@ query list_modules() {
     reql {
         SELECT ?m ?name ?file
         WHERE {
-            ?m type {Module} .
+            ?m type oo:Module .
             ?m name ?name .
             ?m inFile ?file
         }
@@ -58,9 +58,9 @@ detector god_class(category="design", severity="high") {
     reql {
         SELECT ?c ?name (COUNT(?m) AS ?method_count)
         WHERE {
-            ?c type {Class} .
+            ?c type oo:Class .
             ?c name ?name .
-            ?m type {Method} .
+            ?m type oo:Method .
             ?m definedIn ?c
         }
         GROUP BY ?c ?name
@@ -85,8 +85,8 @@ detector circular_imports(category="dependencies", severity="high") {
     reql {
         SELECT ?m1 ?m2 ?name1 ?name2
         WHERE {
-            ?m1 type {Module} . ?m1 name ?name1 .
-            ?m2 type {Module} . ?m2 name ?name2 .
+            ?m1 type oo:Module . ?m1 name ?name1 .
+            ?m2 type oo:Module . ?m2 name ?name2 .
             ?m1 imports ?m2
         }
     }
@@ -118,7 +118,7 @@ def test_expression_compiler():
     # Test field reference
     result = parse_cadsl('''
     query test() {
-        reql { SELECT ?x WHERE { ?x type {Class} } }
+        reql { SELECT ?x WHERE { ?x type oo:Class } }
         | filter { count > 10 }
         | emit { results }
     }
@@ -184,7 +184,7 @@ def test_object_expression():
 
     result = parse_cadsl('''
     query test() {
-        reql { SELECT ?x WHERE { ?x type {Class} } }
+        reql { SELECT ?x WHERE { ?x type oo:Class } }
         | map { name: name, extra: "value", ...row }
         | emit { results }
     }

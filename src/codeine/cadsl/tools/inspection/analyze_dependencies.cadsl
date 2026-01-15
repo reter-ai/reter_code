@@ -10,7 +10,7 @@ query analyze_dependencies() {
     reql {
         SELECT ?m ?module_name ?imports_name ?file
         WHERE {
-            ?m type {Module} .
+            ?m type oo:Module .
             ?m name ?module_name .
             ?m inFile ?file .
             OPTIONAL {
