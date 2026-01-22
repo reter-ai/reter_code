@@ -2,9 +2,55 @@
 #
 # Identifies long methods or methods with extractable code blocks
 # that could be refactored into smaller, reusable methods.
+#
+# Enhanced with RAG to find well-structured methods as examples.
 
 detector extract_method(category="refactoring", severity="medium") {
-    """Suggest Extract Method refactoring opportunities."""
+    """Suggest Extract Method with well-structured examples."""
+
+    param min_lines: int = 20;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?m ?name ?class_name ?file ?line ?line_count
+        WHERE {
+            ?m type oo:Method .
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            ?m lineCount ?line_count .
+            OPTIONAL { ?m definedIn ?c . ?c name ?class_name }
+            FILTER ( ?line_count >= {min_lines} )
+        }
+        ORDER BY DESC(?line_count)
+        LIMIT {limit}
+    }
+    | select { name, class_name, file, line, line_count }
+    | rag_enrich {
+        query: "{name} method small focused",
+        top_k: 3,
+        threshold: 0.4,
+        mode: all,
+        entity_types: ["method"]
+    }
+    | map {
+        name: name,
+        class_name: class_name ?? "",
+        file: file,
+        line: line,
+        line_count: line_count,
+        refactoring: "extract_method",
+        message: "Method '{name}' ({line_count} lines) may benefit from Extract Method",
+        suggestion: "Identify cohesive code blocks and extract them into well-named methods",
+        example_count: len(rag_matches),
+        well_structured_examples: rag_matches
+    }
+    | emit { findings }
+}
+
+# Simpler version without RAG enrichment for faster execution
+detector extract_method_fast(category="refactoring", severity="medium") {
+    """Suggest Extract Method refactoring opportunities (no examples)."""
 
     param min_lines: int = 20;
     param limit: int = 100;

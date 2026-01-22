@@ -1,43 +1,105 @@
 # pull_up_method - Suggest Pull Up Method refactoring opportunities
 #
 # Identifies identical or similar methods in sibling classes that
-# could be pulled up to a common parent class.
+# could be pulled up to a common parent class. Uses LEVENSHTEIN to
+# find methods with similar names that may be duplicate implementations.
+#
+# Enhanced with RAG to find similar refactoring patterns as examples.
 
 detector pull_up_method(category="refactoring", severity="medium") {
-    """Suggest Pull Up Method refactoring opportunities."""
+    """Suggest Pull Up Method with similar refactoring examples."""
 
-    param similarity_threshold: float = 0.9;
-    param limit: int = 100;
+    param max_name_distance: int = 2;
+    param limit: int = 50;
 
     reql {
-        SELECT ?m1 ?name ?class1 ?class2 ?parent_class ?file ?line ?similarity
+        SELECT ?m1 ?name1 ?name2 ?class1 ?class2 ?parent_class ?file ?line
         WHERE {
             ?m1 type oo:Method .
-            ?m1 name ?name .
+            ?m1 name ?name1 .
             ?m1 inFile ?file .
             ?m1 atLine ?line .
             ?m1 definedIn ?c1 .
             ?c1 name ?class1 .
             ?m2 type oo:Method .
-            ?m2 name ?name .
+            ?m2 name ?name2 .
             ?m2 definedIn ?c2 .
             ?c2 name ?class2 .
             ?c1 inheritsFrom ?parent .
             ?c2 inheritsFrom ?parent .
             ?parent name ?parent_class .
-            ?m1 similarTo ?m2 .
-            ?m1 similarityScore ?similarity .
-            FILTER ( ?c1 != ?c2 && ?similarity >= {similarity_threshold} )
+            FILTER(?c1 != ?c2)
+            FILTER(?m1 != ?m2)
+            FILTER(LEVENSHTEIN(?name1, ?name2) <= {max_name_distance})
+            FILTER(!STRSTARTS(?name1, "_"))
         }
-        ORDER BY DESC(?similarity)
-        LIMIT {limit}
+        LIMIT 200
     }
-    | select { name, class1, class2, parent_class, file, line, similarity, qualified_name: m1 }
+    | select { name1, name2, class1, class2, parent_class, file, line }
+    | rag_enrich {
+        query: "{name1} {parent_class} method",
+        top_k: 3,
+        threshold: 0.5,
+        mode: all,
+        entity_types: ["method"]
+    }
+    | map {
+        name1: name1,
+        name2: name2,
+        class1: class1,
+        class2: class2,
+        parent_class: parent_class,
+        file: file,
+        line: line,
+        refactoring: "pull_up_method",
+        message: "Method '{name1}' in '{class1}' is similar to '{name2}' in sibling '{class2}'",
+        suggestion: "Consider pulling up to parent class '{parent_class}'",
+        example_count: len(rag_matches),
+        similar_implementations: rag_matches
+    }
+    | order_by { +parent_class, +name1 }
+    | limit { {limit} }
+    | emit { findings }
+}
+
+# Simpler version without RAG enrichment for faster execution
+detector pull_up_method_fast(category="refactoring", severity="medium") {
+    """Suggest Pull Up Method refactoring opportunities (no examples)."""
+
+    param max_name_distance: int = 2;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m1 ?name1 ?name2 ?class1 ?class2 ?parent_class ?file ?line
+        WHERE {
+            ?m1 type oo:Method .
+            ?m1 name ?name1 .
+            ?m1 inFile ?file .
+            ?m1 atLine ?line .
+            ?m1 definedIn ?c1 .
+            ?c1 name ?class1 .
+            ?m2 type oo:Method .
+            ?m2 name ?name2 .
+            ?m2 definedIn ?c2 .
+            ?c2 name ?class2 .
+            ?c1 inheritsFrom ?parent .
+            ?c2 inheritsFrom ?parent .
+            ?parent name ?parent_class .
+            FILTER(?c1 != ?c2)
+            FILTER(?m1 != ?m2)
+            FILTER(LEVENSHTEIN(?name1, ?name2) <= {max_name_distance})
+            FILTER(!STRSTARTS(?name1, "_"))
+        }
+        LIMIT 500
+    }
+    | select { name1, name2, class1, class2, parent_class, file, line, qualified_name: m1 }
     | map {
         ...row,
         refactoring: "pull_up_method",
-        message: "Method '{name}' is duplicated in '{class1}' and '{class2}'",
+        message: "Method '{name1}' in '{class1}' is similar to '{name2}' in sibling '{class2}'",
         suggestion: "Consider pulling up to parent class '{parent_class}'"
     }
+    | order_by { +parent_class, +name1 }
+    | limit { {limit} }
     | emit { findings }
 }

@@ -2,9 +2,54 @@
 #
 # Shotgun Surgery occurs when a change requires making many small
 # changes to many different classes. This indicates high coupling.
+#
+# Enhanced with RAG to find similar well-designed patterns as examples.
 
 detector shotgun_surgery(category="design", severity="high") {
-    """Detect code that would require shotgun surgery to change."""
+    """Detect code that would require shotgun surgery to change, with similar well-designed patterns."""
+
+    param min_dependents: int = 5;
+    param limit: int = 50;
+    param show_examples: bool = true;
+
+    reql {
+        SELECT ?e ?name ?file ?line (COUNT(?caller) AS ?dependent_count)
+        WHERE {
+            { ?e type oo:Class } UNION { ?e type oo:Method }
+            ?e name ?name .
+            ?e inFile ?file .
+            ?e atLine ?line .
+            ?caller calls ?e
+        }
+        GROUP BY ?e ?name ?file ?line
+        HAVING (?dependent_count >= {min_dependents})
+        ORDER BY DESC(?dependent_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, dependent_count }
+    | rag_enrich {
+        query: "{name} interface facade pattern",
+        top_k: 3,
+        threshold: 0.4,
+        mode: all
+    }
+    | map {
+        name: name,
+        file: file,
+        line: line,
+        dependent_count: dependent_count,
+        issue: "shotgun_surgery",
+        message: "'{name}' has {dependent_count} callers",
+        suggestion: "Changes here would require updating many files. Consider consolidating or decoupling.",
+        example_count: len(rag_matches),
+        similar_patterns: rag_matches
+    }
+    | emit { findings }
+}
+
+# Simpler version without RAG enrichment for faster execution
+detector shotgun_surgery_fast(category="design", severity="high") {
+    """Detect code that would require shotgun surgery to change (no examples)."""
 
     param min_dependents: int = 5;
     param limit: int = 100;

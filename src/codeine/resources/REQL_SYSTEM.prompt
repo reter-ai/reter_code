@@ -22,6 +22,55 @@ Basic pattern: `subject predicate object`
 - Literals: `'string'`, `"string"`, `42`, `3.14`, `true`, `false`
 - Keyword `a` is shorthand for `type`
 
+### Type vs Concept (IMPORTANT)
+
+There are TWO ways to work with entity types:
+
+1. **`type` predicate with concrete type** - Filter with ontology subsumption:
+   - `?x type oo:Class` - Matches py:Class, cpp:Class, cs:Class, js:Class (subsumption!)
+   - `?x type py:Method` - Matches only Python methods
+   - Use for filtering entities by type in WHERE clauses
+
+2. **`type` predicate with variable** - Returns ALL types (asserted + inferred):
+   - `?x type ?t` - Returns MULTIPLE rows per entity (py:Method, oo:Method, oo:Function, etc.)
+   - Includes all inferred types from subsumption hierarchy
+   - Use when you need the full type hierarchy
+
+3. **`concept` attribute** - Returns ONLY the asserted (stored) type:
+   - `?x concept ?t` - Returns ONE row per entity with the actual stored type
+   - Example: Returns "py:Method" (not oo:Method, oo:Function, etc.)
+   - Use when you need the concrete type string
+
+**Comparison:**
+| Pattern | Returns | Rows per entity |
+|---------|---------|-----------------|
+| `?x type oo:Method` | Entities of type (filter) | N/A |
+| `?x type ?t` | All types (asserted + inferred) | Multiple |
+| `?x concept ?t` | Only asserted type | One |
+
+**When to use which:**
+- Filter by type (with subsumption): `?x type oo:Method`
+- Get actual/concrete type string: `?x concept ?t`
+- See full type hierarchy: `?x type ?t`
+
+**CRITICAL FOR FILTER**: When using `concept` with FILTER in UNION queries with patterns
+outside UNION blocks, you MUST include the variable in SELECT:
+```
+# WRONG - will fail with "variable not found"
+SELECT ?x ?name WHERE {
+    { ?x calls ?y } UNION { ?x maybeCalls ?y }
+    ?x concept ?type .
+    FILTER(CONTAINS(?type, "Method"))
+}
+
+# CORRECT - concept variable included in SELECT
+SELECT ?x ?name ?type WHERE {
+    { ?x calls ?y } UNION { ?x maybeCalls ?y }
+    ?x concept ?type .
+    FILTER(CONTAINS(?type, "Method"))
+}
+```
+
 ### Pattern Separators
 - Use `.` (dot) between triple patterns
 - Use `;` for same subject with different predicates: `?x type Class ; name ?n`
@@ -37,7 +86,9 @@ Basic pattern: `subject predicate object`
 - `FILTER(condition)` - Parentheses required!
 - Comparison: `=`, `!=`, `<`, `>`, `<=`, `>=`
 - Logical: `&&`, `||`, `!`
-- Functions: `STR(?var)`, `BOUND(?var)`, `REGEX(?str, "pattern")`, `CONTAINS(?str, "substr")`
+- String Functions: `STR(?var)`, `REGEX(?str, "pattern")`, `CONTAINS(?str, "substr")`, `STRSTARTS(?str, "prefix")`, `STRENDS(?str, "suffix")`
+- String Similarity: `LEVENSHTEIN(?str1, ?str2)` - Returns edit distance (integer)
+- Variable Check: `BOUND(?var)` - Check if variable is bound
 - Existence: `EXISTS { pattern }`, `NOT EXISTS { pattern }`
 
 ### Aggregations
@@ -269,6 +320,16 @@ SELECT ?module ?path WHERE {
 ```
 SELECT (COUNT(?class) AS ?count) WHERE {
     ?class type cpp:Class
+}
+```
+
+### Find methods with similar names (using LEVENSHTEIN)
+```
+SELECT ?m1 ?m2 ?name1 ?name2 WHERE {
+    ?m1 type oo:Method . ?m1 name ?name1 .
+    ?m2 type oo:Method . ?m2 name ?name2 .
+    FILTER(?m1 != ?m2)
+    FILTER(LEVENSHTEIN(?name1, ?name2) <= 2)
 }
 ```
 

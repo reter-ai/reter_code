@@ -15,7 +15,7 @@ diagram call_graph() {
     param include_maybe: bool = false;
 
     reql {
-        SELECT ?caller ?callee ?caller_name ?callee_name ?file ?line ?call_type
+        SELECT ?caller ?callee ?caller_name ?callee_name ?file ?line ?call_type ?caller_type ?callee_type
         WHERE {
             {
                 ?caller calls ?callee .

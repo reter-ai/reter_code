@@ -30,6 +30,7 @@ Every `cs:Property` is a `oo:Field`.
 Every `cs:Field` is a `oo:Field`.
 Every `cs:Event` is a `oo:Field`.
 Every `cs:Parameter` is a `oo:Parameter`.
+Every `cs:Reference` is a `oo:Reference`.
 Every `cs:Using` is a `oo:Import`.
 Every `cs:Attribute` is a `oo:Decorator`.
 

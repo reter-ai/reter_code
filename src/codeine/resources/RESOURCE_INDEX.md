@@ -214,6 +214,32 @@ natural_language_query("What classes inherit from BaseTool?")
 natural_language_query("Find methods with more than 5 parameters")
 ```
 
+### `hybrid_query` - Smart Query Router
+
+Routes queries to the best engine (REQL, CADSL, or RAG):
+
+```python
+hybrid_query("Find all classes with more than 10 methods")  # -> REQL
+hybrid_query("Show circular import dependencies")  # -> CADSL
+hybrid_query("Find code similar to authentication handlers")  # -> RAG
+```
+
+### `execute_cadsl` - Run CADSL Scripts
+
+Execute CADSL queries including **hybrid queries** with `rag_enrich`:
+
+```python
+execute_cadsl("""
+query find_similar_methods() {
+    reql { SELECT ?m ?name WHERE { ?m type oo:Method . ?m name ?name } }
+    | rag_enrich { query: "{name}", top_k: 3, mode: best }
+    | emit { results }
+}
+""")
+```
+
+**rag_enrich** enables hybrid queries: structural REQL + per-row semantic enrichment.
+
 ---
 
 ## 📖 Recommended Reading Order
@@ -276,20 +302,29 @@ resources/
 
 | Category | Count | Status |
 |----------|-------|--------|
-| MCP Tools | 12 | ✅ All registered |
+| MCP Tools | 14 | ✅ All registered |
 | MCP Resources | 31 | ✅ All accessible |
 | code_inspection actions | 26 | ✅ Consolidated |
 | diagram types | 10 | ✅ Available |
+| CADSL pipeline steps | 20+ | ✅ Including rag_enrich |
 | recommender types | 2 | ✅ refactoring, test_coverage |
 | Ontologies | 3 | ✅ oo (meta), Python, JavaScript |
 | Languages supported | 2 | ✅ Python, JavaScript |
 
-**Last Updated**: 2025-12-05
-**Version**: 4.0 (Consolidated tools)
+**Last Updated**: 2026-01-22
+**Version**: 4.1 (Hybrid queries)
 
 ---
 
 ## 🔄 Recent Updates
+
+### 2026-01-22: Hybrid Queries with rag_enrich
+- Added **`rag_enrich` pipeline step** for hybrid queries in CADSL
+- Combines structural REQL queries with per-row RAG semantic enrichment
+- Template syntax: `query: "{field}"` expands placeholders from row data
+- Two modes: `best` (single match fields) or `all` (rag_matches array)
+- Supports batching, thresholds, and entity type filtering
+- Updated `hybrid_query` tool to route hybrid queries to CADSL
 
 ### 2025-12-05: JavaScript Support
 - Added **JavaScript language support** with full fact extraction

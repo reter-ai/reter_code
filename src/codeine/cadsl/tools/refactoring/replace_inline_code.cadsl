@@ -1,36 +1,47 @@
 # replace_inline_code - Detect similar methods that may contain duplicate code
 #
-# Original intent: Detect duplicate statement sequences replaceable with function calls.
-# Current implementation: Find methods with similar names/sizes that may share duplicate code.
+# Uses LEVENSHTEIN to find methods with similar names across different classes,
+# which often indicates duplicate or near-duplicate implementations that could
+# be extracted into a shared function or base class method.
 
 detector replace_inline_code(category="refactoring", severity="medium") {
-    """Detect classes with many similar-length methods (potential duplication)."""
+    """Detect methods with similar names that may share duplicate code."""
 
-    param min_methods: int = 5;
+    param max_distance: int = 2;
     param limit: int = 100;
 
     reql {
-        SELECT ?c ?class_name ?file ?line (COUNT(?m) AS ?method_count)
+        SELECT ?m1 ?name1 ?class1 ?file1 ?line1 ?m2 ?name2 ?class2 ?file2 ?line2
         WHERE {
-            ?c type oo:Class .
-            ?c name ?class_name .
-            ?c inFile ?file .
-            ?c atLine ?line .
-            ?m definedIn ?c .
-            ?m type oo:Method .
-            FILTER ( REGEX(?file, "\\.py$") )
+            ?m1 type oo:Method .
+            ?m1 name ?name1 .
+            ?m1 inFile ?file1 .
+            ?m1 atLine ?line1 .
+            ?m1 definedIn ?c1 .
+            ?c1 name ?class1 .
+            ?m2 type oo:Method .
+            ?m2 name ?name2 .
+            ?m2 inFile ?file2 .
+            ?m2 atLine ?line2 .
+            ?m2 definedIn ?c2 .
+            ?c2 name ?class2 .
+            FILTER(?m1 != ?m2)
+            FILTER(?c1 != ?c2)
+            FILTER(LEVENSHTEIN(?name1, ?name2) <= {max_distance})
+            FILTER(!STRSTARTS(?name1, "_"))
+            FILTER(!STRSTARTS(?name1, "test_"))
         }
-        GROUP BY ?c ?class_name ?file ?line
-        HAVING ( ?method_count >= {min_methods} )
-        ORDER BY DESC(?method_count)
-        LIMIT {limit}
+        LIMIT 500
     }
-    | select { class_name, file, line, method_count }
+    | select { name1, name2, class1, class2, file1, file2, line1, line2 }
     | map {
         ...row,
         refactoring: "extract_function",
-        message: "Class '{class_name}' has {method_count} methods - check for duplication",
-        suggestion: "Use 'detect_duplicate_code' RAG tool for detailed analysis"
+        message: "Methods '{name1}' ({class1}) and '{name2}' ({class2}) have similar names",
+        suggestion: "Check for duplicate code - consider extracting to shared function or base class",
+        locations: "{class1}:{line1}, {class2}:{line2}"
     }
+    | order_by { +name1, +name2 }
+    | limit { {limit} }
     | emit { findings }
 }

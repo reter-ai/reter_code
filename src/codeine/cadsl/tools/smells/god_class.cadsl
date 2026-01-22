@@ -2,9 +2,55 @@
 #
 # A God Class is a class that knows too much or does too much.
 # It typically has many methods, many attributes, and high coupling.
+#
+# Enhanced with RAG to find well-structured classes as examples.
 
 detector god_class(category="design", severity="high") {
-    """Detect God Classes - classes that do too much."""
+    """Detect God Classes with well-structured alternatives as examples."""
+
+    param max_methods: int = 15;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?c ?name ?file ?line (COUNT(?method) AS ?method_count)
+        WHERE {
+            ?c type oo:Class .
+            ?c name ?name .
+            ?c inFile ?file .
+            ?c atLine ?line .
+            ?method type oo:Method .
+            ?method definedIn ?c
+        }
+        GROUP BY ?c ?name ?file ?line
+        HAVING (?method_count > {max_methods})
+        ORDER BY DESC(?method_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, method_count }
+    | rag_enrich {
+        query: "{name} class focused responsibility",
+        top_k: 3,
+        threshold: 0.4,
+        mode: all,
+        entity_types: ["class"]
+    }
+    | map {
+        name: name,
+        file: file,
+        line: line,
+        method_count: method_count,
+        issue: "god_class",
+        message: "Class '{name}' appears to be a God Class with {method_count} methods",
+        suggestion: "Consider splitting responsibilities into smaller, focused classes",
+        example_count: len(rag_matches),
+        well_structured_alternatives: rag_matches
+    }
+    | emit { findings }
+}
+
+# Simpler version without RAG enrichment for faster execution
+detector god_class_fast(category="design", severity="high") {
+    """Detect God Classes - classes that do too much (no examples)."""
 
     param max_methods: int = 15;
     param limit: int = 100;

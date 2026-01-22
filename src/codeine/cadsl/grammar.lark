@@ -61,13 +61,19 @@ source: reql_source
 reql_source: "reql" REQL_BLOCK
 
 // Merge multiple sources into one: merge { source1, source2, ... }
+// Each source can optionally have pipeline steps applied before merging
 merge_source: "merge" "{" source_list "}"
 
 source_list: source_item ("," source_item)*
 
-source_item: reql_source
-           | rag_source
-           | value_source
+// Source item: a source that can optionally have pipeline steps applied
+// Examples:
+//   reql { ... }
+//   reql { ... } | select { ... } | map { ... }
+source_item: (reql_source | rag_source | value_source) source_steps?
+
+// Pipeline steps to apply to a source before merging
+source_steps: ("|" step)+
 
 rag_source: "rag" "{" rag_args "}"
 
@@ -139,6 +145,7 @@ step: filter_step
     | cross_join_step
     | set_similarity_step
     | string_match_step
+    | rag_enrich_step
 
 filter_step: "filter" "{" condition "}"
 
@@ -276,7 +283,9 @@ mermaid_param: "type" ":" mermaid_type      -> mermaid_type_spec
              | "attributes" ":" NAME        -> mermaid_attributes
              | "inheritance" ":" NAME "->" NAME -> mermaid_inheritance
              | "composition" ":" NAME "*->" NAME -> mermaid_composition
+             | "composition" ":" NAME "->" NAME -> mermaid_composition
              | "association" ":" NAME "-->" NAME -> mermaid_association
+             | "association" ":" NAME "->" NAME -> mermaid_association
              // Pie chart specific
              | "labels" ":" NAME            -> mermaid_labels
              | "values" ":" NAME            -> mermaid_values
@@ -499,6 +508,34 @@ match_type: "common_affix"    -> match_affix
           | "contains"        -> match_contains
 
 // ============================================================
+// RAG ENRICH (Per-row semantic enrichment)
+// ============================================================
+
+// Enrich each row with RAG semantic search results
+// rag_enrich { query: "template {field}", top_k: 3, threshold: 0.5, mode: "best" }
+rag_enrich_step: "rag_enrich" "{" rag_enrich_spec "}"
+
+rag_enrich_spec: rag_enrich_param ("," rag_enrich_param)*
+
+rag_enrich_param: "query" ":" STRING                 -> re_query
+                | "query" ":" param_ref              -> re_query_param
+                | "top_k" ":" INT                    -> re_top_k
+                | "top_k" ":" param_ref              -> re_top_k_param
+                | "threshold" ":" SIGNED_FLOAT       -> re_threshold
+                | "threshold" ":" param_ref          -> re_threshold_param
+                | "mode" ":" rag_enrich_mode         -> re_mode
+                | "batch_size" ":" INT               -> re_batch_size
+                | "batch_size" ":" param_ref         -> re_batch_size_param
+                | "max_rows" ":" INT                 -> re_max_rows
+                | "max_rows" ":" param_ref           -> re_max_rows_param
+                | "entity_types" ":" rag_entity_list -> re_entity_types
+
+rag_enrich_mode: "best"  -> re_mode_best
+               | "all"   -> re_mode_all
+
+rag_entity_list: "[" STRING ("," STRING)* "]"
+
+// ============================================================
 // GROUP BY
 // ============================================================
 
@@ -540,8 +577,12 @@ format_value: STRING
 
 field_list: field_item ("," field_item)*
 
+// Field items in select step:
+// - NAME as NAME: alias (e.g., "id as user_id")
+// - NAME: expr: assign expression or rename (e.g., "type: \"class\"" or "new_name: old_name")
+// - NAME: simple field selection
 field_item: NAME "as" NAME            -> field_alias
-          | NAME ":" NAME             -> field_rename
+          | NAME ":" expr             -> field_expr
           | NAME                      -> field_simple
 
 order_field: "-" NAME                 -> order_desc
@@ -587,8 +628,12 @@ comp_op: ">"   -> op_gt
 // Ternary conditional: value if condition else other
 ?expr: ternary_expr
 
-?ternary_expr: add_expr "?" add_expr ":" add_expr  -> ternary
-             | add_expr
+?ternary_expr: comp_expr "?" comp_expr ":" comp_expr  -> ternary
+             | comp_expr
+
+// Comparison expressions: a > b, a == b, etc.
+?comp_expr: add_expr comp_op add_expr  -> comparison
+          | add_expr
 
 ?add_expr: mul_expr (add_op mul_expr)*
 

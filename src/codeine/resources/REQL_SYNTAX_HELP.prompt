@@ -48,3 +48,9 @@ RIGHT:  HAVING (?count > 5)
 ### ORDER BY with DESC needs parentheses for expressions
 RIGHT:  ORDER BY DESC(?count)
 RIGHT:  ORDER BY ?name
+
+### LEVENSHTEIN for string similarity comparison
+LEVENSHTEIN returns edit distance (integer), use in comparisons:
+RIGHT:  FILTER(LEVENSHTEIN(?name1, ?name2) <= 2)
+RIGHT:  FILTER(LEVENSHTEIN(?name, 'expected') < 3)
+WRONG:  FILTER(LEVENSHTEIN(?name1, ?name2))  -- must compare to a value

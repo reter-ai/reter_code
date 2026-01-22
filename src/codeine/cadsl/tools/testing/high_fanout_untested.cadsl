@@ -1,9 +1,57 @@
 # high_fanout_untested - Find high fan-out functions without tests
 #
 # Identifies functions with many dependencies that have no test coverage.
+#
+# Enhanced with RAG to find similar well-tested high-fanout code as examples.
 
 detector high_fanout_untested(category="test_coverage", severity="high") {
-    """Find high fan-out functions without test coverage."""
+    """Find high fan-out functions without tests, with tested examples."""
+
+    param min_fanout: int = 5;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?e ?name ?class_name ?file ?line (COUNT(?callee) AS ?fanout)
+        WHERE {
+            { ?e type oo:Method } UNION { ?e type oo:Function }
+            ?e name ?name .
+            ?e inFile ?file .
+            ?e atLine ?line .
+            ?e calls ?callee .
+            OPTIONAL { ?e definedIn ?c . ?c name ?class_name }
+            FILTER ( !REGEX(?file, "test_") )
+            MINUS { ?test calls ?e . ?test inFile ?test_file . FILTER ( REGEX(?test_file, "test_") ) }
+        }
+        GROUP BY ?e ?name ?class_name ?file ?line
+        HAVING (?fanout >= {min_fanout})
+        ORDER BY DESC(?fanout)
+        LIMIT {limit}
+    }
+    | select { name, class_name, file, line, fanout }
+    | rag_enrich {
+        query: "test {name} {class_name} integration",
+        top_k: 3,
+        threshold: 0.5,
+        mode: all
+    }
+    | map {
+        name: name,
+        class_name: class_name ?? "",
+        file: file,
+        line: line,
+        fanout: fanout,
+        issue: "high_fanout_untested",
+        message: "High fan-out code '{name}' (calls {fanout} functions) has no tests",
+        suggestion: "Integration risk: add tests covering all called functions",
+        example_count: len(rag_matches),
+        similar_tested_code: rag_matches
+    }
+    | emit { findings }
+}
+
+# Simpler version without RAG enrichment for faster execution
+detector high_fanout_untested_fast(category="test_coverage", severity="high") {
+    """Find high fan-out functions without test coverage (no examples)."""
 
     param min_fanout: int = 5;
     param limit: int = 100;

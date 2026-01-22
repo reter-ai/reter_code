@@ -2,9 +2,56 @@
 #
 # Documentation is essential for maintainability. Public APIs should
 # always have docstrings explaining purpose, parameters, and return values.
+#
+# Enhanced with RAG to find similar documented classes as examples.
 
 detector undocumented_code(category="code_smell", severity="low") {
-    """Detect undocumented public classes."""
+    """Detect undocumented public classes, with similar documented code as examples."""
+
+    param include_private: bool = false;
+    param limit: int = 50;
+    param show_examples: bool = true;
+
+    # Find undocumented classes
+    reql {
+        SELECT ?e ?name ?file ?line
+        WHERE {
+            ?e type oo:Class .
+            ?e name ?name .
+            ?e inFile ?file .
+            ?e atLine ?line
+            MINUS { ?e hasDocstring ?doc }
+            FILTER ( {include_private} || !REGEX(?name, "^_") )
+            FILTER ( !REGEX(?file, "test") )
+        }
+        ORDER BY ?file ?line
+        LIMIT {limit}
+    }
+    | select { name, file, line }
+    | rag_enrich {
+        query: "{name} class",
+        top_k: 3,
+        threshold: 0.5,
+        mode: all,
+        entity_types: ["class"]
+    }
+    | map {
+        name: name,
+        file: file,
+        line: line,
+        entity_type: "Class",
+        issue: "undocumented",
+        message: "Undocumented Class: '{name}'",
+        suggestion: "Add a docstring explaining purpose and usage",
+        example_count: len(rag_matches),
+        similar_documented: rag_matches
+    }
+    | emit { findings }
+}
+
+# Simpler version without RAG enrichment for faster execution
+detector undocumented_code_fast(category="code_smell", severity="low") {
+    """Detect undocumented public classes (no examples)."""
 
     param include_private: bool = false;
     param limit: int = 100;

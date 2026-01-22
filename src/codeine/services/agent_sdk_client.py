@@ -123,23 +123,57 @@ def list_examples(category: Optional[str] = None) -> str:
     for cat, files in sorted(examples.items()):
         result += f"## {cat}\n"
         for f in sorted(files):
-            result += f"- {f}\n"
+            result += f"- {cat}/{f}\n"
         result += "\n"
 
+    result += "\nUse get_example('category/name') to view a specific example."
     return result
 
 
 def get_example(name: str) -> str:
-    """Get content of a specific CADSL example."""
-    for subdir in _CADSL_TOOLS_DIR.iterdir():
+    """Get content of a specific CADSL example.
+
+    Args:
+        name: Example name in 'category/name' format (e.g., 'smells/god_class')
+              or just 'name' for backwards compatibility (searches all categories)
+    """
+    # Check if category/name format is used
+    if "/" in name:
+        category, example_name = name.split("/", 1)
+        cadsl_file = _CADSL_TOOLS_DIR / category / f"{example_name}.cadsl"
+        if cadsl_file.exists():
+            with open(cadsl_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            return f"# Example: {category}/{example_name}.cadsl\n\n{content}"
+        return f"# Example '{name}' not found. Check category and name are correct."
+
+    # Fallback: search in all subdirectories (backwards compatibility)
+    found_in = []
+    for subdir in sorted(_CADSL_TOOLS_DIR.iterdir()):  # Sort for deterministic order
         if subdir.is_dir():
             cadsl_file = subdir / f"{name}.cadsl"
             if cadsl_file.exists():
-                with open(cadsl_file, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                return f"# Example: {name}.cadsl (from {subdir.name})\n\n{content}"
+                found_in.append(subdir.name)
 
-    return f"# Example '{name}' not found."
+    if not found_in:
+        return f"# Example '{name}' not found. Use list_examples() to see available examples."
+
+    if len(found_in) > 1:
+        locations = ", ".join(f"'{cat}/{name}'" for cat in found_in)
+        return f"# Ambiguous: '{name}' exists in multiple categories: {locations}\nPlease use 'category/name' format."
+
+    # Exactly one match found
+    category = found_in[0]
+    cadsl_file = _CADSL_TOOLS_DIR / category / f"{name}.cadsl"
+    with open(cadsl_file, 'r', encoding='utf-8') as f:
+        content = f.read()
+    return f"# Example: {category}/{name}.cadsl\n\n{content}"
+
+
+def search_examples(query: str, max_results: int = 10) -> str:
+    """Search for similar CADSL examples using semantic similarity."""
+    from .hybrid_query_engine import handle_search_examples
+    return handle_search_examples(query, max_results)
 
 
 # ============================================================
@@ -149,20 +183,9 @@ def get_example(name: str) -> str:
 REQL_SYSTEM_PROMPT = """You are a REQL query generator. Generate valid REQL queries for code analysis.
 
 ## AVAILABLE TOOLS
-You have access to these tools:
-- `mcp__query_helpers__get_grammar` - Get REQL or CADSL grammar (language: "reql" or "cadsl")
-- `mcp__query_helpers__list_examples` - List available query examples (category: optional)
-- `mcp__query_helpers__get_example` - Get a specific example by name
-- `mcp__query_helpers__run_reql` - Test a REQL query OR explore available data about the codebase (query: str, limit: int)
-- `mcp__query_helpers__run_rag` - Semantic search to find code by meaning (query: str, top_k: int, entity_types: str)
-
-Use `get_grammar` to learn syntax, `run_reql` to test/explore queries, and `run_rag` for semantic search.
-Do NOT use Read, Grep, Glob or any file tools - only use the tools listed above.
-
-## SEMANTIC MAPPING (use REGEX for these concepts)
-- "entry points" -> FILTER(REGEX(?name, "main|run|start|serve|execute|app|handle", "i"))
-- "services/handlers" -> FILTER(REGEX(?name, "Service|Handler|Controller|API|Manager", "i"))
-- "interactions/calls" -> use `maybeCalls` or `imports` predicates
+- `search_examples` - Find similar CADSL examples (many contain REQL blocks you can reference)
+- `get_example` - Get full code. Use 'category/name' format (e.g., 'smells/god_class')
+- `run_reql` - Test your REQL query before final output
 
 ## ENTITY TYPES (oo: prefix)
 - oo:Class, oo:Method, oo:Function, oo:Module, oo:Import
@@ -174,6 +197,16 @@ Do NOT use Read, Grep, Glob or any file tools - only use the tools listed above.
 1. Type patterns: `?x type oo:Class`
 2. FILTER needs parentheses: `FILTER(?count > 5)`
 3. Patterns separated by dots: `?x type oo:Class . ?x name ?n`
+
+## SEMANTIC MAPPING (use REGEX for these concepts)
+- "entry points" -> FILTER(REGEX(?name, "main|run|start|serve|execute|app|handle", "i"))
+- "services/handlers" -> FILTER(REGEX(?name, "Service|Handler|Controller|API|Manager", "i"))
+- "interactions/calls" -> use `maybeCalls` or `imports` predicates
+
+## TYPE vs CONCEPT
+- `?x type oo:Class` - Filter with subsumption (matches py:Class, cpp:Class, etc.)
+- `?x type ?t` - Returns ALL types (asserted + inferred) - MULTIPLE rows per entity
+- `?x concept ?t` - Returns ONLY asserted type - ONE row (e.g., "py:Method")
 
 ## UNION RULES (CRITICAL)
 ALL UNION arms MUST bind the EXACT SAME variables!
@@ -188,16 +221,29 @@ Do NOT answer the question yourself - generate a query that will answer it.
 CADSL_SYSTEM_PROMPT = """You are a CADSL query generator. Your ONLY job is to generate valid CADSL pipelines.
 
 ## AVAILABLE TOOLS
-You have access to these tools:
-- `mcp__query_helpers__get_grammar` - Get REQL or CADSL grammar (language: "reql" or "cadsl")
-- `mcp__query_helpers__list_examples` - List available query examples (category: optional)
-- `mcp__query_helpers__get_example` - Get a specific example by name
-- `mcp__query_helpers__run_reql` - Test a REQL query OR explore available data about the codebase (query: str, limit: int)
-- `mcp__query_helpers__run_rag` - Semantic search to find code by meaning (query: str, top_k: int, entity_types: str)
 
-**IMPORTANT**: Call `get_grammar` with language="cadsl" FIRST to learn the correct syntax!
-Use `run_reql` to explore data/test REQL blocks, and `run_rag` for semantic search.
-Do NOT use Read, Grep, Glob or any file tools - only use the tools listed above.
+**Example Tools (use if unsure about syntax):**
+- `search_examples` - Find similar CADSL examples by description. Returns ranked list with scores.
+- `get_example` - Get full working CADSL code. Use 'category/name' format (e.g., 'smells/god_class').
+- `list_examples` - Browse all examples by category.
+
+**Testing Tools:**
+- `run_reql` - Test REQL queries to verify data exists
+- `run_rag_search` - Test semantic search
+- `run_rag_duplicates` - Test duplicate detection
+- `run_rag_clusters` - Test clustering
+
+## EXAMPLE CATEGORIES (for search_examples / get_example)
+- `smells/` - Code smell detectors (god_class, long_methods, dead_code, magic_numbers...)
+- `rag/` - Semantic queries (duplicate_code, similar_clusters, auth_review...)
+- `diagrams/` - Visualization (class_diagram, call_graph, sequence_diagram...)
+- `dependencies/` - Import analysis (circular_imports, external_deps, unused_imports)
+- `inspection/` - Code inspection (find_callers, find_usages, describe_class...)
+- `testing/` - Test coverage (untested_classes, untested_methods, shallow_tests...)
+- `refactoring/` - Refactoring opportunities (inline_method, move_method...)
+- `patterns/` - Design patterns (singleton, factory, decorator_usage...)
+- `exceptions/` - Error handling (silent_exception, general_exception...)
+- `inheritance/` - Class hierarchy (extract_superclass, collapse_hierarchy...)
 
 ## CRITICAL SYNTAX RULES
 1. REQL blocks do NOT support # comments - use NO comments inside reql {}
@@ -205,11 +251,40 @@ Do NOT use Read, Grep, Glob or any file tools - only use the tools listed above.
 3. Entity types use `oo:` prefix: `oo:Class`, `oo:Method`
 4. Predicates have NO prefix: `name`, `inFile`, `definedIn`
 5. Pipeline steps use `|` operator
+6. **NEVER use `when { {param} == true }`** - use simple filter steps instead
 
 ## OUTPUT FORMAT - CRITICAL
 Your ONLY job is to generate a CADSL query. You MUST output the query in a ```cadsl code block.
 Do NOT write descriptions, summaries, or explanations - ONLY output the query.
 Do NOT answer the question yourself - generate a query that will answer it.
+"""
+
+CADSL_RETRY_PROMPT = """Your previous CADSL query returned {result_status}.
+
+Previous query:
+```cadsl
+{previous_query}
+```
+
+{error_info}
+
+**IMPORTANT**: Fix the syntax issue. Common problems and fixes:
+
+1. **NEVER use `when {{ {{param}} == true }}`** - This causes parse errors!
+   - BAD:  `| when {{ {{exclude_self}} == true }} filter {{ name != "self" }}`
+   - GOOD: `| filter {{ name != "self" and name != "cls" }}`
+   - Or put the logic in REQL: `FILTER(?param_name != "self" && ?param_name != "cls")`
+
+2. Use simple filter steps, not complex when conditionals:
+   - For multiple conditions: `| filter {{ a }} | filter {{ b }}`
+
+3. Put conditional logic in REQL FILTER clauses instead of pipeline when steps
+
+Options:
+1. Generate a FIXED query addressing the error above
+2. If empty results are genuinely correct, respond with: CONFIRM_EMPTY
+
+Output a new query in a ```cadsl code block, or write CONFIRM_EMPTY.
 """
 
 CLASSIFICATION_SYSTEM_PROMPT = """You classify code analysis questions into query types.
@@ -292,7 +367,7 @@ def _create_query_tools(reter_instance=None, rag_manager=None):
     """Create custom MCP tools for query generation assistance."""
     from claude_agent_sdk import tool, create_sdk_mcp_server
 
-    @tool("get_grammar", "Get the grammar specification for REQL or CADSL query languages", {"language": str})
+    @tool("get_grammar", "Get the formal grammar specification for REQL or CADSL. Use language='reql' for structural queries or language='cadsl' for pipelines.", {"language": str})
     async def get_grammar_tool(args):
         language = args.get("language", "").lower()
         if language == "reql":
@@ -303,16 +378,23 @@ def _create_query_tools(reter_instance=None, rag_manager=None):
             content = f"Unknown language: {language}. Use 'reql' or 'cadsl'."
         return {"content": [{"type": "text", "text": content}]}
 
-    @tool("list_examples", "List available query examples, optionally filtered by category", {"category": str})
+    @tool("list_examples", "List all CADSL example files organized by category. Categories: smells (code smells), rag (semantic queries), diagrams, dependencies, inheritance, inspection, patterns, refactoring, testing, exceptions. Use category param to filter.", {"category": str})
     async def list_examples_tool(args):
         category = args.get("category") or None
         content = list_examples(category)
         return {"content": [{"type": "text", "text": content}]}
 
-    @tool("get_example", "Get a specific query example by name", {"name": str})
+    @tool("get_example", "IMPORTANT: Get full working CADSL code for a specific example. Use 'category/name' format (e.g., 'smells/god_class', 'rag/duplicate_code'). These are production-ready templates you can adapt.", {"name": str})
     async def get_example_tool(args):
         name = args.get("name", "")
         content = get_example(name)
+        return {"content": [{"type": "text", "text": content}]}
+
+    @tool("search_examples", "Search for CADSL examples similar to your question using semantic similarity. Returns ranked list with scores. Use get_example to fetch full code. Helpful if unsure about syntax.", {"query": str, "max_results": int})
+    async def search_examples_tool(args):
+        query = args.get("query", "")
+        max_results = args.get("max_results", 10)
+        content = search_examples(query, max_results)
         return {"content": [{"type": "text", "text": content}]}
 
     @tool("run_reql", "Execute a REQL query and return results (use to test queries)", {"query": str, "limit": int})
@@ -341,11 +423,11 @@ def _create_query_tools(reter_instance=None, rag_manager=None):
             debug_log.debug(f"run_reql error: {e}")
             return {"content": [{"type": "text", "text": f"Query error: {str(e)}"}], "is_error": True}
 
-    @tool("run_rag", "Semantic search - find code/docs by meaning (query: str, top_k: int, entity_types: list)", {"query": str, "top_k": int, "entity_types": str})
-    async def run_rag_tool(args):
-        debug_log.debug(f"run_rag called with args: {args}")
+    @tool("run_rag_search", "Semantic search - find code/docs by meaning (query: str, top_k: int, entity_types: list)", {"query": str, "top_k": int, "entity_types": str})
+    async def run_rag_search_tool(args):
+        debug_log.debug(f"run_rag_search called with args: {args}")
         if rag_manager is None:
-            debug_log.debug("run_rag: RAG manager not available")
+            debug_log.debug("run_rag_search: RAG manager not available")
             return {"content": [{"type": "text", "text": "Error: RAG manager not available"}], "is_error": True}
 
         query = args.get("query", "")
@@ -354,13 +436,13 @@ def _create_query_tools(reter_instance=None, rag_manager=None):
         entity_types = [t.strip() for t in entity_types_str.split(",")] if entity_types_str else None
 
         try:
-            debug_log.debug(f"run_rag searching: '{query}' (top_k={top_k}, types={entity_types})")
+            debug_log.debug(f"run_rag_search searching: '{query}' (top_k={top_k}, types={entity_types})")
             results, stats = rag_manager.search(
                 query=query,
                 top_k=top_k,
                 entity_types=entity_types
             )
-            debug_log.debug(f"run_rag result: {len(results)} matches, stats: {stats}")
+            debug_log.debug(f"run_rag_search result: {len(results)} matches, stats: {stats}")
 
             content = f"Semantic search for: '{query}'\nFound {len(results)} results:\n\n"
             for i, r in enumerate(results[:top_k]):
@@ -373,14 +455,100 @@ def _create_query_tools(reter_instance=None, rag_manager=None):
 
             return {"content": [{"type": "text", "text": content}]}
         except Exception as e:
-            debug_log.debug(f"run_rag error: {e}")
-            return {"content": [{"type": "text", "text": f"RAG error: {str(e)}"}], "is_error": True}
+            debug_log.debug(f"run_rag_search error: {e}")
+            return {"content": [{"type": "text", "text": f"RAG search error: {str(e)}"}], "is_error": True}
 
-    tools = [get_grammar_tool, list_examples_tool, get_example_tool]
+    @tool("run_rag_duplicates", "Find duplicate code pairs using semantic similarity (similarity: float 0-1, limit: int, entity_types: str)", {"similarity": float, "limit": int, "entity_types": str})
+    async def run_rag_duplicates_tool(args):
+        debug_log.debug(f"run_rag_duplicates called with args: {args}")
+        if rag_manager is None:
+            debug_log.debug("run_rag_duplicates: RAG manager not available")
+            return {"content": [{"type": "text", "text": "Error: RAG manager not available"}], "is_error": True}
+
+        similarity = args.get("similarity", 0.85)
+        limit = args.get("limit", 50)
+        entity_types_str = args.get("entity_types", "")
+        entity_types = [t.strip() for t in entity_types_str.split(",")] if entity_types_str else ["method", "function"]
+
+        try:
+            debug_log.debug(f"run_rag_duplicates: similarity={similarity}, limit={limit}, types={entity_types}")
+            result = rag_manager.find_duplicate_candidates(
+                similarity_threshold=similarity,
+                max_results=limit,
+                exclude_same_file=True,
+                exclude_same_class=True,
+                entity_types=entity_types
+            )
+            debug_log.debug(f"run_rag_duplicates result: {result.get('total_pairs', 0)} pairs found")
+
+            if not result.get("success"):
+                return {"content": [{"type": "text", "text": f"Error: {result.get('error', 'Unknown error')}"}], "is_error": True}
+
+            pairs = result.get("pairs", [])
+            content = f"Found {len(pairs)} duplicate code pairs (similarity >= {similarity}):\n\n"
+            for i, pair in enumerate(pairs[:limit]):
+                e1, e2 = pair.get("entity1", {}), pair.get("entity2", {})
+                sim = pair.get("similarity", 0)
+                content += f"{i+1}. [{sim:.3f}] {e1.get('name', '?')} ({e1.get('file', '?')}:{e1.get('line', '?')})\n"
+                content += f"         ↔ {e2.get('name', '?')} ({e2.get('file', '?')}:{e2.get('line', '?')})\n"
+
+            return {"content": [{"type": "text", "text": content}]}
+        except Exception as e:
+            debug_log.debug(f"run_rag_duplicates error: {e}")
+            return {"content": [{"type": "text", "text": f"RAG duplicates error: {str(e)}"}], "is_error": True}
+
+    @tool("run_rag_clusters", "Find clusters of semantically similar code using K-means (n_clusters: int, min_size: int, entity_types: str)", {"n_clusters": int, "min_size": int, "entity_types": str})
+    async def run_rag_clusters_tool(args):
+        debug_log.debug(f"run_rag_clusters called with args: {args}")
+        if rag_manager is None:
+            debug_log.debug("run_rag_clusters: RAG manager not available")
+            return {"content": [{"type": "text", "text": "Error: RAG manager not available"}], "is_error": True}
+
+        n_clusters = args.get("n_clusters", 50)
+        min_size = args.get("min_size", 2)
+        entity_types_str = args.get("entity_types", "")
+        entity_types = [t.strip() for t in entity_types_str.split(",")] if entity_types_str else ["method", "function"]
+
+        try:
+            debug_log.debug(f"run_rag_clusters: n_clusters={n_clusters}, min_size={min_size}, types={entity_types}")
+            result = rag_manager.find_similar_clusters(
+                n_clusters=n_clusters,
+                min_cluster_size=min_size,
+                exclude_same_file=True,
+                exclude_same_class=True,
+                entity_types=entity_types
+            )
+            debug_log.debug(f"run_rag_clusters result: {result.get('total_clusters', 0)} clusters found")
+
+            if not result.get("success"):
+                return {"content": [{"type": "text", "text": f"Error: {result.get('error', 'Unknown error')}"}], "is_error": True}
+
+            clusters = result.get("clusters", [])
+            content = f"Found {len(clusters)} code clusters (min_size >= {min_size}):\n\n"
+            for cluster in clusters[:20]:  # Show first 20 clusters
+                cid = cluster.get("cluster_id", "?")
+                count = cluster.get("member_count", 0)
+                files = cluster.get("unique_files", 0)
+                members = cluster.get("members", [])
+                content += f"Cluster {cid}: {count} members across {files} files\n"
+                for m in members[:5]:  # Show first 5 members
+                    content += f"  - {m.get('name', '?')} ({m.get('file', '?')}:{m.get('line', '?')})\n"
+                if len(members) > 5:
+                    content += f"  ... and {len(members) - 5} more\n"
+                content += "\n"
+
+            return {"content": [{"type": "text", "text": content}]}
+        except Exception as e:
+            debug_log.debug(f"run_rag_clusters error: {e}")
+            return {"content": [{"type": "text", "text": f"RAG clusters error: {str(e)}"}], "is_error": True}
+
+    tools = [get_grammar_tool, list_examples_tool, search_examples_tool, get_example_tool]
     if reter_instance is not None:
         tools.append(run_reql_tool)
     if rag_manager is not None:
-        tools.append(run_rag_tool)
+        tools.append(run_rag_search_tool)
+        tools.append(run_rag_duplicates_tool)
+        tools.append(run_rag_clusters_tool)
 
     return create_sdk_mcp_server(
         name="query_helpers",
@@ -414,12 +582,15 @@ async def _call_agent(prompt: str, system_prompt: str, max_turns: int = 15, rete
     base_tools = [
         "mcp__query_helpers__get_grammar",
         "mcp__query_helpers__list_examples",
+        "mcp__query_helpers__search_examples",
         "mcp__query_helpers__get_example"
     ]
     if reter_instance is not None:
         base_tools.append("mcp__query_helpers__run_reql")
     if rag_manager is not None:
-        base_tools.append("mcp__query_helpers__run_rag")
+        base_tools.append("mcp__query_helpers__run_rag_search")
+        base_tools.append("mcp__query_helpers__run_rag_duplicates")
+        base_tools.append("mcp__query_helpers__run_rag_clusters")
 
     # Only use custom MCP tools - disable Read, Grep, Glob
     allowed_tools = base_tools
@@ -654,6 +825,97 @@ async def generate_cadsl_query(
         attempts=attempts,
         error="Max iterations reached"
     )
+
+
+async def retry_cadsl_query(
+    question: str,
+    previous_query: str,
+    result_count: int,
+    error_message: Optional[str] = None,
+    reter_instance=None,
+    rag_manager=None
+) -> QueryGenerationResult:
+    """
+    Ask agent to retry a CADSL query after empty results or error.
+
+    Returns:
+        QueryGenerationResult with either:
+        - A new query to try (success=True, query=<new query>)
+        - Confirmation that empty is correct (success=True, query=None, error="CONFIRM_EMPTY")
+        - Failure (success=False)
+    """
+    if not is_agent_sdk_available():
+        return QueryGenerationResult(
+            success=False,
+            query=None,
+            tools_used=[],
+            attempts=0,
+            error="Claude Agent SDK not available"
+        )
+
+    # Build retry prompt
+    if error_message:
+        result_status = f"an ERROR: {error_message}"
+        error_info = f"Error details: {error_message}"
+    else:
+        result_status = "0 results (empty)"
+        error_info = "The query executed successfully but found no matching data."
+
+    prompt = CADSL_RETRY_PROMPT.format(
+        result_status=result_status,
+        previous_query=previous_query,
+        error_info=error_info
+    )
+    prompt = f"Original question: {question}\n\n{prompt}"
+
+    debug_log.debug(f"\n{'='*60}\nCADSL RETRY REQUEST\n{'='*60}")
+    debug_log.debug(f"Previous query returned: {result_status}")
+
+    try:
+        response_text = await _call_agent(prompt, CADSL_SYSTEM_PROMPT, reter_instance=reter_instance, rag_manager=rag_manager)
+        debug_log.debug(f"Retry agent response: {response_text[:500]}...")
+
+        # Check if agent confirms empty is correct
+        if "CONFIRM_EMPTY" in response_text.upper():
+            debug_log.debug("Agent confirmed empty results are correct")
+            return QueryGenerationResult(
+                success=True,
+                query=None,
+                tools_used=[],
+                attempts=1,
+                error="CONFIRM_EMPTY"  # Special marker
+            )
+
+        # Try to extract new query
+        query = _extract_query(response_text, QueryType.CADSL)
+        if query:
+            debug_log.debug(f"Agent provided new query: {query[:200]}...")
+            return QueryGenerationResult(
+                success=True,
+                query=query,
+                tools_used=[],
+                attempts=1
+            )
+
+        # No query extracted
+        debug_log.debug("Agent did not provide a new query or CONFIRM_EMPTY")
+        return QueryGenerationResult(
+            success=False,
+            query=None,
+            tools_used=[],
+            attempts=1,
+            error="Agent did not provide a retry query"
+        )
+
+    except Exception as e:
+        debug_log.debug(f"Retry agent error: {e}")
+        return QueryGenerationResult(
+            success=False,
+            query=None,
+            tools_used=[],
+            attempts=1,
+            error=str(e)
+        )
 
 
 async def classify_query(question: str) -> Dict[str, Any]:

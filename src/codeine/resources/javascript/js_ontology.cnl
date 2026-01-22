@@ -24,6 +24,7 @@ Every `js:Method` is a `oo:Method`.
 Every `js:Constructor` is a `oo:Constructor`.
 Every `js:ArrowFunction` is a `oo:Function`.
 Every `js:Parameter` is a `oo:Parameter`.
+Every `js:Reference` is a `oo:Reference`.
 Every `js:Field` is a `oo:Field`.
 Every `js:Import` is a `oo:Import`.
 Every `js:Export` is a `oo:Export`.

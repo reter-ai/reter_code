@@ -31,6 +31,8 @@ py:Assignment is_subclass_of oo:Assignment
 
 py:Attribute is_subclass_of oo:Field
 
+py:Reference is_subclass_of oo:Reference
+
 # ============================================================================
 # Exception Handling (extends oo_ontology.reol)
 # ============================================================================

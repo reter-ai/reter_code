@@ -9,12 +9,15 @@ Use for questions about code STRUCTURE that can be answered by querying:
 - Import statements
 - File locations, line numbers
 - Counts, aggregations over structural elements
+- String similarity on names using LEVENSHTEIN (edit distance)
 
 Examples:
 - "Find all classes with more than 10 methods"
 - "Which functions have the most parameters?"
 - "List all classes that inherit from BaseClass"
 - "What methods does class X have?"
+- "Find methods with similar names" (use LEVENSHTEIN)
+- "Find typos in function names" (use LEVENSHTEIN)
 
 ## CADSL (Complex Analysis)
 Use for questions requiring:
@@ -22,12 +25,15 @@ Use for questions requiring:
 - Diagram generation (class diagrams, call graphs, flowcharts)
 - Complex multi-step pipelines
 - Joins between different data sources
+- **Hybrid queries**: Combining structural REQL with per-row RAG enrichment
 
 Examples:
 - "Show circular import dependencies"
 - "Generate a class diagram for module X"
 - "Find all paths from function A to function B"
 - "Visualize the call graph starting from main()"
+- "For each validation method, find semantically similar code" (hybrid)
+- "Find methods and their duplicate candidates" (hybrid)
 
 ## RAG (Semantic Search)
 Use for questions about code MEANING or SIMILARITY:
@@ -39,6 +45,11 @@ Use for questions about code MEANING or SIMILARITY:
 
 IMPORTANT: Any question about "duplicate", "similar", "clone", "copy", "redundant",
 or "repeated" code MUST use RAG, not REQL. These require semantic comparison.
+
+**When to use CADSL hybrid vs pure RAG:**
+- Pure RAG: General semantic search ("find authentication code")
+- CADSL hybrid: Start with structural query, then enrich with semantics
+  ("for each public method, find similar implementations")
 
 Examples:
 - "Find code similar to authentication handlers"

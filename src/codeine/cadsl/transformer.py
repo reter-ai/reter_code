@@ -340,15 +340,34 @@ class CADSLTransformer:
                     spec.merge_sources = self._extract_source_list(child)
 
     def _extract_source_list(self, node: Tree) -> List[Dict[str, Any]]:
-        """Extract list of sources from source_list node."""
+        """Extract list of sources from source_list node.
+
+        Each source_item contains:
+        - A source (reql_source, rag_source, or value_source)
+        - Optional source_steps (pipeline steps to apply)
+        """
         sources = []
         for child in node.children:
             if isinstance(child, Tree) and child.data == "source_item":
+                source_spec = None
+                steps = []
+
                 for source_node in child.children:
                     if isinstance(source_node, Tree):
-                        source_spec = self._extract_single_source(source_node)
-                        if source_spec:
-                            sources.append(source_spec)
+                        if source_node.data in ("reql_source", "rag_source", "value_source"):
+                            # Extract the source
+                            source_spec = self._extract_single_source(source_node)
+                        elif source_node.data == "source_steps":
+                            # Extract pipeline steps
+                            for step_node in source_node.children:
+                                if isinstance(step_node, Tree):
+                                    step = self._transform_step(step_node)
+                                    if step:
+                                        steps.append(step)
+
+                if source_spec:
+                    source_spec["steps"] = steps
+                    sources.append(source_spec)
         return sources
 
     def _extract_single_source(self, node: Tree) -> Optional[Dict[str, Any]]:
@@ -531,6 +550,8 @@ class CADSLTransformer:
             return self._transform_set_similarity_step(node)
         elif step_type == "string_match":
             return self._transform_string_match_step(node)
+        elif step_type == "rag_enrich":
+            return self._transform_rag_enrich_step(node)
 
         return None
 
@@ -716,8 +737,16 @@ class CADSLTransformer:
         return {"type": "filter", "predicate": lambda r, ctx=None: True}
 
     def _transform_select_step(self, node: Tree) -> Dict[str, Any]:
-        """Transform select step."""
+        """Transform select step.
+
+        Handles:
+        - field_simple: NAME -> select field as-is
+        - field_alias: NAME as NAME -> select field with alias
+        - field_expr: NAME: expr -> computed field (may convert to map step)
+        """
         fields = {}  # output_name -> source_name
+        expressions = {}  # output_name -> compiled expression
+        has_expressions = False
 
         field_list = self._find_child(node, "field_list")
         if field_list:
@@ -730,10 +759,49 @@ class CADSLTransformer:
                         source = str(item.children[0])
                         alias = str(item.children[1])
                         fields[alias] = source
-                    elif item.data == "field_rename":
+                    elif item.data == "field_expr":
+                        # NAME: expr - could be rename or computed value
                         alias = str(item.children[0])
-                        source = str(item.children[1])
-                        fields[alias] = source
+                        expr_node = item.children[1]
+
+                        # Check if expr is a simple field reference (NAME)
+                        if isinstance(expr_node, Tree) and expr_node.data == "field_ref":
+                            # Simple rename: new_name: old_name
+                            source = str(expr_node.children[0])
+                            fields[alias] = source
+                        else:
+                            # Computed expression: type: "class" or complex expr
+                            expr_func = compile_expression(expr_node)
+                            expressions[alias] = expr_func
+                            has_expressions = True
+
+        # If we have computed expressions, convert to map step
+        if has_expressions:
+            # Build a transform function that combines field selection and expressions
+            def make_transform(fields_map, expr_map):
+                def transform(row, ctx=None):
+                    result = {}
+                    # Copy selected/renamed fields (handle ?-prefixed REQL keys)
+                    for out_name, src_name in fields_map.items():
+                        clean_out = out_name.lstrip("?")
+                        if src_name in row:
+                            result[clean_out] = row[src_name]
+                        elif not src_name.startswith("?") and f"?{src_name}" in row:
+                            result[clean_out] = row[f"?{src_name}"]
+                        elif out_name in row:
+                            result[clean_out] = row[out_name]
+                        elif not out_name.startswith("?") and f"?{out_name}" in row:
+                            result[clean_out] = row[f"?{out_name}"]
+                    # Add computed expressions
+                    for out_name, expr_func in expr_map.items():
+                        try:
+                            result[out_name] = expr_func(row, ctx)
+                        except Exception:
+                            result[out_name] = None
+                    return result
+                return transform
+
+            return {"type": "map", "transform": make_transform(fields, expressions)}
 
         return {"type": "select", "fields": fields}
 
@@ -1415,6 +1483,62 @@ class CADSLTransformer:
 
         return result
 
+    def _transform_rag_enrich_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform rag_enrich step: rag_enrich { query: "template {field}", top_k: 3, mode: "best" }"""
+        result = {
+            "type": "rag_enrich",
+            "query_template": "",
+            "top_k": 1,
+            "threshold": None,
+            "mode": "best",
+            "batch_size": 50,
+            "max_rows": 1000,
+            "entity_types": None,
+        }
+
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "rag_enrich_spec":
+                for param in child.children:
+                    if isinstance(param, Tree):
+                        if param.data == "re_query":
+                            result["query_template"] = self._unquote(str(param.children[0]))
+                        elif param.data == "re_query_param":
+                            result["query_template_param"] = str(param.children[0].children[0])
+                        elif param.data == "re_top_k":
+                            result["top_k"] = int(str(param.children[0]))
+                        elif param.data == "re_top_k_param":
+                            result["top_k_param"] = str(param.children[0].children[0])
+                        elif param.data == "re_threshold":
+                            result["threshold"] = float(str(param.children[0]))
+                        elif param.data == "re_threshold_param":
+                            result["threshold_param"] = str(param.children[0].children[0])
+                        elif param.data == "re_mode":
+                            mode_node = param.children[0]
+                            if isinstance(mode_node, Tree):
+                                if mode_node.data == "re_mode_best":
+                                    result["mode"] = "best"
+                                elif mode_node.data == "re_mode_all":
+                                    result["mode"] = "all"
+                        elif param.data == "re_batch_size":
+                            result["batch_size"] = int(str(param.children[0]))
+                        elif param.data == "re_batch_size_param":
+                            result["batch_size_param"] = str(param.children[0].children[0])
+                        elif param.data == "re_max_rows":
+                            result["max_rows"] = int(str(param.children[0]))
+                        elif param.data == "re_max_rows_param":
+                            result["max_rows_param"] = str(param.children[0].children[0])
+                        elif param.data == "re_entity_types":
+                            # Extract entity types list
+                            entity_list = param.children[0]
+                            if isinstance(entity_list, Tree) and entity_list.data == "rag_entity_list":
+                                result["entity_types"] = [
+                                    self._unquote(str(t))
+                                    for t in entity_list.children
+                                    if isinstance(t, Token) and t.type == "STRING"
+                                ]
+
+        return result
+
     # --------------------------------------------------------
     # Helpers
     # --------------------------------------------------------
@@ -1806,6 +1930,39 @@ class PipelineBuilder:
                         output=step_spec.get("output", "has_match"),
                         match_output=step_spec.get("match_output"),
                     )
+
+                elif step_type == "rag_enrich":
+                    # Handle param references
+                    query_template = step_spec.get("query_template", "")
+                    if step_spec.get("query_template_param"):
+                        query_template = ctx.params.get(step_spec["query_template_param"], query_template)
+                    top_k = step_spec.get("top_k", 1)
+                    if step_spec.get("top_k_param"):
+                        top_k = ctx.params.get(step_spec["top_k_param"], top_k)
+                    threshold = step_spec.get("threshold")
+                    if step_spec.get("threshold_param"):
+                        threshold = ctx.params.get(step_spec["threshold_param"], threshold)
+                    batch_size = step_spec.get("batch_size", 50)
+                    if step_spec.get("batch_size_param"):
+                        batch_size = ctx.params.get(step_spec["batch_size_param"], batch_size)
+                    max_rows = step_spec.get("max_rows", 1000)
+                    if step_spec.get("max_rows_param"):
+                        max_rows = ctx.params.get(step_spec["max_rows_param"], max_rows)
+
+                    pipeline = pipeline >> RagEnrichStep(
+                        query_template=query_template,
+                        top_k=top_k,
+                        threshold=threshold,
+                        mode=step_spec.get("mode", "best"),
+                        batch_size=batch_size,
+                        max_rows=max_rows,
+                        entity_types=step_spec.get("entity_types"),
+                    )
+
+                else:
+                    # Unknown step type - this means a step was added to the grammar
+                    # but not implemented in PipelineBuilder.build()
+                    raise ValueError(f"Unknown step type in pipeline: {step_type}")
 
             if emit_key:
                 pipeline = pipeline.emit(emit_key)
@@ -3282,8 +3439,9 @@ class MergeSource:
     Merge multiple sources into one.
 
     Syntax: merge { source1, source2, ... }
+    Or with per-source steps: merge { source1 | step1 | step2, source2 | step3 }
 
-    Executes all sources and concatenates their results.
+    Executes all sources (with their steps) and concatenates their results.
     """
 
     def __init__(self, source_specs):
@@ -3294,7 +3452,8 @@ class MergeSource:
         from codeine.dsl.core import (
             pipeline_ok, pipeline_err,
             REQLSource, ValueSource,
-            RAGSearchSource, RAGDuplicatesSource, RAGClustersSource
+            RAGSearchSource, RAGDuplicatesSource, RAGClustersSource,
+            Pipeline, SelectStep, MapStep, FilterStep
         )
 
         merged = []
@@ -3336,15 +3495,27 @@ class MergeSource:
                 else:
                     continue
 
+                # Execute source
                 result = source.execute(ctx)
-                if result.is_ok():
-                    data = result.unwrap()
-                    if isinstance(data, list):
-                        merged.extend(data)
-                    else:
-                        merged.append(data)
-                else:
+                if result.is_err():
                     errors.append(result)
+                    continue
+
+                data = result.unwrap()
+
+                # Apply per-source steps if any
+                steps = spec.get("steps", [])
+                if steps:
+                    data = self._apply_steps(data, steps, ctx)
+
+                # Merge into results
+                if isinstance(data, list):
+                    merged.extend(data)
+                elif hasattr(data, 'to_pylist'):  # PyArrow table
+                    merged.extend(data.to_pylist())
+                else:
+                    merged.append(data)
+
             except Exception as e:
                 errors.append(pipeline_err("merge", f"Source failed: {e}", e))
 
@@ -3352,6 +3523,44 @@ class MergeSource:
             return errors[0]
 
         return pipeline_ok(merged)
+
+    def _apply_steps(self, data, steps, ctx):
+        """Apply pipeline steps to data."""
+        from codeine.dsl.core import SelectStep, MapStep, FilterStep, pipeline_ok
+
+        # Convert Arrow table to list if needed
+        if hasattr(data, 'to_pylist'):
+            data = data.to_pylist()
+
+        for step_spec in steps:
+            step_type = step_spec.get("type")
+
+            if step_type == "select":
+                fields = step_spec.get("fields", {})
+                step = SelectStep(fields)
+                result = step.execute(data, ctx)
+                if result.is_ok():
+                    data = result.unwrap()
+
+            elif step_type == "map":
+                transform = step_spec.get("transform", lambda r, ctx=None: r)
+                step = MapStep(transform)
+                result = step.execute(data, ctx)
+                if result.is_ok():
+                    data = result.unwrap()
+
+            elif step_type == "filter":
+                predicate = step_spec.get("predicate", lambda r, ctx=None: True)
+                step = FilterStep(predicate)
+                result = step.execute(data, ctx)
+                if result.is_ok():
+                    data = result.unwrap()
+
+        # Convert back to list if it's Arrow
+        if hasattr(data, 'to_pylist'):
+            data = data.to_pylist()
+
+        return data
 
 
 # ============================================================
@@ -3620,6 +3829,208 @@ class StringMatchStep:
             prev_row = curr_row
 
         return prev_row[-1]
+
+
+# ============================================================
+# RAG ENRICH STEP
+# ============================================================
+
+class RagEnrichStep:
+    """
+    Per-row RAG enrichment step - enriches each row with semantic search results.
+
+    Syntax: rag_enrich { query: "template {field}", top_k: 3, threshold: 0.5, mode: "best" }
+
+    Template placeholders like {field} are replaced with row values before search.
+
+    Modes:
+    - "best": Adds best match fields directly to row (similarity, similar_entity, similar_file)
+    - "all": Adds array of all matches as rag_matches field
+
+    Uses batching for performance optimization.
+    """
+
+    def __init__(self, query_template, top_k=1, threshold=None, mode="best",
+                 batch_size=50, max_rows=1000, entity_types=None):
+        self.query_template = query_template
+        self.top_k = top_k
+        self.threshold = threshold
+        self.mode = mode
+        self.batch_size = batch_size
+        self.max_rows = max_rows
+        self.entity_types = entity_types
+
+    def execute(self, data, ctx=None):
+        """Execute RAG enrichment with batching."""
+        from codeine.dsl.core import pipeline_ok, pipeline_err
+        import logging
+        import re
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            # Convert to list if Arrow table
+            if hasattr(data, 'to_pylist'):
+                data = data.to_pylist()
+
+            if not data:
+                return pipeline_ok([])
+
+            # Check row count limit
+            if len(data) > self.max_rows:
+                logger.warning(
+                    f"RAG enrichment: {len(data)} rows exceeds max_rows ({self.max_rows}). "
+                    f"Processing first {self.max_rows} rows only."
+                )
+                data = data[:self.max_rows]
+
+            # Validate template fields against first row
+            template_fields = re.findall(r'\{(\w+)\}', self.query_template)
+            if data and template_fields:
+                missing = [f for f in template_fields if f not in data[0]]
+                if missing:
+                    # Check for ?-prefixed versions (REQL output)
+                    still_missing = []
+                    for f in missing:
+                        if f"?{f}" not in data[0]:
+                            still_missing.append(f)
+                    if still_missing:
+                        return pipeline_err(
+                            "rag_enrich",
+                            f"Template field(s) not found in row: {still_missing}. "
+                            f"Available fields: {list(data[0].keys())}"
+                        )
+
+            # Get RAG manager from context or default instance (same pattern as RAGSearchSource)
+            rag_manager = None
+            if ctx and hasattr(ctx, 'get'):
+                rag_manager = ctx.get("rag_manager")
+            if rag_manager is None:
+                try:
+                    from codeine.services.default_instance_manager import DefaultInstanceManager
+                    default_mgr = DefaultInstanceManager.get_instance()
+                    if default_mgr:
+                        rag_manager = default_mgr.get_rag_manager()
+                except Exception as e:
+                    logger.debug(f"Could not get RAG manager: {e}")
+
+            if rag_manager is None:
+                return pipeline_err(
+                    "rag_enrich",
+                    "RAG manager not available. Ensure project is initialized."
+                )
+
+            # Process in batches for performance
+            result = []
+            for batch_start in range(0, len(data), self.batch_size):
+                batch_end = min(batch_start + self.batch_size, len(data))
+                batch = data[batch_start:batch_end]
+
+                # Prepare queries for batch
+                queries = []
+                for row in batch:
+                    query = self._expand_template(row)
+                    queries.append(query)
+
+                # Execute batch search
+                batch_results = self._batch_search(rag_manager, queries, ctx)
+
+                # Enrich rows with results
+                for i, row in enumerate(batch):
+                    new_row = dict(row)
+                    matches = batch_results[i] if i < len(batch_results) else []
+
+                    # Ensure matches is always a list
+                    if matches is None:
+                        matches = []
+
+                    # Filter by threshold (RAG results use 'score' field)
+                    if self.threshold is not None and matches:
+                        matches = [m for m in matches if m.get('score', m.get('similarity', 0)) >= self.threshold]
+
+                    if self.mode == "best":
+                        # Add best match fields directly
+                        if matches:
+                            best = matches[0]
+                            # RAG results use 'score', fallback to 'similarity' for compatibility
+                            new_row['similarity'] = best.get('score', best.get('similarity', 0))
+                            new_row['similar_entity'] = best.get('name', best.get('entity', ''))
+                            new_row['similar_file'] = best.get('file', '')
+                            new_row['similar_line'] = best.get('line', 0)
+                            new_row['similar_type'] = best.get('entity_type', '')
+                        else:
+                            new_row['similarity'] = 0
+                            new_row['similar_entity'] = None
+                            new_row['similar_file'] = None
+                            new_row['similar_line'] = None
+                            new_row['similar_type'] = None
+                    else:  # mode == "all"
+                        new_row['rag_matches'] = matches
+
+                    result.append(new_row)
+
+            return pipeline_ok(result)
+
+        except Exception as e:
+            import traceback
+            logger.error(f"RAG enrichment failed: {e}\n{traceback.format_exc()}")
+            return pipeline_err("rag_enrich", f"RAG enrichment failed: {e}", e)
+
+    def _expand_template(self, row):
+        """Expand template placeholders with row values."""
+        import re
+
+        def replacer(match):
+            field = match.group(1)
+            # Try exact field name first
+            if field in row:
+                return str(row[field])
+            # Try ?-prefixed version (REQL output)
+            if f"?{field}" in row:
+                return str(row[f"?{field}"])
+            return match.group(0)  # Keep original if not found
+
+        return re.sub(r'\{(\w+)\}', replacer, self.query_template)
+
+    def _batch_search(self, rag_manager, queries, ctx):
+        """Execute batch RAG search. Returns list of result lists."""
+        results = []
+
+        for query in queries:
+            try:
+                # Use RAG manager's search method (returns (results, stats))
+                if hasattr(rag_manager, 'search'):
+                    search_results, stats = rag_manager.search(
+                        query=query,
+                        top_k=self.top_k,
+                        entity_types=self.entity_types
+                    )
+
+                    # Check for errors
+                    if stats.get("error"):
+                        results.append([])
+                        continue
+
+                    # Convert RAGSearchResult objects to dicts
+                    matches = []
+                    for r in search_results:
+                        if hasattr(r, 'to_dict'):
+                            matches.append(r.to_dict())
+                        elif isinstance(r, dict):
+                            matches.append(r)
+                        elif hasattr(r, '__dict__'):
+                            matches.append(vars(r))
+                        else:
+                            matches.append({'entity': str(r), 'similarity': 0})
+                    results.append(matches)
+                else:
+                    results.append([])
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).debug(f"RAG search failed for query '{query[:50]}...': {e}")
+                results.append([])
+
+        return results
 
 
 # ============================================================

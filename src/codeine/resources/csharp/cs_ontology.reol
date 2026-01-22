@@ -45,6 +45,8 @@ cs:Event is_subclass_of oo:Field
 
 cs:Parameter is_subclass_of oo:Parameter
 
+cs:Reference is_subclass_of oo:Reference
+
 cs:Using is_subclass_of oo:Import
 
 cs:Attribute is_subclass_of oo:Decorator

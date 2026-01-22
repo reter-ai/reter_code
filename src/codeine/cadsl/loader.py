@@ -466,6 +466,41 @@ def build_pipeline_factory(spec: CADSLToolSpec,
                     relationships=step_spec.get("relationships"),
                 )
 
+            elif step_type == "rag_enrich":
+                # Per-row RAG enrichment step
+                from .transformer import RagEnrichStep
+
+                # Resolve parameter references
+                query_template = step_spec.get("query_template", "")
+                if "query_template_param" in step_spec:
+                    query_template = ctx.params.get(step_spec["query_template_param"], query_template)
+
+                top_k = step_spec.get("top_k", 1)
+                if "top_k_param" in step_spec:
+                    top_k = ctx.params.get(step_spec["top_k_param"], top_k)
+
+                threshold = step_spec.get("threshold")
+                if "threshold_param" in step_spec:
+                    threshold = ctx.params.get(step_spec["threshold_param"], threshold)
+
+                batch_size = step_spec.get("batch_size", 50)
+                if "batch_size_param" in step_spec:
+                    batch_size = ctx.params.get(step_spec["batch_size_param"], batch_size)
+
+                max_rows = step_spec.get("max_rows", 1000)
+                if "max_rows_param" in step_spec:
+                    max_rows = ctx.params.get(step_spec["max_rows_param"], max_rows)
+
+                pipeline = pipeline >> RagEnrichStep(
+                    query_template=query_template,
+                    top_k=top_k,
+                    threshold=threshold,
+                    mode=step_spec.get("mode", "best"),
+                    batch_size=batch_size,
+                    max_rows=max_rows,
+                    entity_types=step_spec.get("entity_types"),
+                )
+
         if emit_key:
             pipeline = pipeline.emit(emit_key)
 

@@ -10,7 +10,7 @@ detector remove_middle_man(category="refactoring", severity="low") {
     param limit: int = 100;
 
     reql {
-        SELECT ?c ?name ?file ?line ?delegate_class (COUNT(?delegation) AS ?delegation_count)
+        SELECT ?c ?name ?file ?line ?delegate ?delegate_class (COUNT(?delegation) AS ?delegation_count)
         WHERE {
             ?c type oo:Class .
             ?c name ?name .
@@ -23,7 +23,7 @@ detector remove_middle_man(category="refactoring", severity="low") {
             ?delegate name ?delegate_class .
             FILTER ( ?delegate != ?c )
         }
-        GROUP BY ?c ?name ?file ?line ?delegate_class
+        GROUP BY ?c ?name ?file ?line ?delegate ?delegate_class
         HAVING (?delegation_count >= {min_delegations})
         ORDER BY DESC(?delegation_count)
         LIMIT {limit}

@@ -1,37 +1,90 @@
-# duplicate_names - Detect entities with duplicate names across modules
+# duplicate_names - Detect entities with duplicate or similar names across modules
 #
-# Having multiple classes, functions, or variables with the same name
+# Having multiple classes, functions, or variables with the same or similar names
 # in different modules can lead to confusion and import conflicts.
+#
+# Uses LEVENSHTEIN distance to find both exact duplicates (distance=0) AND
+# near-duplicates (typos, case variations, underscore differences).
+#
+# Enhanced with RAG to find semantically similar code patterns.
 
-detector duplicate_names(category="code_smell", severity="low") {
-    """Detect duplicate entity names across different modules."""
+detector duplicate_names(category="code_smell", severity="medium") {
+    """Detect duplicate names with semantic similarity analysis."""
 
-    param entity_type: str = "class";
+    param max_distance: int = 2;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?name1 ?file1 ?name2 ?file2
+        WHERE {
+            ?e1 type oo:Class .
+            ?e1 name ?name1 .
+            ?e1 inFile ?file1 .
+            ?e2 type oo:Class .
+            ?e2 name ?name2 .
+            ?e2 inFile ?file2 .
+            FILTER(?e1 != ?e2)
+            FILTER(?file1 != ?file2)
+            FILTER(LEVENSHTEIN(?name1, ?name2) <= {max_distance})
+        }
+        LIMIT 200
+    }
+    | select { name1, name2, file1, file2 }
+    | rag_enrich {
+        query: "{name1} {name2} class",
+        top_k: 3,
+        threshold: 0.5,
+        mode: all,
+        entity_types: ["class"]
+    }
+    | map {
+        name1: name1,
+        name2: name2,
+        file1: file1,
+        file2: file2,
+        issue: "duplicate_or_similar_name",
+        message: "'{name1}' and '{name2}' are identical or very similar names in different modules",
+        suggestion: "Consider using more specific names or consolidating if they serve the same purpose",
+        files: "{file1}, {file2}",
+        semantic_matches: len(rag_matches),
+        similar_patterns: rag_matches
+    }
+    | order_by { +name1, +name2 }
+    | limit { {limit} }
+    | emit { findings }
+}
+
+# Simpler version without RAG enrichment for faster execution
+detector duplicate_names_fast(category="code_smell", severity="medium") {
+    """Detect duplicate and similar entity names across different modules (no examples)."""
+
+    param max_distance: int = 2;
     param limit: int = 100;
 
     reql {
-        SELECT ?name ?file ?concept
+        SELECT ?name1 ?file1 ?name2 ?file2
         WHERE {
-            ?e type oo:Class .
-            ?e name ?name .
-            ?e inFile ?file .
-            ?e concept ?concept
+            ?e1 type oo:Class .
+            ?e1 name ?name1 .
+            ?e1 inFile ?file1 .
+            ?e2 type oo:Class .
+            ?e2 name ?name2 .
+            ?e2 inFile ?file2 .
+            FILTER(?e1 != ?e2)
+            FILTER(?file1 != ?file2)
+            FILTER(LEVENSHTEIN(?name1, ?name2) <= {max_distance})
         }
+        LIMIT 500
     }
-    | select { name, file }
-    | collect {
-        by: name,
-        files: set(file),
-        count: count(file)
-    }
-    | filter { count > 1 }
-    | order_by { -count }
-    | limit { {limit} }
+    | select { name1, name2, file1, file2 }
     | map {
         ...row,
-        issue: "duplicate_name",
-        message: "Name '{name}' appears {count} times in different modules",
-        suggestion: "Consider using more specific names or reorganizing into a single location"
+        issue: "duplicate_or_similar_name",
+        message: "'{name1}' and '{name2}' are identical or very similar names in different modules",
+        suggestion: "Consider using more specific names or consolidating if they serve the same purpose",
+        files: "{file1}, {file2}"
     }
+    | order_by { +name1, +name2 }
+    | limit { {limit} }
     | emit { findings }
 }

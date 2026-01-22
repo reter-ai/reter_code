@@ -34,3 +34,10 @@ oo:ThrowStatement is_subclass_of oo:Statement
 # Control flow
 oo:ReturnStatement is_subclass_of oo:Statement
 
+# ============================================================================
+# Reference Tracking
+# ============================================================================
+
+# References track variable/parameter usages within code
+# oo:Reference is the base type for all reference facts
+

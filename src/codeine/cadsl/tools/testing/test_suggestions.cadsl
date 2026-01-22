@@ -1,26 +1,89 @@
-# test_suggestions - Find methods similar to test patterns for test prioritization
+# test_suggestions - Find methods that need tests with similar tested code as examples
 #
-# Uses semantic search to find methods that match common testing patterns.
-# Methods in non-test files that are similar to test patterns are good candidates
-# for test coverage improvement.
+# Enhanced with RAG to find similar tested methods as examples.
+# This helps developers understand patterns they can follow when writing tests.
 
 detector test_suggestions(category="test_coverage", severity="medium") {
-    """Find methods similar to test patterns for test prioritization."""
+    """Find public methods without tests, with similar tested code as examples."""
 
-    param min_score: float = 0.5;
-    param limit: int = 30;
+    param limit: int = 50;
+    param show_examples: bool = true;
 
-    # Use RAG search to find methods matching test-related patterns
-    rag { search, query: "test assert mock validate verify check expect should", top_k: 200 }
-    | filter { score >= {min_score} }
-    | select { name, file, line, score, qualified_name, entity_type }
-    | map {
-        ...row,
-        issue: "test_candidate",
-        message: "'{name}' matches test patterns (score: {score})",
-        suggestion: "Consider adding test coverage"
+    # Find public methods in non-test files that have no test calling them
+    reql {
+        SELECT ?m ?name ?class_name ?file ?line
+        WHERE {
+            ?m type oo:Method .
+            ?m name ?name .
+            ?m definedIn ?c . ?c name ?class_name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            FILTER (!STRSTARTS(?name, "_"))
+            FILTER (!REGEX(?file, "test"))
+            FILTER NOT EXISTS {
+                ?test calls ?m .
+                ?test inFile ?test_file .
+                FILTER (REGEX(?test_file, "test"))
+            }
+        }
+        ORDER BY ?file ?line
+        LIMIT {limit}
     }
-    | order_by { -score }
-    | limit { {limit} }
+    | select { name, class_name, file, line }
+    | rag_enrich {
+        query: "test {name} {class_name}",
+        top_k: 3,
+        threshold: 0.5,
+        mode: all
+    }
+    | map {
+        name: name,
+        class_name: class_name ?? "",
+        file: file,
+        line: line,
+        issue: "needs_test",
+        message: "'{class_name}.{name}' has no test coverage",
+        suggestion: "Add unit tests for this method",
+        example_count: len(rag_matches),
+        similar_tested_code: rag_matches
+    }
+    | emit { findings }
+}
+
+# Simpler version without RAG enrichment for faster execution
+detector test_suggestions_fast(category="test_coverage", severity="medium") {
+    """Find public methods without tests (no examples)."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?name ?class_name ?file ?line
+        WHERE {
+            ?m type oo:Method .
+            ?m name ?name .
+            ?m definedIn ?c . ?c name ?class_name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            FILTER (!STRSTARTS(?name, "_"))
+            FILTER (!REGEX(?file, "test"))
+            FILTER NOT EXISTS {
+                ?test calls ?m .
+                ?test inFile ?test_file .
+                FILTER (REGEX(?test_file, "test"))
+            }
+        }
+        ORDER BY ?file ?line
+        LIMIT {limit}
+    }
+    | select { name, class_name, file, line }
+    | map {
+        name: name,
+        class_name: class_name ?? "",
+        file: file,
+        line: line,
+        issue: "needs_test",
+        message: "'{class_name}.{name}' has no test coverage",
+        suggestion: "Add unit tests for this method"
+    }
     | emit { findings }
 }

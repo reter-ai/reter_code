@@ -178,9 +178,24 @@ class ExpressionCompiler:
     # --------------------------------------------------------
 
     def _compile_field_ref(self, node: Tree) -> Callable:
-        """Compile a field reference."""
+        """Compile a field reference.
+
+        Handles REQL ?-prefixed column names: if 'name' not found, try '?name'.
+        """
         field = str(node.children[0])
-        return lambda r, ctx=None, f=field: r.get(f) if isinstance(r, dict) else None
+
+        def get_field(r, ctx=None, f=field):
+            if not isinstance(r, dict):
+                return None
+            # Try exact field name first
+            if f in r:
+                return r[f]
+            # Try ?-prefixed version (REQL output)
+            if not f.startswith("?") and f"?{f}" in r:
+                return r[f"?{f}"]
+            return None
+
+        return get_field
 
     def _compile_param_ref(self, node: Tree) -> Callable:
         """Compile a parameter reference {param_name}."""
@@ -259,6 +274,74 @@ class ExpressionCompiler:
         return lambda r, ctx=None, c=cond, t=then_val, e=else_val: (
             t(r, ctx) if c(r, ctx) else e(r, ctx)
         )
+
+    def _compile_comparison(self, node: Tree) -> Callable:
+        """Compile comparison expression: a > b, a == b, a != b, etc."""
+        left = self.compile(node.children[0])
+        op_node = node.children[1]
+        right = self.compile(node.children[2])
+
+        # Get operator name from the op node
+        op_name = op_node.data if isinstance(op_node, Tree) else str(op_node)
+
+        def coerce_for_comparison(a, b):
+            """Coerce values to comparable types."""
+            if a is None or b is None:
+                return a, b
+            # If one is numeric and other is string, try to convert string to number
+            if isinstance(a, (int, float)) and isinstance(b, str):
+                try:
+                    b = float(b) if '.' in b else int(b)
+                except (ValueError, TypeError):
+                    pass
+            elif isinstance(b, (int, float)) and isinstance(a, str):
+                try:
+                    a = float(a) if '.' in a else int(a)
+                except (ValueError, TypeError):
+                    pass
+            return a, b
+
+        # Comparison operators with type coercion
+        def safe_gt(a, b):
+            a, b = coerce_for_comparison(a, b)
+            try:
+                return a > b if a is not None and b is not None else False
+            except TypeError:
+                return False
+
+        def safe_lt(a, b):
+            a, b = coerce_for_comparison(a, b)
+            try:
+                return a < b if a is not None and b is not None else False
+            except TypeError:
+                return False
+
+        def safe_gte(a, b):
+            a, b = coerce_for_comparison(a, b)
+            try:
+                return a >= b if a is not None and b is not None else False
+            except TypeError:
+                return False
+
+        def safe_lte(a, b):
+            a, b = coerce_for_comparison(a, b)
+            try:
+                return a <= b if a is not None and b is not None else False
+            except TypeError:
+                return False
+
+        ops = {
+            "op_gt": safe_gt,
+            "op_lt": safe_lt,
+            "op_gte": safe_gte,
+            "op_lte": safe_lte,
+            "op_eq": lambda a, b: a == b,
+            "op_ne": lambda a, b: a != b,
+        }
+
+        op_fn = ops.get(op_name, lambda a, b: False)
+
+        return lambda r, ctx=None, l=left, ri=right, op=op_fn: op(l(r, ctx), ri(r, ctx))
 
     def _compile_coalesce(self, node: Tree) -> Callable:
         """Compile coalesce expression: value ?? default"""

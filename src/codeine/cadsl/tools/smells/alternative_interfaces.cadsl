@@ -1,73 +1,44 @@
-# alternative_interfaces - Detect classes with similar responsibilities but different interfaces
+# alternative_interfaces - Detect classes with similar names but different interfaces
 #
-# These are classes that do similar things but have different method signatures,
-# making it harder to use them interchangeably.
+# Uses LEVENSHTEIN to find classes with similar names that have different method
+# signatures, which could indicate inconsistent API design or missed abstraction
+# opportunities.
 
 detector alternative_interfaces(category="code_smell", severity="medium") {
-    """Detect classes with similar behavior but different interfaces."""
+    """Detect classes with similar names but different public method sets."""
 
-    param min_similarity: float = 0.6;
-    param min_shared_methods: int = 3;
+    param max_name_distance: int = 3;
     param limit: int = 100;
 
     reql {
-        SELECT ?c ?class_name ?method_name ?file ?line
+        SELECT ?c1 ?class1 ?file1 ?line1 ?c2 ?class2 ?file2 ?line2
         WHERE {
-            ?c type oo:Class .
-            ?c name ?class_name .
-            ?c inFile ?file .
-            ?c atLine ?line .
-            ?m type oo:Method .
-            ?m definedIn ?c .
-            ?m name ?method_name .
-            FILTER ( !STRSTARTS(?method_name, "_") )
+            ?c1 type oo:Class .
+            ?c1 name ?class1 .
+            ?c1 inFile ?file1 .
+            ?c1 atLine ?line1 .
+            ?c2 type oo:Class .
+            ?c2 name ?class2 .
+            ?c2 inFile ?file2 .
+            ?c2 atLine ?line2 .
+            FILTER(?c1 != ?c2)
+            FILTER(?class1 != ?class2)
+            FILTER(LEVENSHTEIN(?class1, ?class2) <= {max_name_distance})
+            FILTER(LEVENSHTEIN(?class1, ?class2) > 0)
+            FILTER(!STRSTARTS(?class1, "Test"))
+            FILTER(!STRSTARTS(?class2, "Test"))
         }
+        LIMIT 200
     }
-    | select { c, class_name, method_name, file, line }
-    # Step 1: Group methods by class
-    | collect {
-        by: c,
-        class_name: first(class_name),
-        file: first(file),
-        line: first(line),
-        methods: set(method_name),
-        method_count: count(method_name)
-    }
-    # Filter out classes with too few methods
-    | filter { method_count >= 2 }
-    # Step 2: Cross join to get all unique pairs
-    | cross_join { unique_pairs: true, left_prefix: "left_", right_prefix: "right_" }
-    # Step 3: Calculate set similarity between method sets
-    | set_similarity {
-        left: left_methods,
-        right: right_methods,
-        type: jaccard,
-        output: similarity,
-        intersection_output: shared_methods,
-        union_output: all_methods
-    }
-    # Step 4: Calculate additional metrics and filter
-    # Filter out null similarity values first
-    | filter { similarity is not null }
-    | compute {
-        shared_count: len(shared_methods),
-        diff_count: len(all_methods) - len(shared_methods)
-    }
-    | filter { similarity >= {min_similarity} and shared_count >= {min_shared_methods} and diff_count > 0 }
-    | order_by { -similarity }
-    | limit { {limit} }
-    # Step 5: Format output
+    | select { class1, class2, file1, file2, line1, line2 }
     | map {
-        name1: left_class_name,
-        name2: right_class_name,
-        file: left_file,
-        line: left_line,
-        similarity: round((similarity ?? 0), 2),
-        shared_methods: shared_count,
-        different_methods: diff_count,
+        ...row,
         issue: "alternative_interfaces",
-        message: "Classes '{left_class_name}' and '{right_class_name}' are " + str(round((similarity ?? 0) * 100, 0)) + "% similar but have " + str(diff_count) + " different methods",
-        suggestion: "Consider extracting a common interface or unifying method signatures"
+        message: "Classes '{class1}' and '{class2}' have similar names - verify consistent interfaces",
+        suggestion: "Consider extracting a common interface or ensuring consistent method signatures",
+        locations: "{file1}:{line1}, {file2}:{line2}"
     }
+    | order_by { +class1, +class2 }
+    | limit { {limit} }
     | emit { findings }
 }

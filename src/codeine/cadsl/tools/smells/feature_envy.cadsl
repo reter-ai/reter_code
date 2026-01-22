@@ -2,9 +2,60 @@
 #
 # Feature Envy occurs when a method accesses data of another object
 # more than its own data. This suggests the method might belong elsewhere.
+#
+# Enhanced with RAG to find well-encapsulated patterns as examples.
 
 detector feature_envy(category="design", severity="medium") {
-    """Detect methods with Feature Envy - methods that envy other classes."""
+    """Detect Feature Envy with well-encapsulated patterns as examples."""
+
+    param min_external: int = 3;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?m ?name ?class_name ?ext_class_name ?file ?line (COUNT(?ext_call) AS ?external_calls)
+        WHERE {
+            ?m type oo:Method .
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            ?m definedIn ?c .
+            ?c name ?class_name .
+            ?m calls ?ext_call .
+            ?ext_call definedIn ?ext_class .
+            ?ext_class name ?ext_class_name .
+            FILTER ( ?class_name != ?ext_class_name )
+        }
+        GROUP BY ?m ?name ?class_name ?ext_class_name ?file ?line
+        HAVING (?external_calls >= {min_external})
+        ORDER BY DESC(?external_calls)
+        LIMIT {limit}
+    }
+    | select { name, class_name, file, line, external_calls }
+    | rag_enrich {
+        query: "{name} {class_name} encapsulated method",
+        top_k: 3,
+        threshold: 0.4,
+        mode: all,
+        entity_types: ["method"]
+    }
+    | map {
+        name: name,
+        class_name: class_name,
+        file: file,
+        line: line,
+        external_calls: external_calls,
+        issue: "feature_envy",
+        message: "Method '{name}' in '{class_name}' makes {external_calls} calls to other classes",
+        suggestion: "Consider moving this method to the class it envies",
+        example_count: len(rag_matches),
+        well_encapsulated_examples: rag_matches
+    }
+    | emit { findings }
+}
+
+# Simpler version without RAG enrichment for faster execution
+detector feature_envy_fast(category="design", severity="medium") {
+    """Detect methods with Feature Envy (no examples)."""
 
     param min_external: int = 3;
     param limit: int = 100;

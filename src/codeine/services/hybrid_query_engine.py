@@ -363,7 +363,7 @@ CLASSIFICATION_SYSTEM_PROMPT = _load_classification_prompt()
 QUERY_TOOLS = [
     {
         "name": "get_reql_grammar",
-        "description": "Get the complete REQL (RETE Query Language) formal grammar in Lark format. Call this when you need to generate a REQL query and want to ensure correct syntax.",
+        "description": "Get the formal REQL grammar specification. Use for syntax reference when generating structural queries.",
         "input_schema": {
             "type": "object",
             "properties": {},
@@ -372,7 +372,7 @@ QUERY_TOOLS = [
     },
     {
         "name": "get_cadsl_grammar",
-        "description": "Get the complete CADSL (Code Analysis DSL) formal grammar in Lark format. Call this when you need to generate a CADSL query with pipelines, graph operations, or diagrams.",
+        "description": "Get the formal CADSL grammar specification. Use for syntax reference when generating pipeline queries.",
         "input_schema": {
             "type": "object",
             "properties": {},
@@ -381,13 +381,13 @@ QUERY_TOOLS = [
     },
     {
         "name": "list_examples",
-        "description": "List available CADSL example files organized by category. Use this to find relevant examples before generating a query.",
+        "description": "List all CADSL example files by category. Categories: smells, rag, diagrams, dependencies, inspection, testing, refactoring, patterns, exceptions, inheritance.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "category": {
                     "type": "string",
-                    "description": "Filter by category: 'smells', 'diagrams', 'rag', 'testing', 'inspection', 'refactoring', 'patterns', 'exceptions', 'dependencies', 'inheritance'. Leave empty for all."
+                    "description": "Filter by category (optional). Leave empty for all categories."
                 }
             },
             "required": []
@@ -395,16 +395,34 @@ QUERY_TOOLS = [
     },
     {
         "name": "get_example",
-        "description": "Get the content of a specific CADSL example file. Use this to see how similar queries are structured.",
+        "description": "IMPORTANT: Get full working CADSL code for a specific example. Use 'category/name' format (e.g., 'smells/god_class', 'rag/duplicate_code'). These are production-ready templates.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "The example name (e.g., 'god_class', 'call_graph', 'duplicate_code')"
+                    "description": "Example name in 'category/name' format (e.g., 'smells/god_class', 'rag/duplicate_code')"
                 }
             },
             "required": ["name"]
+        }
+    },
+    {
+        "name": "search_examples",
+        "description": "Search for CADSL examples similar to your question using semantic similarity. Returns ranked list with scores. Use get_example to fetch full code. Helpful if unsure about syntax.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Natural language description of what you're looking for (e.g., 'find duplicate code', 'class diagram', 'long methods')"
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum number of results to return (default: 10)"
+                }
+            },
+            "required": ["query"]
         }
     }
 ]
@@ -423,6 +441,13 @@ def handle_get_reql_grammar() -> str:
 - Predicates have NO prefix: `name`, `inFile`, `definedIn`, `calls`, `inheritsFrom`
 - FILTER requires parentheses: `FILTER(?count > 5)`
 - Patterns separated by dots: `?x type oo:Class . ?x name ?n`
+
+## Type vs Concept:
+- `?x type oo:Class` - Filter with subsumption (matches py:Class, cpp:Class, etc.)
+- `?x type ?t` - Returns ALL types (asserted + inferred) - MULTIPLE rows per entity
+- `?x concept ?t` - Returns ONLY asserted type - ONE row per entity
+- Use `concept` when you need the concrete type string (e.g., "py:Method")
+- CRITICAL: When using `concept` with FILTER in UNION queries, include the variable in SELECT!
 """
 
 
@@ -464,25 +489,88 @@ def handle_list_examples(category: Optional[str] = None) -> str:
     for cat, files in sorted(examples.items()):
         result += f"## {cat}\n"
         for f in sorted(files):
-            result += f"- {f}\n"
+            result += f"- {cat}/{f}\n"
         result += "\n"
 
-    result += "\nUse get_example(name) to view a specific example."
+    result += "\nUse get_example(name) with 'category/name' format (e.g., 'smells/god_class')."
     return result
 
 
 def handle_get_example(name: str) -> str:
-    """Get content of a specific CADSL example."""
-    # Search in all subdirectories
-    for subdir in _CADSL_TOOLS_DIR.iterdir():
+    """Get content of a specific CADSL example.
+
+    Args:
+        name: Example name in 'category/name' format (e.g., 'smells/god_class')
+              or just 'name' for backwards compatibility (searches all categories)
+    """
+    # Check if category/name format is used
+    if "/" in name:
+        category, example_name = name.split("/", 1)
+        cadsl_file = _CADSL_TOOLS_DIR / category / f"{example_name}.cadsl"
+        if cadsl_file.exists():
+            with open(cadsl_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            return f"# Example: {category}/{example_name}.cadsl\n\n{content}"
+        return f"# Example '{name}' not found. Check category and name are correct."
+
+    # Fallback: search in all subdirectories (backwards compatibility)
+    found_in = []
+    for subdir in sorted(_CADSL_TOOLS_DIR.iterdir()):  # Sort for deterministic order
         if subdir.is_dir():
             cadsl_file = subdir / f"{name}.cadsl"
             if cadsl_file.exists():
-                with open(cadsl_file, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                return f"# Example: {name}.cadsl (from {subdir.name})\n\n{content}"
+                found_in.append(subdir.name)
 
-    return f"# Example '{name}' not found. Use list_examples() to see available examples."
+    if not found_in:
+        return f"# Example '{name}' not found. Use list_examples() to see available examples."
+
+    if len(found_in) > 1:
+        locations = ", ".join(f"'{cat}/{name}'" for cat in found_in)
+        return f"# Ambiguous: '{name}' exists in multiple categories: {locations}\nPlease use 'category/name' format."
+
+    # Exactly one match found
+    category = found_in[0]
+    cadsl_file = _CADSL_TOOLS_DIR / category / f"{name}.cadsl"
+    with open(cadsl_file, 'r', encoding='utf-8') as f:
+        content = f.read()
+    return f"# Example: {category}/{name}.cadsl\n\n{content}"
+
+
+def handle_search_examples(query: str, max_results: int = 10) -> str:
+    """Search for similar CADSL examples using semantic similarity."""
+    tool_index = get_cadsl_tool_index()
+
+    if not tool_index._tools:
+        return "# No examples indexed. Tool index not initialized."
+
+    # Use existing similarity search
+    similar = tool_index.find_similar_tools(query, max_results=max_results, min_score=0.1)
+
+    if not similar:
+        return f"# No examples found matching '{query}'. Try list_examples() to browse all."
+
+    # Group by category for list_examples format
+    by_category: Dict[str, List[tuple]] = {}
+    for tool, score in similar:
+        cat = tool.category
+        if cat not in by_category:
+            by_category[cat] = []
+        by_category[cat].append((tool.name, score, tool.description[:80] if tool.description else ""))
+
+    result = f"# Examples matching '{query}'\n\n"
+    result += f"Found {len(similar)} similar examples (sorted by relevance):\n\n"
+
+    for cat, tools in sorted(by_category.items(), key=lambda x: -max(t[1] for t in x[1])):
+        result += f"## {cat}\n"
+        for name, score, desc in sorted(tools, key=lambda x: -x[1]):
+            result += f"- {cat}/{name} (score: {score:.2f})"
+            if desc:
+                result += f" - {desc}..."
+            result += "\n"
+        result += "\n"
+
+    result += "Use get_example('category/name') to view a specific example."
+    return result
 
 
 def handle_tool_call(tool_name: str, tool_input: Dict[str, Any]) -> str:
@@ -495,6 +583,11 @@ def handle_tool_call(tool_name: str, tool_input: Dict[str, Any]) -> str:
         return handle_list_examples(tool_input.get("category"))
     elif tool_name == "get_example":
         return handle_get_example(tool_input.get("name", ""))
+    elif tool_name == "search_examples":
+        return handle_search_examples(
+            tool_input.get("query", ""),
+            tool_input.get("max_results", 10)
+        )
     else:
         return f"Unknown tool: {tool_name}"
 
@@ -538,7 +631,7 @@ class QueryClassification:
     similar_tools: List[SimilarTool] = field(default_factory=list)
 
 
-def find_similar_cadsl_tools(question: str, max_results: int = 3) -> List[SimilarTool]:
+def find_similar_cadsl_tools(question: str, max_results: int = 5) -> List[SimilarTool]:
     """
     Find CADSL tools similar to the question using case-based reasoning.
 
@@ -650,7 +743,7 @@ async def classify_query_with_llm(question: str, ctx) -> QueryClassification:
         return keyword_classification
 
     # Case-based reasoning: find similar CADSL tools FIRST
-    similar_tools = find_similar_cadsl_tools(question, max_results=3)
+    similar_tools = find_similar_cadsl_tools(question, max_results=5)
     if similar_tools:
         tool_names = [t.name for t in similar_tools]
         debug_log.debug(f"CASE-BASED REASONING: Found similar tools: {tool_names}")
@@ -695,6 +788,7 @@ REQL_GENERATION_PROMPT = """You are a REQL query generator. Generate valid REQL 
 You have tools available to help you:
 - get_reql_grammar: Get the formal REQL grammar
 - list_examples: See available query examples
+- search_examples: Search for similar examples by description
 - get_example: View a specific example
 
 ## CRITICAL: UNDERSTAND THE INTENT
@@ -797,6 +891,7 @@ You have tools available to help you:
 - get_cadsl_grammar: Get the formal CADSL grammar
 - get_reql_grammar: Get the REQL grammar (for embedded reql blocks)
 - list_examples: See available CADSL tool examples by category
+- search_examples: Search for similar examples by description
 - get_example: View a specific example to understand patterns
 
 CRITICAL RULES:
@@ -809,6 +904,12 @@ CRITICAL RULES:
 COMMON MISTAKE - NEVER do this in REQL blocks:
   WRONG: `?m1 oo:Module .`           <- missing `type` predicate!
   RIGHT: `?m1 type oo:Module .`      <- always include `type`
+
+TYPE vs CONCEPT:
+- `?x type oo:Method` - Filter with subsumption (matches py:Method, etc.)
+- `?x type ?t` - Returns ALL types (asserted + inferred) - MULTIPLE rows per entity
+- `?x concept ?t` - Returns ONLY asserted type - ONE row per entity (e.g., "py:Method")
+- CRITICAL: When using `concept` with FILTER in UNION queries, include the variable in SELECT!
 
 RECOMMENDED: Call get_example() to see the EXACT syntax used in working examples.
 
@@ -990,21 +1091,22 @@ def build_rag_query_params(question: str) -> Dict[str, Any]:
     entity_types = []
 
     # Detect duplicate/cluster analysis requests
-    duplicate_keywords = ["duplicate", "duplicated", "copy", "copied", "clone", "cloned",
-                          "similar code", "same code", "repeated code", "code repetition"]
-    cluster_keywords = ["cluster", "group similar", "semantic groups", "code groups",
+    # Check cluster keywords FIRST (more specific) before duplicates
+    cluster_keywords = ["cluster", "clusters", "group similar", "semantic groups", "code groups",
                         "similar patterns", "related code blocks"]
+    duplicate_keywords = ["duplicate", "duplicated", "copy", "copied", "clone", "cloned",
+                          "same code", "repeated code", "code repetition"]
 
-    if any(kw in question_lower for kw in duplicate_keywords):
-        params["analysis_type"] = "duplicates"
-        params["similarity_threshold"] = 0.85  # Default similarity threshold
-        params["max_results"] = 50
-        params["exclude_same_file"] = True
-        params["exclude_same_class"] = True
-    elif any(kw in question_lower for kw in cluster_keywords):
+    if any(kw in question_lower for kw in cluster_keywords):
         params["analysis_type"] = "clusters"
         params["n_clusters"] = 50
         params["min_size"] = 2
+        params["exclude_same_file"] = True
+        params["exclude_same_class"] = True
+    elif any(kw in question_lower for kw in duplicate_keywords):
+        params["analysis_type"] = "duplicates"
+        params["similarity_threshold"] = 0.85  # Default similarity threshold
+        params["max_results"] = 50
         params["exclude_same_file"] = True
         params["exclude_same_class"] = True
 

@@ -29,6 +29,8 @@ js:ArrowFunction is_subclass_of oo:Function
 
 js:Parameter is_subclass_of oo:Parameter
 
+js:Reference is_subclass_of oo:Reference
+
 js:Field is_subclass_of oo:Field
 
 js:Import is_subclass_of oo:Import

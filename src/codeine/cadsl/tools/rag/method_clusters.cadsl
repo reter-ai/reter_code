@@ -1,0 +1,50 @@
+# method_clusters - Group methods by semantic similarity using rag_enrich
+#
+# For each method, find similar methods across the codebase using RAG.
+# This helps identify methods that might be doing similar things and
+# could potentially be consolidated.
+
+query find_similar_methods() {
+    """Find methods with semantically similar implementations across files."""
+
+    param min_similarity: float = 0.7;
+    param top_k: int = 5;
+    param limit: int = 50;
+
+    # Get public methods
+    reql {
+        SELECT ?m ?name ?class_name ?file ?line
+        WHERE {
+            ?m type oo:Method .
+            ?m name ?name .
+            ?m inFile ?file .
+            ?m atLine ?line .
+            ?m definedIn ?c .
+            ?c name ?class_name .
+            FILTER(!STRSTARTS(?name, "_"))
+            FILTER(!STRSTARTS(?name, "test_"))
+        }
+        ORDER BY ?file ?line
+        LIMIT {limit}
+    }
+    | select { method_name: name, class_name, file, line }
+    # Find similar methods for each
+    | rag_enrich {
+        query: "{method_name} {class_name}",
+        top_k: {top_k},
+        threshold: {min_similarity},
+        mode: all
+    }
+    # Filter to only rows with matches
+    | filter { len(rag_matches) > 0 }
+    | map {
+        method_name: method_name,
+        class_name: class_name,
+        file: file,
+        line: line,
+        similar_count: len(rag_matches),
+        similar_methods: rag_matches
+    }
+    | order_by { -similar_count }
+    | emit { results }
+}

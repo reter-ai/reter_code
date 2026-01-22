@@ -23,16 +23,14 @@ from .registrars.system_tools import SystemToolsRegistrar
 from .nlq_helpers import query_instance_schema
 from .response_truncation import truncate_response
 from .hybrid_query_engine import (
-    QueryType,
-    QueryClassification,
     build_rag_query_params,
     build_similar_tools_section,
-    classify_query_with_llm,
 )
 from .agent_sdk_client import (
     is_agent_sdk_available,
     generate_reql_query,
     generate_cadsl_query,
+    retry_cadsl_query,
     classify_query,
 )
 
@@ -391,7 +389,7 @@ class ToolRegistrar:
         max_retries: int,
         similar_tools: Optional[list] = None
     ) -> Dict[str, Any]:
-        """Execute a CADSL query using Agent SDK for generation."""
+        """Execute a CADSL query using Agent SDK for generation with retry on empty/error."""
         from ..cadsl.parser import parse_cadsl
         from ..cadsl.transformer import CADSLTransformer
         from ..cadsl.loader import build_pipeline_factory
@@ -420,8 +418,113 @@ class ToolRegistrar:
 
         rag_manager = self.default_manager.get_rag_manager() if self.default_manager else None
 
+        # Track total attempts across retries
+        total_attempts = 0
+        all_tools_used = []
+        max_empty_retries = 2  # Max times to retry on empty results
+
+        async def execute_single_cadsl(query: str, attempt_info: dict) -> Dict[str, Any]:
+            """Execute a single CADSL query and return results."""
+            nonlocal total_attempts, all_tools_used
+            total_attempts += attempt_info.get("attempts", 1)
+            all_tools_used.extend(attempt_info.get("tools_used", []))
+
+            # Auto-fix bare reql blocks (Rule 10 violation)
+            fixed_query = self._fix_bare_reql_block(query)
+
+            # Parse CADSL
+            parse_result = parse_cadsl(fixed_query)
+            if not parse_result.success:
+                return {
+                    "success": False,
+                    "results": [],
+                    "count": 0,
+                    "cadsl_query": fixed_query,
+                    "query_type": "cadsl",
+                    "attempts": total_attempts,
+                    "tools_used": all_tools_used,
+                    "error": f"Parse error: {parse_result.errors}"
+                }
+
+            transformer = CADSLTransformer()
+            tool_specs = transformer.transform(parse_result.tree)
+
+            if not tool_specs:
+                return {
+                    "success": False,
+                    "results": [],
+                    "count": 0,
+                    "cadsl_query": fixed_query,
+                    "query_type": "cadsl",
+                    "attempts": total_attempts,
+                    "tools_used": all_tools_used,
+                    "error": "No tool spec generated from CADSL"
+                }
+
+            # Build and execute pipeline
+            nonlocal reter, rag_manager
+            reter = self.instance_manager.get_or_create_instance("default")
+            rag_manager = self.default_manager.get_rag_manager() if self.default_manager else None
+
+            tool_spec = tool_specs[0]
+
+            # Extract default parameter values from tool spec
+            params = {"rag_manager": rag_manager}
+            for param in tool_spec.params:
+                if param.default is not None:
+                    params[param.name] = param.default
+            debug_log.debug(f"CADSL pipeline params: {params}")
+
+            from ..dsl.core import Context as PipelineContext
+            pipeline_ctx = PipelineContext(reter=reter, params=params)
+
+            pipeline_factory = build_pipeline_factory(tool_spec)
+            pipeline = pipeline_factory(pipeline_ctx)
+
+            pipeline_result = pipeline.execute(pipeline_ctx)
+
+            # Check for Result monad errors (Err type)
+            from ..dsl.catpy import Err
+            if isinstance(pipeline_result, Err):
+                error = pipeline_result.value
+                return {
+                    "success": False,
+                    "results": [],
+                    "count": 0,
+                    "cadsl_query": fixed_query,
+                    "query_type": "cadsl",
+                    "attempts": total_attempts,
+                    "tools_used": all_tools_used,
+                    "error": str(error)  # PipelineError has __str__
+                }
+
+            # Unwrap Ok result if needed
+            from ..dsl.catpy import Ok
+            if isinstance(pipeline_result, Ok):
+                pipeline_result = pipeline_result.value
+
+            # Normalize result
+            if isinstance(pipeline_result, dict) and "success" in pipeline_result:
+                pipeline_result["cadsl_query"] = fixed_query
+                pipeline_result["query_type"] = "cadsl"
+                pipeline_result["attempts"] = total_attempts
+                pipeline_result["tools_used"] = all_tools_used
+                return pipeline_result
+            else:
+                results = pipeline_result if isinstance(pipeline_result, list) else [pipeline_result]
+                return {
+                    "success": True,
+                    "results": results,
+                    "count": len(results),
+                    "cadsl_query": fixed_query,
+                    "query_type": "cadsl",
+                    "attempts": total_attempts,
+                    "tools_used": all_tools_used,
+                    "error": None
+                }
+
         try:
-            # Generate CADSL using Agent SDK
+            # Generate initial CADSL using Agent SDK
             result = await generate_cadsl_query(
                 question=question,
                 schema_info=schema_info,
@@ -446,66 +549,61 @@ class ToolRegistrar:
             generated_query = result.query
             debug_log.debug(f"GENERATED CADSL QUERY:\n{generated_query}")
 
-            # Parse and execute CADSL
-            parse_result = parse_cadsl(generated_query)
-            if not parse_result.success:
-                return {
-                    "success": False,
-                    "results": [],
-                    "count": 0,
-                    "cadsl_query": generated_query,
-                    "query_type": "cadsl",
-                    "attempts": result.attempts,
-                    "tools_used": result.tools_used,
-                    "error": f"Parse error: {parse_result.errors}"
-                }
+            # Execute the query
+            exec_result = await execute_single_cadsl(generated_query, {
+                "attempts": result.attempts,
+                "tools_used": result.tools_used
+            })
 
-            transformer = CADSLTransformer()
-            tool_specs = transformer.transform(parse_result.tree)
+            # Check if we need to retry (empty results or error)
+            empty_retry_count = 0
+            current_query = generated_query
 
-            if not tool_specs:
-                return {
-                    "success": False,
-                    "results": [],
-                    "count": 0,
-                    "cadsl_query": generated_query,
-                    "query_type": "cadsl",
-                    "attempts": result.attempts,
-                    "tools_used": result.tools_used,
-                    "error": "No tool spec generated from CADSL"
-                }
+            while empty_retry_count < max_empty_retries:
+                result_count = exec_result.get("count", 0)
+                has_error = not exec_result.get("success", False)
+                error_msg = exec_result.get("error")
 
-            # Build and execute pipeline
-            reter = self.instance_manager.get_or_create_instance("default")
-            rag_manager = self.default_manager.get_rag_manager() if self.default_manager else None
+                # If we have results and no error, we're done
+                if result_count > 0 and not has_error:
+                    debug_log.debug(f"CADSL query returned {result_count} results, no retry needed")
+                    return exec_result
 
-            from ..dsl.core import Context as PipelineContext
-            pipeline_ctx = PipelineContext(reter=reter, params={"rag_manager": rag_manager})
+                # Ask agent if it wants to retry
+                debug_log.debug(f"CADSL query returned {result_count} results, error={error_msg}. Asking agent to retry...")
 
-            tool_spec = tool_specs[0]
-            pipeline_factory = build_pipeline_factory(tool_spec)
-            pipeline = pipeline_factory(pipeline_ctx)
+                retry_result = await retry_cadsl_query(
+                    question=question,
+                    previous_query=current_query,
+                    result_count=result_count,
+                    error_message=error_msg if has_error else None,
+                    reter_instance=reter,
+                    rag_manager=rag_manager
+                )
 
-            pipeline_result = pipeline.execute(pipeline_ctx)
+                # Check if agent confirmed empty is correct
+                if retry_result.error == "CONFIRM_EMPTY":
+                    debug_log.debug("Agent confirmed empty results are correct")
+                    exec_result["agent_confirmed_empty"] = True
+                    return exec_result
 
-            # Add our metadata
-            if isinstance(pipeline_result, dict) and "success" in pipeline_result:
-                pipeline_result["cadsl_query"] = generated_query
-                pipeline_result["query_type"] = "cadsl"
-                pipeline_result["attempts"] = result.attempts
-                pipeline_result["tools_used"] = result.tools_used
-                return pipeline_result
-            else:
-                return {
-                    "success": True,
-                    "results": pipeline_result if isinstance(pipeline_result, list) else [pipeline_result],
-                    "count": len(pipeline_result) if isinstance(pipeline_result, list) else 1,
-                    "cadsl_query": generated_query,
-                    "query_type": "cadsl",
-                    "attempts": result.attempts,
-                    "tools_used": result.tools_used,
-                    "error": None
-                }
+                # Check if agent provided a new query
+                if retry_result.success and retry_result.query:
+                    debug_log.debug(f"Agent provided retry query: {retry_result.query[:100]}...")
+                    current_query = retry_result.query
+                    exec_result = await execute_single_cadsl(current_query, {
+                        "attempts": retry_result.attempts,
+                        "tools_used": retry_result.tools_used
+                    })
+                    empty_retry_count += 1
+                else:
+                    # Agent didn't provide a new query, return current result
+                    debug_log.debug("Agent did not provide retry query, returning current result")
+                    return exec_result
+
+            # Max retries reached
+            debug_log.debug(f"Max empty retries ({max_empty_retries}) reached")
+            return exec_result
 
         except Exception as e:
             debug_log.debug(f"CADSL ERROR: {e}")
@@ -514,8 +612,48 @@ class ToolRegistrar:
                 "results": [],
                 "count": 0,
                 "query_type": "cadsl",
+                "attempts": total_attempts,
+                "tools_used": all_tools_used,
                 "error": str(e)
             }
+
+    def _fix_bare_reql_block(self, cadsl_query: str) -> str:
+        """
+        Auto-fix bare reql blocks by wrapping them in a query definition.
+
+        This fixes Rule 10 violations where the LLM generates:
+            reql { ... } | select { ... }
+        Instead of:
+            query auto_generated() { reql { ... } | select { ... } | emit { results } }
+        """
+        import re
+
+        stripped = cadsl_query.strip()
+
+        # Check if it starts with 'reql' (bare reql block)
+        if stripped.startswith('reql') and not stripped.startswith('reql_'):
+            debug_log.debug("AUTO-FIX: Detected bare reql block, wrapping in query definition")
+
+            # Check if there's already an emit step
+            has_emit = bool(re.search(r'\|\s*emit\s*\{', stripped))
+
+            if has_emit:
+                # Already has emit, just wrap
+                fixed = f'query auto_generated() {{\n    """{stripped[:50]}..."""\n\n    {stripped}\n}}'
+            else:
+                # Need to add emit step - find the last pipeline step or the reql block end
+                # Look for pattern like "| select { ... }" or just the reql block
+                if '|' in stripped:
+                    # Has pipeline steps, add emit at the end
+                    fixed = f'query auto_generated() {{\n    """{stripped[:50]}..."""\n\n    {stripped}\n    | emit {{ results }}\n}}'
+                else:
+                    # Just a reql block, add select and emit
+                    fixed = f'query auto_generated() {{\n    """{stripped[:50]}..."""\n\n    {stripped}\n    | emit {{ results }}\n}}'
+
+            debug_log.debug(f"AUTO-FIX: Wrapped query:\n{fixed[:200]}...")
+            return fixed
+
+        return cadsl_query
 
     def _execute_rag_query(self, question: str) -> Dict[str, Any]:
         """Execute a RAG query - semantic search, duplicate detection, or clustering."""
@@ -568,7 +706,7 @@ class ToolRegistrar:
                 # Execute cluster detection
                 result = rag_manager.find_similar_clusters(
                     n_clusters=params.get("n_clusters", 50),
-                    min_size=params.get("min_size", 2),
+                    min_cluster_size=params.get("min_size", 2),  # param name is min_cluster_size
                     exclude_same_file=params.get("exclude_same_file", True),
                     exclude_same_class=params.get("exclude_same_class", True),
                     entity_types=params.get("entity_types"),
@@ -576,7 +714,7 @@ class ToolRegistrar:
                 return {
                     "success": True,
                     "results": result.get("clusters", []),
-                    "count": result.get("count", 0),
+                    "count": result.get("total_clusters", 0),  # return key is total_clusters
                     "query_type": "rag",
                     "analysis_type": "clusters",
                     "rag_params": params,
@@ -682,27 +820,6 @@ class ToolRegistrar:
                     "error": "Context not available for LLM sampling"
                 }
 
-            # Override with forced type if specified, otherwise use LLM classification
-            if force_type:
-                type_map = {
-                    "reql": QueryType.REQL,
-                    "cadsl": QueryType.CADSL,
-                    "rag": QueryType.RAG,
-                }
-                if force_type.lower() in type_map:
-                    classification = QueryClassification(
-                        query_type=type_map[force_type.lower()],
-                        confidence=1.0,
-                        reasoning=f"Forced to {force_type} by user"
-                    )
-                else:
-                    classification = await classify_query_with_llm(question, ctx)
-            else:
-                # Use LLM to classify the query
-                classification = await classify_query_with_llm(question, ctx)
-
-            debug_log.debug(f"QUERY CLASSIFICATION: {classification}")
-
             try:
                 reter = self.instance_manager.get_or_create_instance("default")
             except Exception as e:
@@ -715,41 +832,86 @@ class ToolRegistrar:
 
             schema_info = query_instance_schema(reter)
 
+            # Fast path: force_type bypasses classification entirely
+            if force_type and force_type.lower() in ("reql", "cadsl", "rag"):
+                from .hybrid_query_engine import find_similar_cadsl_tools
+                similar_tools = find_similar_cadsl_tools(question, max_results=5)
+                forced_type = force_type.lower()
+                debug_log.debug(f"FORCED TYPE: {forced_type}, similar_tools: {[t.name for t in similar_tools]}")
+
+                try:
+                    async with asyncio.timeout(timeout):
+                        if forced_type == "rag":
+                            result = self._execute_rag_query(question)
+                        elif forced_type == "cadsl":
+                            result = await self._execute_cadsl_query(
+                                question, schema_info, max_retries,
+                                similar_tools=similar_tools
+                            )
+                        else:  # reql
+                            result = await self._execute_nlq_with_agent_sdk(
+                                reter, question, schema_info, max_retries, max_results,
+                                similar_tools=similar_tools
+                            )
+
+                        result["classification"] = {
+                            "type": forced_type,
+                            "confidence": 1.0,
+                            "reasoning": f"Forced to {forced_type} by user",
+                        }
+                        if similar_tools:
+                            result["similar_tools"] = [t.to_dict() for t in similar_tools]
+                        result["execution_time_ms"] = (time.time() - start_time) * 1000
+                        return truncate_response(result)
+
+                except asyncio.TimeoutError:
+                    return {
+                        "success": False,
+                        "results": [],
+                        "count": 0,
+                        "query_type": forced_type,
+                        "error": f"Query timed out after {timeout} seconds",
+                    }
+
+            # Normal path: Default to CADSL to use existing tools with rag_enrich
+            # Only use RAG for explicit duplicate/similarity queries (handled by keyword routing)
+            from .hybrid_query_engine import find_similar_cadsl_tools, _check_keyword_rag_routing
+
+            # Check if this is a RAG query (duplicate/similarity detection)
+            rag_classification = _check_keyword_rag_routing(question)
+            similar_tools = find_similar_cadsl_tools(question, max_results=5)
+
+            if rag_classification:
+                # RAG for duplicate/similarity queries
+                query_type_str = "rag"
+                reasoning = rag_classification.reasoning
+            else:
+                # Default to CADSL for all other queries
+                query_type_str = "cadsl"
+                reasoning = "Defaulting to CADSL to leverage existing tools with rag_enrich"
+
+            debug_log.debug(f"QUERY TYPE: {query_type_str}, similar_tools: {[t.name for t in similar_tools]}")
+
             try:
                 async with asyncio.timeout(timeout):
-                    if classification.query_type == QueryType.RAG:
-                        # Direct RAG query
+                    if query_type_str == "rag":
                         result = self._execute_rag_query(question)
-
-                    elif classification.query_type == QueryType.CADSL:
-                        # CADSL pipeline query with case-based reasoning
+                    else:  # cadsl
                         result = await self._execute_cadsl_query(
                             question, schema_info, max_retries,
-                            similar_tools=classification.similar_tools
+                            similar_tools=similar_tools
                         )
 
-                    else:  # QueryType.REQL
-                        # Standard REQL query with case-based reasoning
-                        result = await self._execute_nlq_with_agent_sdk(
-                            reter, question, schema_info, max_retries, max_results,
-                            similar_tools=classification.similar_tools
-                        )
-
-                    # Add classification info to result
                     result["classification"] = {
-                        "type": classification.query_type.value,
-                        "confidence": classification.confidence,
-                        "reasoning": classification.reasoning,
+                        "type": query_type_str,
+                        "confidence": 1.0,
+                        "reasoning": reasoning,
                     }
-                    if classification.suggested_cadsl_tool:
-                        result["suggested_tool"] = classification.suggested_cadsl_tool
 
-                    # Add case-based reasoning info if similar tools were used
-                    if classification.similar_tools:
-                        result["similar_tools"] = [t.to_dict() for t in classification.similar_tools]
+                    if similar_tools:
+                        result["similar_tools"] = [t.to_dict() for t in similar_tools]
 
                     result["execution_time_ms"] = (time.time() - start_time) * 1000
-
                     return truncate_response(result)
 
             except asyncio.TimeoutError:
@@ -757,12 +919,12 @@ class ToolRegistrar:
                     "success": False,
                     "results": [],
                     "count": 0,
-                    "query_type": classification.query_type.value,
+                    "query_type": query_type_str,
                     "error": f"Query timed out after {timeout} seconds",
                     "classification": {
-                        "type": classification.query_type.value,
-                        "confidence": classification.confidence,
-                        "reasoning": classification.reasoning,
+                        "type": query_type_str,
+                        "confidence": 1.0,
+                        "reasoning": reasoning,
                     }
                 }
 
@@ -901,6 +1063,25 @@ class ToolRegistrar:
                 result = pipeline.execute(pipeline_ctx)
 
                 execution_time = (time.time() - start_time) * 1000
+
+                # Check for Result monad errors (Err type)
+                from ..dsl.catpy import Err, Ok
+                if isinstance(result, Err):
+                    error = result.value
+                    return {
+                        "success": False,
+                        "results": [],
+                        "count": 0,
+                        "tool_name": tool_spec.name,
+                        "tool_type": tool_spec.tool_type,
+                        "source_file": source_file,
+                        "execution_time_ms": execution_time,
+                        "error": str(error)
+                    }
+
+                # Unwrap Ok result if needed
+                if isinstance(result, Ok):
+                    result = result.value
 
                 # Result is already {"success": True/False, "results": [...], ...}
                 # Add our metadata without double-wrapping

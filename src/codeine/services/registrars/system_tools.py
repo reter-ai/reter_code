@@ -62,9 +62,10 @@ class SystemToolsRegistrar(ToolRegistrarBase):
             - check: Consistency check of knowledge base
             - initialize: Full re-initialization (reloads everything)
             - reindex: RAG index rebuild (use `force=True` for full rebuild)
+            - reset_parser: Force CADSL grammar reload (after grammar.lark changes)
 
             Args:
-                action: One of: status, info, sources, facts, forget, reload, check, initialize, reindex
+                action: One of: status, info, sources, facts, forget, reload, check, initialize, reindex, reset_parser
                 source: Source ID or file path (required for facts, forget)
                 force: Force full rebuild for reindex action (default: False)
 
@@ -81,6 +82,7 @@ class SystemToolsRegistrar(ToolRegistrarBase):
                 system("check")                     # Consistency check
                 system("initialize")                # Full re-init
                 system("reindex", force=True)       # Force RAG rebuild
+                system("reset_parser")              # Reload CADSL grammar
             """
             # ═══════════════════════════════════════════════════════════════════
             # STATUS - Combined init + RAG status (always available)
@@ -171,6 +173,12 @@ class SystemToolsRegistrar(ToolRegistrarBase):
                 return await registrar._action_reindex(force=force)
 
             # ═══════════════════════════════════════════════════════════════════
+            # RESET_PARSER - Force CADSL grammar reload
+            # ═══════════════════════════════════════════════════════════════════
+            elif action == "reset_parser":
+                return registrar._action_reset_parser()
+
+            # ═══════════════════════════════════════════════════════════════════
             # UNKNOWN ACTION
             # ═══════════════════════════════════════════════════════════════════
             else:
@@ -179,7 +187,7 @@ class SystemToolsRegistrar(ToolRegistrarBase):
                     "error": f"Unknown action: {action}",
                     "available_actions": [
                         "status", "info", "sources", "facts", "forget",
-                        "reload", "check", "initialize", "reindex"
+                        "reload", "check", "initialize", "reindex", "reset_parser"
                     ]
                 }
 
@@ -322,6 +330,37 @@ class SystemToolsRegistrar(ToolRegistrarBase):
             return {
                 "success": False,
                 "action": "initialize",
+                "error": str(e),
+            }
+
+    def _action_reset_parser(self) -> Dict[str, Any]:
+        """Reset the CADSL parser to force grammar reload."""
+        try:
+            import importlib
+            from ...cadsl import parser, compiler, transformer, loader
+
+            # Reload the modules to pick up code changes
+            # Order matters: compiler first, then transformer (uses compiler),
+            # then loader (uses transformer), then parser
+            importlib.reload(compiler)
+            importlib.reload(transformer)
+            importlib.reload(loader)
+            importlib.reload(parser)
+
+            # Reset parser cache and force re-initialization
+            from ...cadsl.parser import CADSLParser
+            CADSLParser.reset()
+            CADSLParser()
+
+            return {
+                "success": True,
+                "action": "reset_parser",
+                "message": "CADSL parser, compiler, transformer, and loader modules reloaded.",
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "action": "reset_parser",
                 "error": str(e),
             }
 

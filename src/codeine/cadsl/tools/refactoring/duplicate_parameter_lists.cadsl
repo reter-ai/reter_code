@@ -1,36 +1,79 @@
-# duplicate_parameter_lists - Detect functions with identical parameter signatures
+# duplicate_parameter_lists - Detect functions with similar names and many parameters
 #
-# Functions with the same parameter list often indicate a missing abstraction
-# or opportunity to introduce a parameter object.
+# Functions with similar names and many parameters often indicate duplicate
+# implementations or a missing abstraction. Uses LEVENSHTEIN to find
+# similarly-named functions that might share parameter patterns.
 
 detector duplicate_parameter_lists(category="refactoring", severity="medium") {
-    """Detect functions sharing similar parameter signatures."""
+    """Detect functions with similar names sharing complex parameter signatures."""
 
-    param min_params: int = 3;
+    param min_params: int = 4;
+    param max_name_distance: int = 2;
     param limit: int = 100;
 
+    # First get functions with many parameters
     reql {
-        SELECT ?m ?name ?class_name ?file ?line (COUNT(?param) AS ?param_count)
+        SELECT ?m ?name ?class_name ?file ?line (COUNT(?p) AS ?param_count)
         WHERE {
-            { ?m type oo:Method } UNION { ?m type oo:Function }
+            ?m type oo:Method .
             ?m name ?name .
             ?m inFile ?file .
             ?m atLine ?line .
-            ?param type oo:Parameter .
-            ?param ofFunction ?m .
+            ?p type oo:Parameter .
+            ?p ofFunction ?m .
             OPTIONAL { ?m definedIn ?c . ?c name ?class_name }
+            FILTER(!STRSTARTS(?name, "_"))
+            FILTER(!STRSTARTS(?name, "test_"))
         }
         GROUP BY ?m ?name ?class_name ?file ?line
         HAVING (?param_count >= {min_params})
         ORDER BY DESC(?param_count)
-        LIMIT {limit}
+        LIMIT 500
     }
-    | select { name, class_name, file, line, param_count, qualified_name: m }
-    | map {
-        ...row,
-        refactoring: "introduce_parameter_object",
-        message: "Function '{name}' has {param_count} parameters",
-        suggestion: "Introduce a parameter object to group these parameters"
+    | select { name, class_name, file, line, param_count }
+    # Cross join to find pairs with similar names
+    | cross_join { unique_pairs: true, left_prefix: "left_", right_prefix: "right_" }
+    | python {
+        # Filter pairs with similar names using Levenshtein distance
+        max_dist = ctx.params.get('max_name_distance', 2)
+        limit = ctx.params.get('limit', 100)
+
+        def levenshtein(s1, s2):
+            if len(s1) < len(s2):
+                return levenshtein(s2, s1)
+            if len(s2) == 0:
+                return len(s1)
+            prev = range(len(s2) + 1)
+            for i, c1 in enumerate(s1):
+                curr = [i + 1]
+                for j, c2 in enumerate(s2):
+                    curr.append(min(prev[j+1]+1, curr[j]+1, prev[j]+(c1!=c2)))
+                prev = curr
+            return prev[-1]
+
+        findings = []
+        for row in rows:
+            n1, n2 = row.get('left_name', ''), row.get('right_name', '')
+            if n1 and n2 and n1 != n2:
+                dist = levenshtein(n1, n2)
+                if 0 < dist <= max_dist:
+                    findings.append({
+                        'name1': n1, 'name2': n2,
+                        'class1': row.get('left_class_name', ''),
+                        'class2': row.get('right_class_name', ''),
+                        'file1': row.get('left_file', ''),
+                        'file2': row.get('right_file', ''),
+                        'line1': row.get('left_line', 0),
+                        'line2': row.get('right_line', 0),
+                        'param_count1': row.get('left_param_count', 0),
+                        'param_count2': row.get('right_param_count', 0),
+                        'distance': dist,
+                        'refactoring': 'introduce_parameter_object',
+                        'message': f"Functions '{n1}' and '{n2}' have similar names and many parameters",
+                        'suggestion': 'Consider consolidating or extracting shared parameters'
+                    })
+        findings.sort(key=lambda x: (-x['param_count1'], x['name1']))
+        result = findings[:limit]
     }
     | emit { findings }
 }

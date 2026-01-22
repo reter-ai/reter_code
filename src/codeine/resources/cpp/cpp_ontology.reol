@@ -43,6 +43,8 @@ cpp:Field is_subclass_of oo:Field
 
 cpp:Parameter is_subclass_of oo:Parameter
 
+cpp:Reference is_subclass_of oo:Reference
+
 cpp:UsingDirective is_subclass_of oo:Import
 
 cpp:UsingDeclaration is_subclass_of oo:Import

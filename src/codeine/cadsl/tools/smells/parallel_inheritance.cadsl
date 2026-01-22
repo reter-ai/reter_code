@@ -2,11 +2,15 @@
 #
 # Parallel inheritance occurs when you have to create a subclass of one class
 # every time you create a subclass of another class.
+#
+# Uses LEVENSHTEIN distance to detect similar class names that may indicate
+# parallel naming patterns (e.g., UserHandler/UserValidator, OrderHandler/OrderValidator).
 
 detector parallel_inheritance(category="code_smell", severity="medium") {
     """Detect parallel inheritance hierarchies - mirrored class structures."""
 
     param min_parallel_pairs: int = 2;
+    param max_name_distance: int = 5;
     param limit: int = 100;
 
     reql {
@@ -46,13 +50,34 @@ detector parallel_inheritance(category="code_smell", severity="medium") {
     }
     # Step 4: Use Python for nested loop comparison (still needed for complex matching)
     | python {
-        # Compare children for parallel naming patterns
+        # Compare children for parallel naming patterns using LEVENSHTEIN distance
         min_parallel_pairs = ctx.params.get('min_parallel_pairs', 2)
+        max_name_distance = ctx.params.get('max_name_distance', 5)
         limit = ctx.params.get('limit', 100)
+
+        def levenshtein_distance(s1, s2):
+            """Compute Levenshtein edit distance between two strings."""
+            if len(s1) < len(s2):
+                return levenshtein_distance(s2, s1)
+            if len(s2) == 0:
+                return len(s1)
+            prev_row = range(len(s2) + 1)
+            for i, c1 in enumerate(s1):
+                curr_row = [i + 1]
+                for j, c2 in enumerate(s2):
+                    insertions = prev_row[j + 1] + 1
+                    deletions = curr_row[j] + 1
+                    subs = prev_row[j] + (c1 != c2)
+                    curr_row.append(min(insertions, deletions, subs))
+                prev_row = curr_row
+            return prev_row[-1]
 
         def names_are_parallel(n1, n2):
             if n1 == n2 or len(n1) < 3 or len(n2) < 3:
                 return False
+            # Use LEVENSHTEIN distance for fuzzy matching
+            if levenshtein_distance(n1, n2) <= max_name_distance:
+                return True
             min_len = min(len(n1), len(n2))
             # Check common suffix
             for slen in range(3, min_len):

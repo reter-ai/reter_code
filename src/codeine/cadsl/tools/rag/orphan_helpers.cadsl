@@ -1,0 +1,44 @@
+# orphan_helpers - Find truly orphaned helper functions using semantic search
+#
+# Uses rag_enrich to check if underscore-prefixed functions have similar code
+# elsewhere in the codebase. Low similarity suggests the function is orphaned.
+
+detector find_orphan_helpers(category="dead_code", severity="medium") {
+    """Find helper functions that have no similar code patterns in the codebase."""
+
+    param similarity_threshold: float = 0.3;
+    param max_helpers: int = 100;
+
+    # Get underscore-prefixed functions (private helpers)
+    reql {
+        SELECT ?f ?name ?file ?line
+        WHERE {
+            ?f type oo:Function .
+            ?f name ?name .
+            ?f inFile ?file .
+            ?f atLine ?line .
+            FILTER(STRSTARTS(?name, "_"))
+            FILTER(!STRSTARTS(?name, "__"))
+        }
+        ORDER BY ?file ?line
+        LIMIT {max_helpers}
+    }
+    | select { name, file, line, qualified_name: f }
+    # Enrich each function with RAG semantic search
+    | rag_enrich {
+        query: "function {name} helper utility implementation",
+        top_k: 1,
+        threshold: 0.1,
+        mode: best,
+        batch_size: 25
+    }
+    # Filter to find truly orphaned (low similarity)
+    | filter { similarity < {similarity_threshold} }
+    | map {
+        ...row,
+        issue: "orphan_helper",
+        message: "Helper function '" + name + "' has no similar patterns (similarity: " + str(round(similarity * 100)) + "%)",
+        suggestion: "Consider removing this unused helper or documenting its purpose"
+    }
+    | emit { findings }
+}

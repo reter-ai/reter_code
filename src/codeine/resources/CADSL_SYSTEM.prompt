@@ -45,6 +45,7 @@ CADSL is a pipeline DSL for code analysis.
 - `| graph_closure { from: f, to: t }` - Transitive closure
 - `| cross_join { unique_pairs: true }` - Pairwise comparison
 - `| set_similarity { left: f1, right: f2, type: jaccard }` - Set similarity
+- `| rag_enrich { query: "template {field}", top_k: 3, mode: best }` - Per-row RAG enrichment
 - `| render_mermaid { type: flowchart, edges: from -> to }` - Generate diagram
 - `| emit { results }` - Output results
 
@@ -106,6 +107,41 @@ diagram call_graph() {
 }
 ```
 
+### Generate class diagram with relationships
+```cadsl
+diagram class_diagram() {
+    """Generate UML class diagram with inheritance and associations."""
+
+    reql {
+        SELECT ?class_name ?method_name ?attr_name ?parent_name ?assoc_to WHERE {
+            ?class type oo:Class . ?class name ?class_name .
+            OPTIONAL { ?class hasMethod ?m . ?m name ?method_name }
+            OPTIONAL { ?class hasAttribute ?a . ?a name ?attr_name }
+            OPTIONAL { ?class inheritsFrom ?p . ?p name ?parent_name }
+            OPTIONAL {
+                ?class hasAttribute ?typed_attr .
+                ?typed_attr hasType ?type_ref . ?type_ref name ?assoc_to .
+                ?target type oo:Class . ?target name ?assoc_to
+            }
+        }
+    }
+    | render_mermaid {
+        type: class,
+        classes: class_name,
+        methods: method_name,
+        attributes: attr_name,
+        inheritance: parent_name -> class_name,
+        association: class_name --> assoc_to
+    }
+    | emit { diagram }
+}
+```
+
+**IMPORTANT render_mermaid arrow syntax:**
+- Flowchart edges: `edges: from -> to` (single arrow)
+- Class inheritance: `inheritance: parent -> child` (single arrow)
+- Class association: `association: source --> target` (DOUBLE arrow `-->`)
+
 ### Find similar methods across files
 ```cadsl
 query find_similar_methods() {
@@ -143,6 +179,120 @@ detector find_feature_envy() {
 }
 ```
 
+### Hybrid Query: Per-row RAG enrichment with rag_enrich
+```cadsl
+query find_similar_implementations() {
+    """Find methods and their semantically similar counterparts using rag_enrich."""
+
+    param min_similarity: float = 0.7;
+    param limit: int = 20;
+
+    reql {
+        SELECT ?m ?name ?class_name ?file ?line WHERE {
+            ?m type oo:Method .
+            ?m name ?name .
+            ?m definedIn ?c . ?c name ?class_name .
+            ?m inFile ?file . ?m atLine ?line .
+            FILTER(!STRSTARTS(?name, "_"))
+        }
+        LIMIT {limit}
+    }
+    | select { name, class_name, file, line }
+    | rag_enrich {
+        query: "{name} {class_name}",
+        top_k: 3,
+        threshold: {min_similarity},
+        mode: all
+    }
+    | filter { len(rag_matches) > 0 }
+    | map {
+        method: name,
+        class: class_name,
+        file: file,
+        line: line,
+        similar_count: len(rag_matches),
+        similar_methods: rag_matches
+    }
+    | order_by { -similar_count }
+    | emit { results }
+}
+```
+
+**rag_enrich parameters:**
+- `query`: Template string with `{field}` placeholders replaced by row values
+- `top_k`: Number of similar items to retrieve (default: 1)
+- `threshold`: Minimum similarity score filter (optional)
+- `mode`: `best` (adds similarity, similar_entity fields) or `all` (adds rag_matches array)
+- `batch_size`: Rows per batch for performance (default: 50)
+- `entity_types`: Filter by type, e.g., `["method", "function"]`
+
+## Type vs Concept in REQL Blocks (IMPORTANT)
+
+When writing REQL inside CADSL, understand the difference:
+
+1. **`type` with concrete type** - Filter with ontology subsumption:
+   - `?x type oo:Class` - Matches py:Class, cpp:Class, etc. (subsumption!)
+   - `?x type py:Method` - Matches only Python methods
+
+2. **`type` with variable** - Returns ALL types (asserted + inferred):
+   - `?x type ?t` - Returns MULTIPLE rows per entity
+   - Includes inferred types: py:Method → oo:Method, oo:Function, etc.
+
+3. **`concept` attribute** - Returns ONLY the asserted (stored) type:
+   - `?x concept ?t` - Returns ONE row with the actual stored type
+   - Example: Returns "py:Method" only (not oo:Method, etc.)
+
+**When to use:**
+- Filter by type: `?x type oo:Method`
+- Get concrete type string: `?x concept ?t`
+- See type hierarchy: `?x type ?t`
+
+**CRITICAL**: When using `concept` with FILTER in UNION queries with patterns outside
+the UNION blocks, you MUST include the variable in SELECT:
+```
+# WRONG
+SELECT ?caller ?callee WHERE {
+    { ?caller calls ?callee } UNION { ?caller maybeCalls ?callee }
+    ?caller concept ?caller_type .
+    FILTER(CONTAINS(?caller_type, "Method"))
+}
+
+# CORRECT
+SELECT ?caller ?callee ?caller_type WHERE {
+    { ?caller calls ?callee } UNION { ?caller maybeCalls ?callee }
+    ?caller concept ?caller_type .
+    FILTER(CONTAINS(?caller_type, "Method"))
+}
+```
+
+## REQL Built-in Functions (for use in reql { } blocks)
+
+Inside REQL blocks, you can use these built-in functions in FILTER expressions:
+- `STR(?var)` - Convert to string
+- `BOUND(?var)` - Check if variable is bound
+- `REGEX(?string, "pattern")` - Regular expression matching
+- `CONTAINS(?string, "substring")` - Check if string contains substring
+- `STRSTARTS(?string, "prefix")` - Check if string starts with prefix
+- `STRENDS(?string, "suffix")` - Check if string ends with suffix
+- `LEVENSHTEIN(?str1, ?str2)` - Compute edit distance (returns integer, use in comparisons)
+- `EXISTS { pattern }` - Check if pattern has solutions
+- `NOT EXISTS { pattern }` - Check if pattern has no solutions
+
+### LEVENSHTEIN example in CADSL
+```cadsl
+query find_similar_method_names() {
+    reql {
+        SELECT ?m1 ?m2 ?name1 ?name2 WHERE {
+            ?m1 type oo:Method . ?m1 name ?name1 .
+            ?m2 type oo:Method . ?m2 name ?name2 .
+            FILTER(?m1 != ?m2)
+            FILTER(LEVENSHTEIN(?name1, ?name2) <= 2)
+        }
+    }
+    | emit { results }
+}
+```
+
 ## Instructions
 
 Given a natural language question, generate a valid CADSL query.
@@ -152,6 +302,14 @@ IMPORTANT:
 2. Use `oo:` prefix for cross-language type matching in REQL sources
 3. For graph analysis, use graph_cycles, graph_traverse, or graph_closure
 4. For semantic queries, use rag { search } or rag { duplicates }
-5. Always include | emit { results } or | emit { findings } at the end
-6. Use parameters with {param_name} syntax for user-provided values
-7. Inside REQL blocks, do NOT use comments - REQL does not support `#` or `//` comments
+5. **For hybrid queries** (structural + semantic): Use `rag_enrich` step after REQL to add per-row RAG matches
+6. Always include | emit { results } or | emit { findings } at the end
+7. Use parameters with {param_name} syntax for user-provided values
+8. Inside REQL blocks, do NOT use comments - REQL does not support `#` or `//` comments
+9. When using `concept` with FILTER in UNION queries, include the concept variable in SELECT
+10. **Map expression template syntax**: In `map { }` steps, use template syntax `"{variable}"` for string interpolation. NEVER use Python-style concatenation like `"prefix" + variable`. Example:
+   - CORRECT: `| map { label: "{class_name}.{method_name}" }`
+   - WRONG: `| map { label: class_name + "." + method_name }`
+11. **Always wrap in tool definition**: Generated CADSL must ALWAYS be wrapped in a tool definition (`query`, `detector`, or `diagram`). NEVER output raw `reql { }` blocks directly. Example:
+   - CORRECT: `query my_query() { reql { ... } | emit { results } }`
+   - WRONG: `reql { ... }`

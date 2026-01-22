@@ -116,6 +116,12 @@ class CADSLParser:
             raise RuntimeError("Parser not initialized")
         return CADSLParser._parser
 
+    @classmethod
+    def reset(cls) -> None:
+        """Reset the parser cache to force grammar reload on next use."""
+        cls._parser = None
+        cls._instance = None
+
     def parse(self, source: str) -> ParseResult:
         """
         Parse CADSL source code into an AST.

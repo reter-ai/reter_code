@@ -1,16 +1,18 @@
 # extract_superclass_candidates - Find classes sharing methods that need a superclass
 #
 # Identifies unrelated classes with similar methods that could share
-# a common superclass.
+# a common superclass. Uses LEVENSHTEIN distance to find methods with
+# similar (not just identical) names across classes.
 
 detector extract_superclass_candidates(category="inheritance", severity="medium") {
     """Find classes that should share a common superclass."""
 
     param min_shared_methods: int = 3;
+    param max_method_distance: int = 2;
     param limit: int = 100;
 
     reql {
-        SELECT ?c1 ?class1 ?c2 ?class2 ?file1 ?line1 (COUNT(?shared_name) AS ?shared_methods)
+        SELECT ?c1 ?class1 ?c2 ?class2 ?file1 ?line1 ?name1 ?name2
         WHERE {
             ?c1 type oo:Class .
             ?c1 name ?class1 .
@@ -20,27 +22,42 @@ detector extract_superclass_candidates(category="inheritance", severity="medium"
             ?c2 name ?class2 .
             ?m1 type oo:Method .
             ?m1 definedIn ?c1 .
-            ?m1 name ?shared_name .
+            ?m1 name ?name1 .
             ?m2 type oo:Method .
             ?m2 definedIn ?c2 .
-            ?m2 name ?shared_name .
-            FILTER ( ?c1 != ?c2 )
+            ?m2 name ?name2 .
+            FILTER(?c1 != ?c2)
+            FILTER(LEVENSHTEIN(?name1, ?name2) <= {max_method_distance})
             FILTER NOT EXISTS { ?c1 inheritsFrom ?c2 }
             FILTER NOT EXISTS { ?c2 inheritsFrom ?c1 }
+            FILTER(!STRSTARTS(?name1, "_"))
         }
-        GROUP BY ?c1 ?class1 ?c2 ?class2 ?file1 ?line1
-        HAVING (?shared_methods >= {min_shared_methods})
-        ORDER BY DESC(?shared_methods)
-        LIMIT {limit}
+        LIMIT 2000
     }
-    | select { class1, class2, file1, line1, shared_methods }
+    | select { class1, class2, file1, line1, name1, name2 }
+    | map {
+        ...row,
+        class_pair: CONCAT(class1, ":", class2)
+    }
+    | collect {
+        by: class_pair,
+        class1: first(class1),
+        class2: first(class2),
+        file1: first(file1),
+        line1: first(line1),
+        shared_methods: count(name1),
+        method_pairs: set(name1)
+    }
+    | filter { shared_methods >= {min_shared_methods} }
     | map {
         ...row,
         file: file1,
         line: line1,
         refactoring: "extract_superclass",
-        message: "Classes '{class1}' and '{class2}' share {shared_methods} methods",
+        message: "Classes '{class1}' and '{class2}' share {shared_methods} similar methods",
         suggestion: "Extract a common superclass for shared functionality"
     }
+    | order_by { -shared_methods }
+    | limit { {limit} }
     | emit { findings }
 }

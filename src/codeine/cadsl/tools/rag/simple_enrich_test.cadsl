@@ -1,0 +1,25 @@
+# simple_enrich_test - Simple test of rag_enrich step
+#
+# A minimal test to verify rag_enrich parses and executes correctly.
+
+query test_rag_enrich() {
+    """Test RAG enrichment with a simple query."""
+
+    # Get first 3 functions
+    reql {
+        SELECT ?f ?name ?file
+        WHERE {
+            ?f type oo:Function .
+            ?f name ?name .
+            ?f inFile ?file .
+        }
+        LIMIT 3
+    }
+    | select { name, file }
+    | rag_enrich {
+        query: "function {name}",
+        top_k: 1,
+        mode: best
+    }
+    | emit { results }
+}

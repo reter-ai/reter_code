@@ -33,3 +33,10 @@ Every `oo:ThrowStatement` is a `oo:Statement`.
 
 % Control flow
 Every `oo:ReturnStatement` is a `oo:Statement`.
+
+% ============================================================================
+% Reference Tracking
+% ============================================================================
+
+% References track variable/parameter usages within code
+% oo:Reference is the base type for all reference facts

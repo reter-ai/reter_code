@@ -1157,8 +1157,29 @@ SELECT ?person ?age WHERE {
 - **BOUND(?var)** - Check if variable is bound
 - **REGEX(?string, pattern)** - Regular expression matching
 - **CONTAINS(?string, substring)** - Check if string contains substring
+- **STRSTARTS(?string, prefix)** - Check if string starts with prefix
+- **STRENDS(?string, suffix)** - Check if string ends with suffix
+- **LEVENSHTEIN(?str1, ?str2)** - Compute edit distance between two strings (returns integer)
 - **EXISTS { pattern }** - Check if pattern has solutions (subquery existence check)
 - **NOT EXISTS { pattern }** - Check if pattern has no solutions (subquery non-existence check)
+
+**LEVENSHTEIN Examples:**
+
+```sparql
+# Find methods with similar names (edit distance ≤ 2)
+SELECT ?m1 ?m2 ?name1 ?name2 WHERE {
+  ?m1 type oo:Method . ?m1 name ?name1 .
+  ?m2 type oo:Method . ?m2 name ?name2 .
+  FILTER(?m1 != ?m2)
+  FILTER(LEVENSHTEIN(?name1, ?name2) <= 2)
+}
+
+# Find potential typos in class names
+SELECT ?class ?name WHERE {
+  ?class type oo:Class . ?class name ?name .
+  FILTER(LEVENSHTEIN(?name, 'UserService') <= 2)
+}
+```
 
 **EXISTS/NOT EXISTS Examples:**
 

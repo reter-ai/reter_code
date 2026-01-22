@@ -31,6 +31,8 @@ Every `py:Assignment` is a `oo:Assignment`.
 
 Every `py:Attribute` is a `oo:Field`.
 
+Every `py:Reference` is a `oo:Reference`.
+
 % ============================================================================
 % Exception Handling (extends oo_ontology.cnl)
 % ============================================================================

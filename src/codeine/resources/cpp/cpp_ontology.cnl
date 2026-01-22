@@ -29,6 +29,7 @@ Every `cpp:Destructor` is a `oo:Destructor`.
 Every `cpp:Operator` is a `oo:Method`.
 Every `cpp:Field` is a `oo:Field`.
 Every `cpp:Parameter` is a `oo:Parameter`.
+Every `cpp:Reference` is a `oo:Reference`.
 Every `cpp:UsingDirective` is a `oo:Import`.
 Every `cpp:UsingDeclaration` is a `oo:Import`.
 

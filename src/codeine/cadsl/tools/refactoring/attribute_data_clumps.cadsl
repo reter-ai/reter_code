@@ -1,35 +1,61 @@
-# attribute_data_clumps - Detect groups of attributes appearing together
+# attribute_data_clumps - Detect groups of similar attributes across classes
 #
-# When the same group of attributes appears in multiple classes, it often
-# indicates a missing abstraction that should be extracted into a value object.
+# When similar attribute names appear in multiple classes, it often indicates
+# a missing abstraction that should be extracted into a value object.
+# Uses LEVENSHTEIN to find classes sharing similar attribute names.
 
 detector attribute_data_clumps(category="refactoring", severity="medium") {
-    """Detect classes with many attributes that could be grouped into value objects."""
+    """Detect classes with similar attribute names that could be data clumps."""
 
-    param min_attributes: int = 5;
+    param min_shared_attrs: int = 3;
+    param max_attr_distance: int = 2;
     param limit: int = 100;
 
     reql {
-        SELECT ?c ?name ?file ?line (COUNT(?attr) AS ?attr_count)
+        SELECT ?c1 ?class1 ?c2 ?class2 ?file1 ?line1 ?attr1 ?attr2
         WHERE {
-            ?c type oo:Class .
-            ?c name ?name .
-            ?c inFile ?file .
-            ?c atLine ?line .
-            ?attr type oo:Field .
-            ?attr definedIn ?c
+            ?c1 type oo:Class .
+            ?c1 name ?class1 .
+            ?c1 inFile ?file1 .
+            ?c1 atLine ?line1 .
+            ?a1 type oo:Field .
+            ?a1 definedIn ?c1 .
+            ?a1 name ?attr1 .
+            ?c2 type oo:Class .
+            ?c2 name ?class2 .
+            ?a2 type oo:Field .
+            ?a2 definedIn ?c2 .
+            ?a2 name ?attr2 .
+            FILTER(?c1 != ?c2)
+            FILTER(LEVENSHTEIN(?attr1, ?attr2) <= {max_attr_distance})
+            FILTER(!STRSTARTS(?attr1, "_"))
         }
-        GROUP BY ?c ?name ?file ?line
-        HAVING (?attr_count >= {min_attributes})
-        ORDER BY DESC(?attr_count)
-        LIMIT {limit}
+        LIMIT 2000
     }
-    | select { name, file, line, attr_count, qualified_name: c }
+    | select { class1, class2, file1, line1, attr1, attr2 }
     | map {
         ...row,
-        refactoring: "extract_class",
-        message: "Class '{name}' has {attr_count} attributes",
-        suggestion: "Consider grouping related attributes into value objects/data classes"
+        class_pair: CONCAT(class1, ":", class2)
     }
+    | collect {
+        by: class_pair,
+        class1: first(class1),
+        class2: first(class2),
+        file1: first(file1),
+        line1: first(line1),
+        shared_attrs: count(attr1),
+        attr_pairs: set(attr1)
+    }
+    | filter { shared_attrs >= {min_shared_attrs} }
+    | map {
+        ...row,
+        file: file1,
+        line: line1,
+        refactoring: "extract_class",
+        message: "Classes '{class1}' and '{class2}' share {shared_attrs} similar attributes",
+        suggestion: "Consider extracting shared attributes into a common value object/data class"
+    }
+    | order_by { -shared_attrs }
+    | limit { {limit} }
     | emit { findings }
 }
