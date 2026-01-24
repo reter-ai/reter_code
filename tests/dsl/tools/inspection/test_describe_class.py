@@ -2,7 +2,7 @@
 Unit tests for describe_class CADSL tool.
 
 Verifies behavior matches reference implementation at:
-d:/ROOT/codeine/src/codeine/tools/python_basic/python_tools.py:241-500
+d:/ROOT/reter_code/src/reter_code/tools/python_basic/python_tools.py:241-500
 
 Reference behavior:
 - Finds class by name (supports simple or qualified name via CONTAINS filter)
@@ -20,8 +20,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'src'))
 
-from codeine.dsl.tools.inspection.describe_class import describe_class
-from codeine.dsl.core import Pipeline, Context, ToolType
+from reter_code.dsl.tools.inspection.describe_class import describe_class
+from reter_code.dsl.core import Pipeline, Context, ToolType
 
 
 class TestDescribeClassStructure:

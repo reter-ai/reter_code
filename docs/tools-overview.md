@@ -1,6 +1,6 @@
-# Codeine MCP Tools Overview
+# Reter Code MCP Tools Overview
 
-Codeine provides 19 MCP tools organized into functional categories. This document provides an overview of all available tools.
+Reter Code provides 19 MCP tools organized into functional categories. This document provides an overview of all available tools.
 
 ## Tool Summary
 

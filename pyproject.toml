@@ -3,14 +3,14 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "codeine"
+name = "reter_code"
 version = "0.1.0"
-description = "Codeine - AI-powered code reasoning MCP server"
+description = "Reter Code - AI-powered code reasoning MCP server"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
-    {name = "Codeine.AI", email = "contact@codeine.ai"}
+    {name = "Reter.AI", email = "contact@reter.ai"}
 ]
 keywords = ["mcp", "reasoning", "code-analysis", "ai", "llm"]
 classifiers = [
@@ -24,10 +24,10 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 # Note: Installation requires --find-links for reter-core:
-# uv pip install codeine --find-links https://raw.githubusercontent.com/codeine-ai/reter/main/reter_core/index.html
+# uv pip install reter_code --find-links https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html
 dependencies = [
     "fastmcp>=2.0.0",
-    "reter @ git+https://github.com/codeine-ai/reter.git",
+    "reter @ git+https://github.com/reter-ai/reter.git",
     "pyarrow>=10.0.0",
     "sentence-transformers>=2.0.0",
     "faiss-cpu>=1.7.0",
@@ -46,17 +46,17 @@ dev = [
 ]
 
 [project.scripts]
-codeine = "codeine:main"
+reter_code = "reter_code:main"
 
 [project.urls]
-Homepage = "https://github.com/codeine-ai/codeine"
-Documentation = "https://github.com/codeine-ai/codeine#readme"
+Homepage = "https://github.com/reter-ai/reter_code"
+Documentation = "https://github.com/reter-ai/reter_code#readme"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-codeine = [
+reter_code = [
     "resources/*",
     "resources/**/*",
     "cadsl/tools/**/*.cadsl",

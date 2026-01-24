@@ -11,7 +11,7 @@ Tests cover:
 import pytest
 from typing import Dict, Any, List
 
-from src.codeine.dsl import (
+from src.reter_code.dsl import (
     # Category Theory
     Functor, Applicative, Monad,
     Result, Ok, Err,
@@ -30,7 +30,7 @@ from src.codeine.dsl import (
     # Registry
     Registry, namespace
 )
-from src.codeine.dsl.core import (
+from src.reter_code.dsl.core import (
     FilterStep, SelectStep, OrderByStep, LimitStep, MapStep
 )
 

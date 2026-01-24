@@ -11,8 +11,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'src'))
 
-from codeine.dsl.tools.smells.god_class import god_class
-from codeine.dsl.core import Pipeline, Context, ToolType
+from reter_code.dsl.tools.smells.god_class import god_class
+from reter_code.dsl.core import Pipeline, Context, ToolType
 
 
 class TestGodClassStructure:

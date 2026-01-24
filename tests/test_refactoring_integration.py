@@ -12,9 +12,9 @@ import shutil
 from pathlib import Path
 from typing import List
 
-from codeine.tools.unified.store import UnifiedStore
-from codeine.tools.refactoring.base import RefactoringToolBase
-from codeine.tools.base import ToolMetadata, ToolDefinition
+from reter_code.tools.unified.store import UnifiedStore
+from reter_code.tools.refactoring.base import RefactoringToolBase
+from reter_code.tools.base import ToolMetadata, ToolDefinition
 
 
 class ConcreteRefactoringTool(RefactoringToolBase):
@@ -254,14 +254,14 @@ class TestRegistrarParameterChanges:
 
     def test_registrar_has_session_instance_parameter(self):
         """Test that recommender tool has session_instance parameter."""
-        from codeine.services.registrars.refactoring import RecommenderToolsRegistrar
+        from reter_code.services.registrars.refactoring import RecommenderToolsRegistrar
 
         # Just verify the class exists and can be imported
         assert RecommenderToolsRegistrar is not None
 
     def test_refactoring_tool_has_new_parameters(self):
         """Test RefactoringTool has updated parameters."""
-        from codeine.tools.refactoring_improving.tool import RefactoringTool
+        from reter_code.tools.refactoring_improving.tool import RefactoringTool
         import inspect
 
         # Check prepare signature
@@ -276,7 +276,7 @@ class TestRegistrarParameterChanges:
 
     def test_patterns_tool_has_new_parameters(self):
         """Test RefactoringToPatternsTool has updated parameters."""
-        from codeine.tools.refactoring_to_patterns.tool import RefactoringToPatternsTool
+        from reter_code.tools.refactoring_to_patterns.tool import RefactoringToPatternsTool
         import inspect
 
         # Check prepare signature

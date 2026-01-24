@@ -11,8 +11,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'src'))
 
-from codeine.dsl.tools.testing.untested_classes import untested_classes
-from codeine.dsl.core import Pipeline, Context
+from reter_code.dsl.tools.testing.untested_classes import untested_classes
+from reter_code.dsl.core import Pipeline, Context
 
 
 class TestUntestedClassesStructure:

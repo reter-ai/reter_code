@@ -5,7 +5,7 @@ Tests the TestMatcher and TestCoverageTool functionality.
 """
 
 import pytest
-from codeine.tools.test_coverage.matcher import TestMatcher, TestMatch
+from reter_code.tools.test_coverage.matcher import TestMatcher, TestMatch
 
 
 class TestTestMatcher:
@@ -166,7 +166,7 @@ class TestTestCoverageToolImport:
 
     def test_import_tool(self):
         """Test importing the tool."""
-        from codeine.tools.test_coverage import TestCoverageTool, DETECTORS
+        from reter_code.tools.test_coverage import TestCoverageTool, DETECTORS
 
         assert TestCoverageTool is not None
         assert DETECTORS is not None
@@ -174,7 +174,7 @@ class TestTestCoverageToolImport:
 
     def test_detector_registry(self):
         """Test detector registry structure."""
-        from codeine.tools.test_coverage import DETECTORS
+        from reter_code.tools.test_coverage import DETECTORS
 
         # Check required detectors exist
         assert "untested_classes" in DETECTORS
@@ -196,14 +196,14 @@ class TestRecommenderIntegration:
 
     def test_recommender_types_include_test_coverage(self):
         """Test that test_coverage is in recommender types."""
-        from codeine.services.registrars.refactoring import RECOMMENDER_TYPES
+        from reter_code.services.registrars.refactoring import RECOMMENDER_TYPES
 
         assert "test_coverage" in RECOMMENDER_TYPES
         assert "refactoring" in RECOMMENDER_TYPES
 
     def test_registrar_imports_test_coverage(self):
         """Test that registrar can import test_coverage tool."""
-        from codeine.services.registrars.refactoring import RecommenderToolsRegistrar
+        from reter_code.services.registrars.refactoring import RecommenderToolsRegistrar
 
         assert RecommenderToolsRegistrar is not None
 

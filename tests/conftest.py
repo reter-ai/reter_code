@@ -8,14 +8,14 @@ eliminating duplicate fixture definitions and ensuring consistency.
 import os
 import tempfile
 import pytest
-from codeine.tools.unified.store import UnifiedStore
-from codeine.tools.unified.session import ThinkingSession
-from codeine.tools.unified.operations import OperationsHandler
-from codeine.reter_wrapper import (
+from reter_code.tools.unified.store import UnifiedStore
+from reter_code.tools.unified.session import ThinkingSession
+from reter_code.tools.unified.operations import OperationsHandler
+from reter_code.reter_wrapper import (
     set_initialization_complete,
     set_initialization_in_progress
 )
-from codeine.services.initialization_progress import (
+from reter_code.services.initialization_progress import (
     get_component_readiness,
     reset_component_readiness,
 )

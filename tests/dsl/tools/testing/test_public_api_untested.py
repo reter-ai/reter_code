@@ -11,8 +11,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'src'))
 
-from codeine.dsl.tools.testing.public_api_untested import public_api_untested
-from codeine.dsl.core import Pipeline, Context
+from reter_code.dsl.tools.testing.public_api_untested import public_api_untested
+from reter_code.dsl.core import Pipeline, Context
 
 
 class TestPublicApiUntestedStructure:

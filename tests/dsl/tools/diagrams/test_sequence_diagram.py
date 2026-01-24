@@ -11,8 +11,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'src'))
 
-from codeine.dsl.tools.diagrams.sequence_diagram import sequence_diagram
-from codeine.dsl.core import Pipeline, Context
+from reter_code.dsl.tools.diagrams.sequence_diagram import sequence_diagram
+from reter_code.dsl.core import Pipeline, Context
 
 
 class TestSequenceDiagramStructure:

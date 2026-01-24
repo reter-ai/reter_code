@@ -1,8 +1,8 @@
-# Design Doc: CADSL - Codeine Analysis DSL Text Grammar
+# Design Doc: CADSL - Reter Code Analysis DSL Text Grammar
 
 ## Context
 
-The Codeine DSL provides a fluent Python API for defining code analysis tools (queries, detectors, diagrams). Currently, tools must be defined in Python code. We want to enable **dynamic tool loading from text-based definitions** using a Lark-based grammar called **CADSL** (Codeine Analysis DSL).
+The Reter Code DSL provides a fluent Python API for defining code analysis tools (queries, detectors, diagrams). Currently, tools must be defined in Python code. We want to enable **dynamic tool loading from text-based definitions** using a Lark-based grammar called **CADSL** (Reter Code Analysis DSL).
 
 ### Current Python DSL Example
 ```python
@@ -135,7 +135,7 @@ detector circular_imports(category="dependencies", severity="high") {
 ## Grammar Rules
 
 ```lark
-// CADSL.lark - Codeine Analysis DSL Grammar (Brace-delimited)
+// CADSL.lark - Reter Code Analysis DSL Grammar (Brace-delimited)
 
 start: tool_def+
 
@@ -581,7 +581,7 @@ query find_similar_code() {
 ## Implementation Architecture
 
 ```
-codeine/src/codeine/cadsl/
+reter_code/src/reter_code/cadsl/
 ├── __init__.py           # Public API: load_tool(), load_tools_from_file()
 ├── grammar.lark          # Lark grammar file
 ├── parser.py             # Lark parser wrapper with error handling
@@ -870,26 +870,26 @@ for tool in tools:
 ## Critical Files to Modify
 
 1. **New files to create:**
-   - `codeine/src/codeine/cadsl/__init__.py`
-   - `codeine/src/codeine/cadsl/grammar.lark`
-   - `codeine/src/codeine/cadsl/parser.py`
-   - `codeine/src/codeine/cadsl/transformer.py`
-   - `codeine/src/codeine/cadsl/compiler.py`
-   - `codeine/src/codeine/cadsl/validator.py`
-   - `codeine/src/codeine/cadsl/builtins.py`
-   - `codeine/src/codeine/cadsl/python_executor.py`
-   - `codeine/src/codeine/cadsl/loader.py`
+   - `reter_code/src/reter_code/cadsl/__init__.py`
+   - `reter_code/src/reter_code/cadsl/grammar.lark`
+   - `reter_code/src/reter_code/cadsl/parser.py`
+   - `reter_code/src/reter_code/cadsl/transformer.py`
+   - `reter_code/src/reter_code/cadsl/compiler.py`
+   - `reter_code/src/reter_code/cadsl/validator.py`
+   - `reter_code/src/reter_code/cadsl/builtins.py`
+   - `reter_code/src/reter_code/cadsl/python_executor.py`
+   - `reter_code/src/reter_code/cadsl/loader.py`
 
 2. **Files to modify:**
-   - `codeine/src/codeine/dsl/registry.py` - Add CADSL loader integration
-   - `codeine/src/codeine/services/tool_registrar.py` - Load `.cadsl` files
+   - `reter_code/src/reter_code/dsl/registry.py` - Add CADSL loader integration
+   - `reter_code/src/reter_code/services/tool_registrar.py` - Load `.cadsl` files
 
 ---
 
 ## Implementation Steps
 
 ### Phase 1: Core Parser
-1. Create `codeine/src/codeine/cadsl/grammar.lark` with all grammar rules
+1. Create `reter_code/src/reter_code/cadsl/grammar.lark` with all grammar rules
 2. Implement `parser.py` - Lark parser wrapper with error handling
 3. Implement `validator.py` - Parse-time type validation
 
@@ -907,8 +907,8 @@ for tool in tools:
 ### Phase 4: Integration
 8. Implement `loader.py` - Load from strings/files/directories
 9. Add `__init__.py` - Public API
-10. Integrate with `codeine/src/codeine/dsl/registry.py`
-11. Update `codeine/src/codeine/services/tool_registrar.py` to load `.cadsl` files
+10. Integrate with `reter_code/src/reter_code/dsl/registry.py`
+11. Update `reter_code/src/reter_code/services/tool_registrar.py` to load `.cadsl` files
 
 ### Phase 5: Testing
 12. Add unit tests for parser
@@ -992,7 +992,7 @@ Inline Python blocks pose security risks. This section defines a multi-layer def
 ### Layer 1: AST Validation
 
 ```python
-# codeine/src/codeine/cadsl/sandbox.py
+# reter_code/src/reter_code/cadsl/sandbox.py
 
 import ast
 from typing import List
@@ -1352,7 +1352,7 @@ def safe_read(capabilities: Set[str], path: str) -> str:
 ### Updated File Structure
 
 ```
-codeine/src/codeine/cadsl/
+reter_code/src/reter_code/cadsl/
 ├── __init__.py
 ├── grammar.lark
 ├── parser.py

@@ -1,6 +1,6 @@
-# Codeine Documentation
+# Reter Code Documentation
 
-Codeine is an AI-powered MCP (Model Context Protocol) server for code reasoning.
+Reter Code is an AI-powered MCP (Model Context Protocol) server for code reasoning.
 
 ## Documentation Index
 
@@ -97,7 +97,7 @@ diagram(diagram_type="design_doc", format="mermaid")
 
 ## Configuration
 
-Create `codeine.json` in your project root:
+Create `reter_code.json` in your project root:
 
 ```json
 {

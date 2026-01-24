@@ -30,7 +30,7 @@ class TestFAISSWrapper:
     @pytest.fixture
     def wrapper(self):
         """Create a FAISSWrapper instance for testing."""
-        from codeine.services.faiss_wrapper import FAISSWrapper
+        from reter_code.services.faiss_wrapper import FAISSWrapper
         wrapper = FAISSWrapper(dimension=768, index_type="flat", metric="ip")
         wrapper.create_index()
         return wrapper
@@ -112,7 +112,7 @@ class TestFAISSWrapper:
             assert Path(path).exists()
 
             # Create new wrapper and load
-            from codeine.services.faiss_wrapper import FAISSWrapper
+            from reter_code.services.faiss_wrapper import FAISSWrapper
             new_wrapper = FAISSWrapper(dimension=768)
             new_wrapper.load(path)
 
@@ -149,7 +149,7 @@ class TestLightweightEmbeddingService:
     @pytest.fixture
     def service(self):
         """Create a lightweight embedding service."""
-        from codeine.services.embedding_service import LightweightEmbeddingService
+        from reter_code.services.embedding_service import LightweightEmbeddingService
         return LightweightEmbeddingService(embedding_dim=768)
 
     def test_generate_embedding(self, service):
@@ -212,14 +212,14 @@ class TestEmbeddingServiceFactory:
 
     def test_default_config(self):
         """Test factory with default config returns lightweight for testing."""
-        from codeine.services.embedding_service import get_embedding_service
+        from reter_code.services.embedding_service import get_embedding_service
 
         service = get_embedding_service({"rag_use_lightweight": True})
         assert service.provider == "test"
 
     def test_custom_dimension(self):
         """Test factory respects custom dimension in lightweight mode."""
-        from codeine.services.embedding_service import (
+        from reter_code.services.embedding_service import (
             get_embedding_service,
             reset_embedding_service_singleton,
         )
@@ -242,7 +242,7 @@ class TestContentExtractor:
     @pytest.fixture
     def extractor(self, tmp_path):
         """Create a ContentExtractor with temp project root."""
-        from codeine.services.content_extractor import ContentExtractor
+        from reter_code.services.content_extractor import ContentExtractor
         return ContentExtractor(project_root=tmp_path, max_body_lines=50)
 
     @pytest.fixture
@@ -374,7 +374,7 @@ class TestMarkdownIndexer:
     @pytest.fixture
     def indexer(self):
         """Create a MarkdownIndexer."""
-        from codeine.services.markdown_indexer import MarkdownIndexer
+        from reter_code.services.markdown_indexer import MarkdownIndexer
         return MarkdownIndexer(
             max_chunk_words=200,
             min_chunk_words=10,
@@ -555,8 +555,8 @@ Calculates the sum of two numbers.
 
     def test_extract_and_embed(self, project_dir):
         """Test extracting content and generating embeddings."""
-        from codeine.services.content_extractor import ContentExtractor
-        from codeine.services.embedding_service import LightweightEmbeddingService
+        from reter_code.services.content_extractor import ContentExtractor
+        from reter_code.services.embedding_service import LightweightEmbeddingService
 
         extractor = ContentExtractor(project_root=project_dir, max_body_lines=50)
         embedding_service = LightweightEmbeddingService(embedding_dim=768)
@@ -582,8 +582,8 @@ Calculates the sum of two numbers.
 
     def test_parse_and_embed_markdown(self, project_dir):
         """Test parsing markdown and generating embeddings."""
-        from codeine.services.markdown_indexer import MarkdownIndexer
-        from codeine.services.embedding_service import LightweightEmbeddingService
+        from reter_code.services.markdown_indexer import MarkdownIndexer
+        from reter_code.services.embedding_service import LightweightEmbeddingService
 
         indexer = MarkdownIndexer(max_chunk_words=500, min_chunk_words=5)
         embedding_service = LightweightEmbeddingService(embedding_dim=768)
@@ -600,9 +600,9 @@ Calculates the sum of two numbers.
 
     def test_full_indexing_pipeline(self, project_dir):
         """Test full indexing pipeline with FAISS."""
-        from codeine.services.faiss_wrapper import FAISSWrapper
-        from codeine.services.embedding_service import LightweightEmbeddingService
-        from codeine.services.markdown_indexer import MarkdownIndexer
+        from reter_code.services.faiss_wrapper import FAISSWrapper
+        from reter_code.services.embedding_service import LightweightEmbeddingService
+        from reter_code.services.markdown_indexer import MarkdownIndexer
 
         # Setup components
         faiss_wrapper = FAISSWrapper(dimension=768, index_type="flat", metric="ip")

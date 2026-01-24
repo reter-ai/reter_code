@@ -12,13 +12,13 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'src'))
 
-from codeine.dsl.tools.smells.parallel_inheritance import (
+from reter_code.dsl.tools.smells.parallel_inheritance import (
     parallel_inheritance,
     _find_parallel_hierarchies,
     _find_parallel_pairs,
     _names_are_parallel
 )
-from codeine.dsl.core import Pipeline, Context
+from reter_code.dsl.core import Pipeline, Context
 
 
 class TestParallelInheritanceStructure:

@@ -2,7 +2,7 @@
 Unit tests for list_classes CADSL tool.
 
 Verifies behavior matches reference implementation at:
-d:/ROOT/codeine/src/codeine/tools/python_basic/python_tools.py
+d:/ROOT/reter_code/src/reter_code/tools/python_basic/python_tools.py
 
 Reference behavior:
 - Returns classes with: name, qualified_name, full_qualified_name, file, line, method_count
@@ -19,8 +19,8 @@ import os
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'src'))
 
-from codeine.dsl.tools.inspection.list_classes import list_classes
-from codeine.dsl.core import Pipeline, Context
+from reter_code.dsl.tools.inspection.list_classes import list_classes
+from reter_code.dsl.core import Pipeline, Context
 
 
 class TestListClassesStructure:
@@ -44,7 +44,7 @@ class TestListClassesStructure:
 
     def test_spec_has_query_type(self):
         """Tool should be of QUERY type."""
-        from codeine.dsl.core import ToolType
+        from reter_code.dsl.core import ToolType
         spec = list_classes._cadsl_spec
         assert spec.type == ToolType.QUERY, \
             f"Tool type should be QUERY, got {spec.type}"

@@ -2,7 +2,7 @@
 Unit tests for get_package_structure CADSL tool.
 
 Verifies behavior matches reference implementation at:
-d:/ROOT/codeine/src/codeine/tools/python_advanced/architecture_analysis.py:74-135
+d:/ROOT/reter_code/src/reter_code/tools/python_advanced/architecture_analysis.py:74-135
 
 Reference behavior:
 - Queries Module type with inFile property
@@ -17,8 +17,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'src'))
 
-from codeine.dsl.tools.inspection.get_package_structure import get_package_structure
-from codeine.dsl.core import Pipeline, Context, ToolType
+from reter_code.dsl.tools.inspection.get_package_structure import get_package_structure
+from reter_code.dsl.core import Pipeline, Context, ToolType
 
 
 class TestGetPackageStructureStructure:

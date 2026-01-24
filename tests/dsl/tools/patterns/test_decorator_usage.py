@@ -11,8 +11,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'src'))
 
-from codeine.dsl.tools.patterns.decorator_usage import find_decorator_usage
-from codeine.dsl.core import Pipeline, Context
+from reter_code.dsl.tools.patterns.decorator_usage import find_decorator_usage
+from reter_code.dsl.core import Pipeline, Context
 
 
 class TestDecoratorUsageStructure:

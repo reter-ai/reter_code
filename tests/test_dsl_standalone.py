@@ -1,13 +1,13 @@
 """
 Standalone tests for CADSL (Code Analysis DSL) modules.
-Run with: PYTHONPATH=src/codeine python -m pytest tests/test_dsl_standalone.py -v
+Run with: PYTHONPATH=src/reter_code python -m pytest tests/test_dsl_standalone.py -v
 """
 
 import sys
 import os
 
-# Add the codeine/src/codeine to path for standalone execution
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src', 'codeine'))
+# Add the reter_code/src/reter_code to path for standalone execution
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src', 'reter_code'))
 
 import pytest
 from typing import Dict, Any, List

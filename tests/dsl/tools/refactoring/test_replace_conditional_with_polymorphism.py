@@ -11,8 +11,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'src'))
 
-from codeine.dsl.tools.refactoring.replace_conditional_with_polymorphism import replace_conditional_with_polymorphism
-from codeine.dsl.core import Pipeline, Context
+from reter_code.dsl.tools.refactoring.replace_conditional_with_polymorphism import replace_conditional_with_polymorphism
+from reter_code.dsl.core import Pipeline, Context
 
 
 class TestReplaceConditionalStructure:

@@ -11,8 +11,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'src'))
 
-from codeine.dsl.tools.smells.primitive_obsession import primitive_obsession
-from codeine.dsl.core import Pipeline, Context, ToolType
+from reter_code.dsl.tools.smells.primitive_obsession import primitive_obsession
+from reter_code.dsl.core import Pipeline, Context, ToolType
 
 
 class TestPrimitiveObsessionStructure:

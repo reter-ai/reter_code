@@ -2,11 +2,11 @@
 Integration tests for CADSL detectors using real RETER and RAG data.
 
 These tests load the actual `.default.reter` and `.default.faiss` from
-the project's `.codeine` directory to verify detectors work with real data.
+the project's `.reter_code` directory to verify detectors work with real data.
 
 Prerequisites:
-- The codeine MCP server should have been run at least once to create
-  the snapshot files in `.codeine/`
+- The reter_code MCP server should have been run at least once to create
+  the snapshot files in `.reter_code/`
 """
 
 import pytest
@@ -18,11 +18,11 @@ from unittest.mock import Mock
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-# Path to the .codeine directory with real data
-CODEINE_DIR = Path(__file__).parent.parent.parent.parent / ".codeine"
-RETER_SNAPSHOT = CODEINE_DIR / ".default.reter"
-FAISS_INDEX = CODEINE_DIR / ".default.faiss"
-FAISS_META = CODEINE_DIR / ".default.faiss.meta"
+# Path to the .reter_code directory with real data
+RETER_CODE_DIR = Path(__file__).parent.parent.parent.parent / ".reter_code"
+RETER_SNAPSHOT = RETER_CODE_DIR / ".default.reter"
+FAISS_INDEX = RETER_CODE_DIR / ".default.faiss"
+FAISS_META = RETER_CODE_DIR / ".default.faiss.meta"
 
 
 def has_real_data():
@@ -33,7 +33,7 @@ def has_real_data():
 # Skip all tests if no real data
 pytestmark = pytest.mark.skipif(
     not has_real_data(),
-    reason=f"Real data not found in {CODEINE_DIR}. Run the MCP server first."
+    reason=f"Real data not found in {RETER_CODE_DIR}. Run the MCP server first."
 )
 
 
@@ -44,7 +44,7 @@ def real_reter():
 
     Module-scoped for efficiency (loading is expensive).
     """
-    from codeine.reter_wrapper import (
+    from reter_code.reter_wrapper import (
         ReterWrapper,
         set_initialization_complete,
         set_initialization_in_progress
@@ -85,12 +85,12 @@ def real_rag(real_reter):
     except ImportError:
         pytest.skip("faiss-cpu not installed")
 
-    from codeine.services.rag_index_manager import RAGIndexManager
-    from codeine.services.state_persistence import StatePersistenceService
-    from codeine.services.instance_manager import InstanceManager
+    from reter_code.services.rag_index_manager import RAGIndexManager
+    from reter_code.services.state_persistence import StatePersistenceService
+    from reter_code.services.instance_manager import InstanceManager
 
-    # Set up persistence pointing to real .codeine directory
-    os.environ["RETER_SNAPSHOTS_DIR"] = str(CODEINE_DIR)
+    # Set up persistence pointing to real .reter_code directory
+    os.environ["RETER_SNAPSHOTS_DIR"] = str(RETER_CODE_DIR)
 
     try:
         instance_manager = InstanceManager()
@@ -106,7 +106,7 @@ def real_rag(real_reter):
         rag_manager._model_loaded = True  # Skip model loading
 
         # Initialize - this will load the existing index
-        project_root = CODEINE_DIR.parent
+        project_root = RETER_CODE_DIR.parent
         rag_manager.initialize(project_root=project_root)
 
         if not rag_manager.is_initialized:
@@ -206,8 +206,8 @@ class TestCircularImportsIntegration:
 
     def test_detector_runs_without_error(self, real_reter):
         """circular_imports should execute without errors."""
-        from codeine.dsl.tools.dependencies.circular_imports import find_circular_imports
-        from codeine.dsl.core import Context
+        from reter_code.dsl.tools.dependencies.circular_imports import find_circular_imports
+        from reter_code.dsl.core import Context
 
         ctx = Context(
             reter=real_reter,
@@ -456,7 +456,7 @@ class TestSmellDetectorProcessingFunctions:
 
     def test_circular_imports_detection(self, real_reter):
         """Test circular import detection with real data."""
-        from codeine.dsl.tools.dependencies.circular_imports import _detect_circular_imports
+        from reter_code.dsl.tools.dependencies.circular_imports import _detect_circular_imports
 
         # Run the REQL query
         query = """
@@ -483,7 +483,7 @@ class TestSmellDetectorProcessingFunctions:
 
     def test_alternative_interfaces_detection(self, real_reter):
         """Test alternative interfaces detection with real data."""
-        from codeine.dsl.tools.smells.alternative_interfaces import _find_similar_interfaces
+        from reter_code.dsl.tools.smells.alternative_interfaces import _find_similar_interfaces
 
         # Run the REQL query (without FILTER for compatibility)
         query = """
@@ -512,7 +512,7 @@ class TestSmellDetectorProcessingFunctions:
 
     def test_parallel_inheritance_detection(self, real_reter):
         """Test parallel inheritance detection with real data."""
-        from codeine.dsl.tools.smells.parallel_inheritance import _find_parallel_hierarchies
+        from reter_code.dsl.tools.smells.parallel_inheritance import _find_parallel_hierarchies
 
         # Run the REQL query
         query = """
@@ -537,7 +537,7 @@ class TestSmellDetectorProcessingFunctions:
 
     def test_duplicate_names_detection(self, real_reter):
         """Test duplicate names detection with real data."""
-        from codeine.dsl.tools.smells.duplicate_names import _find_duplicates
+        from reter_code.dsl.tools.smells.duplicate_names import _find_duplicates
 
         # Run the REQL query
         query = """

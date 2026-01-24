@@ -1,4 +1,4 @@
-# Codeine
+# Reter Code
 
 AI-powered code reasoning MCP server.
 
@@ -7,7 +7,7 @@ AI-powered code reasoning MCP server.
 ### Step 1: Pre-cache dependencies and sync project (run from your project directory)
 
 ```bash
-uvx --from git+https://github.com/codeine-ai/codeine --find-links https://raw.githubusercontent.com/codeine-ai/reter/main/reter_core/index.html codeine
+uvx --from git+https://github.com/reter-ai/reter_code --find-links https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html reter_code
 ```
 
 This will:
@@ -20,7 +20,7 @@ Run this from your project root directory.
 ### Step 2: Add to Claude Code
 
 ```bash
-claude mcp add codeine -s user -e ANTHROPIC_API_KEY=your-api-key -- uvx --from git+https://github.com/codeine-ai/codeine --find-links https://raw.githubusercontent.com/codeine-ai/reter/main/reter_core/index.html codeine
+claude mcp add reter_code -s user -e ANTHROPIC_API_KEY=your-api-key -- uvx --from git+https://github.com/reter-ai/reter_code --find-links https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html reter_code
 ```
 
 Now Claude starts fast because everything is cached.
@@ -37,12 +37,12 @@ Now Claude starts fast because everything is cached.
 ```json
 {
   "mcpServers": {
-    "codeine": {
+    "reter_code": {
       "command": "uvx",
       "args": [
-        "--from", "git+https://github.com/codeine-ai/codeine",
-        "--find-links", "https://raw.githubusercontent.com/codeine-ai/reter/main/reter_core/index.html",
-        "codeine"
+        "--from", "git+https://github.com/reter-ai/reter_code",
+        "--find-links", "https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html",
+        "reter_code"
       ],
       "env": {
         "ANTHROPIC_API_KEY": "your-api-key"

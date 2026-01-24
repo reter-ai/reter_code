@@ -1,0 +1,683 @@
+// CADSL.lark - Reter Code Analysis DSL Grammar (Brace-delimited)
+// A text-based DSL for defining code analysis tools that compiles to Python Pipeline objects
+
+start: tool_def+
+
+// ============================================================
+// TOOL DEFINITION
+// ============================================================
+
+tool_def: tool_type NAME "(" metadata? ")" "{" tool_body "}"
+
+tool_type: "query"    -> tool_query
+         | "detector" -> tool_detector
+         | "diagram"  -> tool_diagram
+
+metadata: meta_item ("," meta_item)*
+
+meta_item: NAME "=" meta_value
+
+meta_value: STRING
+          | NAME
+          | "[" capability_list? "]" -> capability_array
+
+capability_list: STRING ("," STRING)*
+
+tool_body: docstring? param_def* pipeline
+
+docstring: TRIPLE_STRING
+
+// ============================================================
+// PARAMETERS (with parse-time type validation)
+// ============================================================
+
+param_def: "param" NAME ":" type_spec param_modifiers? ";"
+
+type_spec: "int"                      -> type_int
+         | "str"                      -> type_str
+         | "float"                    -> type_float
+         | "bool"                     -> type_bool
+         | "list"                     -> type_list
+         | "list" "<" type_spec ">"   -> type_list_of
+
+param_modifiers: param_modifier+
+
+param_modifier: "=" value             -> param_default
+              | "required"            -> param_required
+              | "choices" "[" value_list "]" -> param_choices
+
+// ============================================================
+// PIPELINE
+// ============================================================
+
+pipeline: source ("|" step)*
+
+// Sources
+source: reql_source
+      | rag_source
+      | value_source
+      | merge_source
+
+reql_source: "reql" REQL_BLOCK
+
+// Merge multiple sources into one: merge { source1, source2, ... }
+merge_source: "merge" "{" source_list "}"
+
+source_list: source_item ("," source_item)*
+
+source_item: reql_source
+           | rag_source
+           | value_source
+
+rag_source: "rag" "{" rag_args "}"
+
+// RAG operations:
+// - search: rag { search, query: "...", top_k: 10 }
+// - duplicates: rag { duplicates, similarity: 0.85, limit: 50 }
+// - clusters: rag { clusters, n_clusters: 50, min_size: 2 }
+rag_args: rag_search_args
+        | rag_duplicates_args
+        | rag_clusters_args
+
+// Search: rag { search, query: "...", top_k: 10 }
+rag_search_args: "search" ("," rag_param)*  -> rag_search
+
+// Duplicates: rag { duplicates, similarity: 0.85, limit: 50 }
+rag_duplicates_args: "duplicates" ("," rag_param)*  -> rag_duplicates
+
+// Clusters: rag { clusters, n_clusters: 50, min_size: 2 }
+rag_clusters_args: "clusters" ("," rag_param)*  -> rag_clusters
+
+// Common RAG parameters (parsed dynamically)
+rag_param: NAME ":" rag_param_value
+
+rag_param_value: SIGNED_FLOAT  -> rag_float_val
+               | INT           -> rag_int_val
+               | "true"        -> rag_true_val
+               | "false"       -> rag_false_val
+               | STRING        -> rag_string_val
+               | param_ref     -> rag_param_ref
+               | list_value    -> rag_list_val
+
+value_source: "value" "{" expr "}"
+
+// ============================================================
+// PIPELINE STEPS
+// ============================================================
+
+step: filter_step
+    | select_step
+    | map_step
+    | flat_map_step
+    | order_by_step
+    | limit_step
+    | offset_step
+    | group_by_step
+    | aggregate_step
+    | unique_step
+    | python_step
+    | render_step
+    | emit_step
+    | flatten_step
+    | tap_step
+    | when_step
+    | unless_step
+    | branch_step
+    | catch_step
+    | parallel_step
+    | join_step
+    | graph_cycles_step
+    | graph_closure_step
+    | graph_traverse_step
+    | render_mermaid_step
+    | pivot_step
+    | compute_step
+    | collect_step
+    | nest_step
+    | render_table_step
+    | render_chart_step
+    | cross_join_step
+    | set_similarity_step
+    | string_match_step
+
+filter_step: "filter" "{" condition "}"
+
+// Parallel execution: parallel { step1, step2, ... }
+// Executes all steps on the same input and collects results
+parallel_step: "parallel" "{" step_list "}"
+
+step_list: step_item ("," step_item)*
+
+step_item: filter_step
+         | select_step
+         | map_step
+         | limit_step
+         | aggregate_step
+
+select_step: "select" "{" field_list "}"
+
+map_step: "map" "{" object_expr "}"
+
+flat_map_step: "flat_map" "{" expr "}"
+
+order_by_step: "order_by" "{" order_field ("," order_field)* "}"
+
+limit_step: "limit" "{" limit_value "}"
+
+limit_value: INT
+           | param_ref
+
+offset_step: "offset" "{" offset_value "}"
+
+offset_value: INT
+            | param_ref
+
+group_by_step: "group_by" "{" group_spec "}"
+
+aggregate_step: "aggregate" "{" agg_field ("," agg_field)* "}"
+
+unique_step: "unique" ("{" NAME "}")?
+
+python_step: "python" PYTHON_BLOCK
+
+render_step: "render" "{" render_spec "}"
+
+// Multi-output emit: emit { key } or emit { key1, key2: source, key3 }
+emit_step: "emit" "{" emit_spec "}"
+
+emit_spec: emit_field ("," emit_field)*
+
+emit_field: NAME ":" NAME               -> emit_named
+          | NAME                         -> emit_simple
+
+flatten_step: "flatten" "{" "}"
+
+tap_step: "tap" "{" NAME "}"
+
+// Conditional step execution: when { condition } step
+// Executes the inner step only when condition is true
+when_step: "when" "{" condition "}" step
+
+// Inverted conditional: unless { condition } step
+// Executes the inner step only when condition is false
+unless_step: "unless" "{" condition "}" step
+
+// Branching: branch { condition } then { step } else { step }
+// Executes then_step if condition is true, else_step otherwise
+branch_step: "branch" "{" condition "}" "then" step ("else" step)?
+
+// Error handling: catch { default_value }
+// If previous steps fail, return the default value instead
+catch_step: "catch" "{" expr "}"
+
+// Join step: join { left_key: field, right: source, right_key: field, type: inner|left|right|outer }
+// Joins the current pipeline with another source using Arrow-native joins
+join_step: "join" "{" join_spec "}"
+
+join_spec: join_param ("," join_param)*
+
+join_param: "left" ":" NAME              -> join_left_key
+          | "right" ":" source_item      -> join_right_source
+          | "right_key" ":" NAME         -> join_right_key
+          | "on" ":" NAME                -> join_on_key
+          | "type" ":" join_type         -> join_type_spec
+
+join_type: "inner"  -> join_inner
+         | "left"   -> join_left
+         | "right"  -> join_right
+         | "outer"  -> join_outer
+         | "semi"   -> join_semi
+         | "anti"   -> join_anti
+
+// ============================================================
+// GRAPH ALGORITHMS
+// ============================================================
+
+// Detect cycles in a graph: graph_cycles { from: field, to: field }
+graph_cycles_step: "graph_cycles" "{" graph_spec "}"
+
+// Transitive closure: graph_closure { from: field, to: field, max_depth: 10 }
+graph_closure_step: "graph_closure" "{" graph_spec "}"
+
+// BFS/DFS traversal: graph_traverse { from: field, to: field, algorithm: bfs, max_depth: 10 }
+graph_traverse_step: "graph_traverse" "{" graph_spec "}"
+
+graph_spec: graph_param ("," graph_param)*
+
+graph_param: "from" ":" NAME           -> graph_from
+           | "to" ":" NAME             -> graph_to
+           | "max_depth" ":" INT       -> graph_max_depth
+           | "max_depth" ":" param_ref -> graph_max_depth_param
+           | "algorithm" ":" graph_algo -> graph_algorithm
+           | "root" ":" expr           -> graph_root
+
+graph_algo: "bfs" -> algo_bfs
+          | "dfs" -> algo_dfs
+
+// ============================================================
+// MERMAID RENDERING
+// ============================================================
+
+// Render to Mermaid diagram: render_mermaid { type: flowchart, nodes: name, edges: from -> to }
+render_mermaid_step: "render_mermaid" "{" mermaid_spec "}"
+
+mermaid_spec: mermaid_param ("," mermaid_param)*
+
+mermaid_param: "type" ":" mermaid_type      -> mermaid_type_spec
+             | "nodes" ":" NAME             -> mermaid_nodes
+             | "edges" ":" NAME "->" NAME   -> mermaid_edges
+             | "direction" ":" mermaid_dir  -> mermaid_direction
+             | "title" ":" STRING           -> mermaid_title
+             | "participants" ":" NAME      -> mermaid_participants
+             | "messages" ":" NAME "->" NAME ":" NAME -> mermaid_messages
+             // Class diagram specific
+             | "classes" ":" NAME           -> mermaid_classes
+             | "methods" ":" NAME           -> mermaid_methods
+             | "attributes" ":" NAME        -> mermaid_attributes
+             | "inheritance" ":" NAME "->" NAME -> mermaid_inheritance
+             // Pie chart specific
+             | "labels" ":" NAME            -> mermaid_labels
+             | "values" ":" NAME            -> mermaid_values
+             // State diagram specific
+             | "states" ":" NAME            -> mermaid_states
+             | "transitions" ":" NAME "->" NAME -> mermaid_transitions
+             // ER diagram specific
+             | "entities" ":" NAME          -> mermaid_entities
+             | "relationships" ":" NAME     -> mermaid_relationships
+
+mermaid_type: "flowchart"   -> mermaid_flowchart
+            | "sequence"    -> mermaid_sequence
+            | "class"       -> mermaid_class
+            | "gantt"       -> mermaid_gantt
+            | "state"       -> mermaid_state
+            | "er"          -> mermaid_er
+            | "pie"         -> mermaid_pie
+            | "mindmap"     -> mermaid_mindmap
+            | "timeline"    -> mermaid_timeline
+            | "quadrant"    -> mermaid_quadrant
+
+mermaid_dir: "TB" -> dir_tb
+           | "TD" -> dir_tb
+           | "BT" -> dir_bt
+           | "LR" -> dir_lr
+           | "RL" -> dir_rl
+
+// ============================================================
+// PIVOT TABLE
+// ============================================================
+
+// Create pivot table: pivot { rows: field, cols: field, value: field, aggregate: sum }
+pivot_step: "pivot" "{" pivot_spec "}"
+
+pivot_spec: pivot_param ("," pivot_param)*
+
+pivot_param: "rows" ":" NAME            -> pivot_rows
+           | "cols" ":" NAME            -> pivot_cols
+           | "value" ":" NAME           -> pivot_value
+           | "aggregate" ":" agg_op     -> pivot_aggregate
+
+// ============================================================
+// COMPUTE STEP (for ratios, percentages)
+// ============================================================
+
+// Compute new fields: compute { ratio: a / b, pct: ratio * 100 }
+compute_step: "compute" "{" compute_field ("," compute_field)* "}"
+
+compute_field: NAME ":" expr
+
+// ============================================================
+// COLLECT STEP (Aggregation primitive)
+// ============================================================
+
+// Aggregate rows by key, collecting fields into sets/lists
+// collect { by: class_name, methods: set(method_name), attrs: set(attr_name) }
+collect_step: "collect" "{" collect_spec "}"
+
+collect_spec: collect_param ("," collect_param)*
+
+collect_param: "by" ":" NAME                    -> collect_by
+             | NAME ":" collect_op "(" NAME ")" -> collect_field
+
+collect_op: "set"     -> collect_set
+          | "list"    -> collect_list
+          | "first"   -> collect_first
+          | "last"    -> collect_last
+          | "count"   -> collect_count
+          | "sum"     -> collect_sum
+          | "avg"     -> collect_avg
+          | "min"     -> collect_min
+          | "max"     -> collect_max
+
+// ============================================================
+// NEST STEP (Hierarchical structure)
+// ============================================================
+
+// Create nested/tree structure from flat data
+// nest { parent: parent_id, child: child_id, root: null, max_depth: 10 }
+nest_step: "nest" "{" nest_spec "}"
+
+nest_spec: nest_param ("," nest_param)*
+
+nest_param: "parent" ":" NAME           -> nest_parent
+          | "child" ":" NAME            -> nest_child
+          | "root" ":" expr             -> nest_root
+          | "max_depth" ":" INT         -> nest_max_depth
+          | "max_depth" ":" param_ref   -> nest_max_depth_param
+          | "children_key" ":" STRING   -> nest_children_key
+
+// ============================================================
+// TABLE RENDERING
+// ============================================================
+
+// Render data as formatted table
+// render_table { format: markdown, columns: [name, count, status], title: "Summary" }
+render_table_step: "render_table" "{" table_spec "}"
+
+table_spec: table_param ("," table_param)*
+
+table_param: "format" ":" table_format       -> table_format_spec
+           | "columns" ":" column_list       -> table_columns
+           | "title" ":" STRING              -> table_title
+           | "title" ":" param_ref           -> table_title_param
+           | "totals" ":" bool_val           -> table_totals
+           | "sort" ":" NAME                 -> table_sort
+           | "group_by" ":" NAME             -> table_group
+           | "max_rows" ":" INT              -> table_max_rows
+           | "max_rows" ":" param_ref        -> table_max_rows_param
+
+column_list: "[" column_def ("," column_def)* "]"
+
+column_def: NAME "as" STRING                 -> col_alias
+          | NAME                             -> col_simple
+
+table_format: "markdown"  -> tbl_markdown
+            | "html"      -> tbl_html
+            | "csv"       -> tbl_csv
+            | "ascii"     -> tbl_ascii
+            | "json"      -> tbl_json
+
+bool_val: "true"  -> bool_true
+        | "false" -> bool_false
+
+// ============================================================
+// CHART RENDERING
+// ============================================================
+
+// Render data as chart
+// render_chart { type: bar, x: category, y: count, format: mermaid }
+render_chart_step: "render_chart" "{" chart_spec "}"
+
+chart_spec: chart_param ("," chart_param)*
+
+chart_param: "type" ":" chart_type           -> chart_type_spec
+           | "x" ":" NAME                    -> chart_x
+           | "y" ":" NAME                    -> chart_y
+           | "series" ":" NAME               -> chart_series
+           | "title" ":" STRING              -> chart_title
+           | "title" ":" param_ref           -> chart_title_param
+           | "format" ":" chart_format       -> chart_format_spec
+           | "colors" ":" color_list         -> chart_colors
+           | "stacked" ":" bool_val          -> chart_stacked
+           | "horizontal" ":" bool_val       -> chart_horizontal
+
+chart_type: "bar"       -> chart_bar
+          | "line"      -> chart_line
+          | "pie"       -> chart_pie
+          | "scatter"   -> chart_scatter
+          | "heatmap"   -> chart_heatmap
+          | "treemap"   -> chart_treemap
+          | "radar"     -> chart_radar
+
+chart_format: "mermaid"  -> chart_fmt_mermaid
+            | "ascii"    -> chart_fmt_ascii
+            | "svg"      -> chart_fmt_svg
+            | "vega"     -> chart_fmt_vega
+
+color_list: "[" STRING ("," STRING)* "]"
+
+// ============================================================
+// CROSS JOIN (Pairwise N² Comparison)
+// ============================================================
+
+// Cross join for pairwise comparison of all rows
+// cross_join { unique_pairs: true, exclude_self: true }
+cross_join_step: "cross_join" "{" cross_join_spec "}"
+
+cross_join_spec: cross_join_param ("," cross_join_param)*
+
+cross_join_param: "unique_pairs" ":" bool_val       -> cj_unique
+                | "exclude_self" ":" bool_val       -> cj_exclude_self
+                | "left_prefix" ":" STRING          -> cj_left_prefix
+                | "right_prefix" ":" STRING         -> cj_right_prefix
+
+// ============================================================
+// SET SIMILARITY
+// ============================================================
+
+// Calculate set similarity between list columns
+// set_similarity { left: methods1, right: methods2, type: jaccard, output: similarity }
+set_similarity_step: "set_similarity" "{" set_sim_spec "}"
+
+set_sim_spec: set_sim_param ("," set_sim_param)*
+
+set_sim_param: "left" ":" NAME                      -> ss_left
+             | "right" ":" NAME                     -> ss_right
+             | "type" ":" similarity_type           -> ss_type
+             | "output" ":" NAME                    -> ss_output
+             | "intersection_output" ":" NAME       -> ss_intersection
+             | "union_output" ":" NAME              -> ss_union
+
+similarity_type: "jaccard"    -> sim_jaccard
+               | "dice"       -> sim_dice
+               | "overlap"    -> sim_overlap
+               | "cosine"     -> sim_cosine
+
+// ============================================================
+// STRING MATCH (Pattern Matching)
+// ============================================================
+
+// String pattern matching between columns
+// string_match { left: name1, right: name2, type: common_affix, min_length: 3, output: has_match }
+string_match_step: "string_match" "{" string_match_spec "}"
+
+string_match_spec: string_match_param ("," string_match_param)*
+
+string_match_param: "left" ":" NAME                 -> sm_left
+                  | "right" ":" NAME                -> sm_right
+                  | "type" ":" match_type           -> sm_type
+                  | "min_length" ":" INT            -> sm_min_len
+                  | "min_length" ":" param_ref      -> sm_min_len_param
+                  | "output" ":" NAME               -> sm_output
+                  | "match_output" ":" NAME         -> sm_match_output
+
+match_type: "common_affix"    -> match_affix
+          | "common_prefix"   -> match_prefix
+          | "common_suffix"   -> match_suffix
+          | "levenshtein"     -> match_levenshtein
+          | "contains"        -> match_contains
+
+// ============================================================
+// GROUP BY
+// ============================================================
+
+group_spec: group_key ("," "aggregate" ":" aggregate_func)?
+          | "_all" ("," "aggregate" ":" aggregate_func)?  -> group_all
+
+group_key: NAME                       -> group_field
+         | "key" ":" lambda_expr      -> group_lambda
+
+aggregate_func: NAME                           -> agg_func_ref
+              | "{" agg_field_list "}"         -> agg_inline
+
+agg_field_list: agg_field ("," agg_field)*
+
+agg_field: NAME ":" agg_op "(" NAME ")"
+
+agg_op: "count"   -> agg_count
+      | "sum"     -> agg_sum
+      | "avg"     -> agg_avg
+      | "min"     -> agg_min
+      | "max"     -> agg_max
+      | "collect" -> agg_collect
+      | "first"   -> agg_first
+      | "last"    -> agg_last
+
+// ============================================================
+// RENDER
+// ============================================================
+
+render_spec: "format" ":" format_value ("," "renderer" ":" NAME)?  -> render_with_format
+           | NAME                                                   -> render_func
+
+format_value: STRING
+            | param_ref
+
+// ============================================================
+// FIELDS & ORDERING
+// ============================================================
+
+field_list: field_item ("," field_item)*
+
+field_item: NAME "as" NAME            -> field_alias
+          | NAME ":" NAME             -> field_rename
+          | NAME                      -> field_simple
+
+order_field: "-" NAME                 -> order_desc
+           | "+" NAME                 -> order_asc
+           | NAME                     -> order_asc_default
+
+// ============================================================
+// CONDITIONS (for filter)
+// ============================================================
+
+?condition: or_cond
+
+or_cond: and_cond (("or" | "||") and_cond)*    -> or_expr
+
+and_cond: not_cond (("and" | "&&") not_cond)*  -> and_expr
+
+not_cond: "not" not_cond              -> not_expr
+        | "!" not_cond                -> not_expr
+        | comparison
+
+?comparison: expr comp_op expr                    -> binary_comp
+           | expr "in" "[" value_list "]"         -> in_list
+           | expr "in" param_ref                  -> in_param
+           | expr "matches" STRING                -> regex_match
+           | expr "starts_with" STRING            -> starts_with
+           | expr "ends_with" STRING              -> ends_with
+           | expr "contains" STRING               -> contains_str
+           | expr "is" "null"                     -> is_null
+           | expr "is" "not" "null"               -> is_not_null
+           | "(" condition ")"                    -> paren_cond
+
+comp_op: ">"   -> op_gt
+       | "<"   -> op_lt
+       | ">="  -> op_gte
+       | "<="  -> op_lte
+       | "=="  -> op_eq
+       | "!="  -> op_ne
+
+// ============================================================
+// EXPRESSIONS
+// ============================================================
+
+// Ternary conditional: value if condition else other
+?expr: ternary_expr
+
+?ternary_expr: add_expr "?" add_expr ":" add_expr  -> ternary
+             | add_expr
+
+?add_expr: mul_expr (add_op mul_expr)*
+
+add_op: "+" -> op_add
+      | "-" -> op_sub
+
+?mul_expr: unary_expr (mul_op unary_expr)*
+
+mul_op: "*" -> op_mul
+      | "/" -> op_div
+      | "%" -> op_mod
+
+?unary_expr: "-" unary_expr           -> neg_expr
+           | "+" unary_expr           -> pos_expr
+           | coalesce_expr
+
+// Safe access with default: value ?? default
+?coalesce_expr: atom "??" atom        -> coalesce
+              | atom
+
+?atom: NAME "(" arg_list? ")"         -> func_call
+     | atom "." NAME                  -> prop_access
+     | param_ref                      -> param_ref_expr
+     | NAME                           -> field_ref
+     | value                          -> literal
+     | "(" expr ")"                   -> paren_expr
+
+param_ref: "{" NAME "}"
+
+arg_list: expr ("," expr)*
+
+// Lambda expression (for group_by key)
+lambda_expr: "row" "=>" expr
+
+// ============================================================
+// OBJECT EXPRESSIONS (for map)
+// ============================================================
+
+object_expr: object_field ("," object_field)*
+
+object_field: NAME ":" expr           -> obj_field
+            | "..." "row"             -> spread_row
+            | "..." NAME              -> spread_var
+
+// ============================================================
+// VALUES
+// ============================================================
+
+value: STRING                         -> val_string
+     | SIGNED_INT                     -> val_int
+     | SIGNED_FLOAT                   -> val_float
+     | "true"                         -> val_true
+     | "false"                        -> val_false
+     | "null"                         -> val_null
+     | list_value
+
+value_list: value ("," value)*
+
+list_value: "[" value_list? "]"       -> val_list
+
+// ============================================================
+// LEXER RULES
+// ============================================================
+
+// Identifiers
+NAME: /[a-zA-Z_][a-zA-Z0-9_]*/
+
+// Strings
+STRING: /"[^"\\]*(?:\\.[^"\\]*)*"/ | /'[^'\\]*(?:\\.[^'\\]*)*'/
+TRIPLE_STRING: /"""[\s\S]*?"""/
+
+// Numbers
+SIGNED_INT: /[+-]?[0-9]+/
+SIGNED_FLOAT: /[+-]?[0-9]+\.[0-9]+([eE][+-]?[0-9]+)?/
+INT: /[0-9]+/
+
+// REQL block - matches { content with balanced braces }
+// Uses a custom pattern to match balanced braces up to 3 levels deep
+// Level 0: outer braces
+// Level 1: WHERE { ... }, OPTIONAL { ... }
+// Level 2: {param} for parameter placeholders (e.g., {limit}, {target})
+// Level 3: for safety
+REQL_BLOCK.2: /\{(?:[^{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*\}/
+
+// Python block content - matches { content with balanced braces }
+// Same pattern - supports nested dicts up to 3 levels
+PYTHON_BLOCK.2: /\{(?:[^{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*\}/
+
+// Comments and whitespace
+COMMENT: /#[^\n]*/
+WS: /\s+/
+
+%ignore WS
+%ignore COMMENT

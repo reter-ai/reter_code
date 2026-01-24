@@ -11,8 +11,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'src'))
 
-from codeine.dsl.tools.testing.shallow_tests import shallow_tests
-from codeine.dsl.core import Pipeline, Context
+from reter_code.dsl.tools.testing.shallow_tests import shallow_tests
+from reter_code.dsl.core import Pipeline, Context
 
 
 class TestShallowTestsStructure:

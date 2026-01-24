@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 import pytest
 
-from codeine.tools.session_store.sqlite_store import SQLiteSessionStore
+from reter_code.tools.session_store.sqlite_store import SQLiteSessionStore
 
 
 @pytest.fixture

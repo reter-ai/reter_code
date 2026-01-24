@@ -11,8 +11,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'src'))
 
-from codeine.dsl.tools.diagrams.coupling_matrix import coupling_matrix
-from codeine.dsl.core import Pipeline, Context
+from reter_code.dsl.tools.diagrams.coupling_matrix import coupling_matrix
+from reter_code.dsl.core import Pipeline, Context
 
 
 class TestCouplingMatrixStructure:

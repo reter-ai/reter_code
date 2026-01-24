@@ -12,11 +12,11 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'src'))
 
-from codeine.dsl.tools.smells.duplicate_names import (
+from reter_code.dsl.tools.smells.duplicate_names import (
     duplicate_names,
     _find_duplicates
 )
-from codeine.dsl.core import Pipeline, Context
+from reter_code.dsl.core import Pipeline, Context
 
 
 class TestDuplicateNamesStructure:

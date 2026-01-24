@@ -92,15 +92,15 @@ class MockReter:
 @pytest.fixture
 def mock_reter_module():
     """Fixture that patches the Reter import."""
-    with patch('codeine.reter_wrapper.Reter', MockReter):
-        with patch('codeine.reter_wrapper.safe_cpp_call', lambda f, *args: f(*args)):
+    with patch('reter_code.reter_wrapper.Reter', MockReter):
+        with patch('reter_code.reter_wrapper.safe_cpp_call', lambda f, *args: f(*args)):
             yield MockReter
 
 
 @pytest.fixture
 def wrapper(mock_reter_module):
     """Create a ReterWrapper with mocked native module."""
-    from codeine.reter_wrapper import ReterWrapper
+    from reter_code.reter_wrapper import ReterWrapper
     return ReterWrapper(load_ontology=False)
 
 
@@ -116,7 +116,7 @@ def wrapper_with_ontology(mock_reter_module):
 
         # Patch the path resolution
         with patch.object(Path, 'parent', new_callable=lambda: property(lambda self: Path(tmpdir))):
-            from codeine.reter_wrapper import ReterWrapper
+            from reter_code.reter_wrapper import ReterWrapper
             # Just use wrapper without ontology for now - path mocking is complex
             yield ReterWrapper(load_ontology=False)
 
@@ -126,7 +126,7 @@ class TestReterWrapperInit:
 
     def test_init_without_ontology(self, mock_reter_module):
         """Test initialization without loading ontology."""
-        from codeine.reter_wrapper import ReterWrapper
+        from reter_code.reter_wrapper import ReterWrapper
         wrapper = ReterWrapper(load_ontology=False)
 
         assert wrapper.reasoner is not None
@@ -136,7 +136,7 @@ class TestReterWrapperInit:
 
     def test_init_creates_reasoner_with_ai_variant(self, mock_reter_module):
         """Test that reasoner is created with 'ai' variant."""
-        from codeine.reter_wrapper import ReterWrapper
+        from reter_code.reter_wrapper import ReterWrapper
         wrapper = ReterWrapper(load_ontology=False)
 
         assert wrapper.reasoner.variant == "ai"
@@ -323,7 +323,7 @@ class TestPersistence:
             wrapper.save_network(filepath)
 
             # Then load into new wrapper
-            from codeine.reter_wrapper import ReterWrapper
+            from reter_code.reter_wrapper import ReterWrapper
             wrapper2 = ReterWrapper(load_ontology=False)
             success, message, time_ms = wrapper2.load_network(filepath)
 

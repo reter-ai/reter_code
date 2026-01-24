@@ -45,5 +45,5 @@ Thumbs.db
 *.db
 test_output/
 
-.codeine/
+.reter_code/
 .mcp.json

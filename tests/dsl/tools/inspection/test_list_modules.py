@@ -2,7 +2,7 @@
 Unit tests for list_modules CADSL tool.
 
 Verifies behavior matches reference implementation at:
-d:/ROOT/codeine/src/codeine/tools/python_basic/python_tools.py:63-128
+d:/ROOT/reter_code/src/reter_code/tools/python_basic/python_tools.py:63-128
 
 Reference behavior:
 - Returns modules with: qualified_name, name, file
@@ -17,8 +17,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'src'))
 
-from codeine.dsl.tools.inspection.list_modules import list_modules
-from codeine.dsl.core import Pipeline, Context, ToolType
+from reter_code.dsl.tools.inspection.list_modules import list_modules
+from reter_code.dsl.core import Pipeline, Context, ToolType
 
 
 class TestListModulesStructure:

@@ -11,8 +11,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'src'))
 
-from codeine.dsl.tools.refactoring.extract_method import extract_method
-from codeine.dsl.core import Pipeline, Context
+from reter_code.dsl.tools.refactoring.extract_method import extract_method
+from reter_code.dsl.core import Pipeline, Context
 
 
 class TestExtractMethodStructure:

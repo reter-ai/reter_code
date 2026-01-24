@@ -2,7 +2,7 @@
 Unit tests for get_class_hierarchy CADSL tool.
 
 Verifies behavior matches reference implementation at:
-d:/ROOT/codeine/src/codeine/tools/python_basic/python_tools.py:948-998
+d:/ROOT/reter_code/src/reter_code/tools/python_basic/python_tools.py:948-998
 
 Reference behavior:
 - Finds class by name or qualified name (CONTAINS filter)
@@ -16,8 +16,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'src'))
 
-from codeine.dsl.tools.inspection.get_class_hierarchy import get_class_hierarchy
-from codeine.dsl.core import Pipeline, Context, ToolType
+from reter_code.dsl.tools.inspection.get_class_hierarchy import get_class_hierarchy
+from reter_code.dsl.core import Pipeline, Context, ToolType
 
 
 class TestGetClassHierarchyStructure:

@@ -11,13 +11,13 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'src'))
 
-from codeine.dsl.tools.dependencies.circular_imports import (
+from reter_code.dsl.tools.dependencies.circular_imports import (
     find_circular_imports,
     _detect_circular_imports,
     _detect_cycles_dfs,
     _normalize_cycle
 )
-from codeine.dsl.core import Pipeline, Context
+from reter_code.dsl.core import Pipeline, Context
 
 
 class TestCircularImportsStructure:

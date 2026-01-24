@@ -32,7 +32,7 @@ def temp_project(tmp_path):
     # Create project structure
     src_dir = tmp_path / "src"
     docs_dir = tmp_path / "docs"
-    reter_dir = tmp_path / ".codeine"
+    reter_dir = tmp_path / ".reter_code"
 
     src_dir.mkdir()
     docs_dir.mkdir()
@@ -210,11 +210,11 @@ class TestRAGManagerIntegration:
     def persistence(self, temp_project):
         """Create a persistence service with custom snapshots dir."""
         import os
-        from codeine.services.state_persistence import StatePersistenceService
-        from codeine.services.instance_manager import InstanceManager
+        from reter_code.services.state_persistence import StatePersistenceService
+        from reter_code.services.instance_manager import InstanceManager
 
         # Set env var to control snapshots directory
-        os.environ["RETER_SNAPSHOTS_DIR"] = str(temp_project / ".codeine")
+        os.environ["RETER_SNAPSHOTS_DIR"] = str(temp_project / ".reter_code")
         persistence = StatePersistenceService(InstanceManager())
         yield persistence
         # Cleanup
@@ -223,7 +223,7 @@ class TestRAGManagerIntegration:
 
     def test_initialize_creates_index(self, temp_project, persistence, rag_config):
         """Test that RAGIndexManager creates a new index."""
-        from codeine.services.rag_index_manager import RAGIndexManager
+        from reter_code.services.rag_index_manager import RAGIndexManager
 
         manager = RAGIndexManager(persistence, rag_config)
         # Simulate model loaded (in production, this is set by background thread)
@@ -235,8 +235,8 @@ class TestRAGManagerIntegration:
 
     def test_index_python_entities(self, temp_project, persistence, rag_config):
         """Test indexing Python entities from RETER."""
-        from codeine.services.rag_index_manager import RAGIndexManager
-        from codeine.reter_wrapper import ReterWrapper
+        from reter_code.services.rag_index_manager import RAGIndexManager
+        from reter_code.reter_wrapper import ReterWrapper
 
         # Create RETER instance and load Python files
         reter = ReterWrapper()
@@ -277,8 +277,8 @@ class TestRAGManagerIntegration:
 
     def test_index_markdown_files(self, temp_project, persistence, rag_config):
         """Test indexing markdown documentation files."""
-        from codeine.services.rag_index_manager import RAGIndexManager
-        from codeine.reter_wrapper import ReterWrapper
+        from reter_code.services.rag_index_manager import RAGIndexManager
+        from reter_code.reter_wrapper import ReterWrapper
 
         reter = ReterWrapper()
 
@@ -302,8 +302,8 @@ class TestRAGManagerIntegration:
 
     def test_search_returns_results(self, temp_project, persistence, rag_config):
         """Test semantic search returns relevant results."""
-        from codeine.services.rag_index_manager import RAGIndexManager
-        from codeine.reter_wrapper import ReterWrapper
+        from reter_code.services.rag_index_manager import RAGIndexManager
+        from reter_code.reter_wrapper import ReterWrapper
 
         reter = ReterWrapper()
 
@@ -344,8 +344,8 @@ class TestRAGManagerIntegration:
 
     def test_incremental_update(self, temp_project, persistence, rag_config):
         """Test that markdown file changes trigger incremental reindexing."""
-        from codeine.services.rag_index_manager import RAGIndexManager
-        from codeine.reter_wrapper import ReterWrapper
+        from reter_code.services.rag_index_manager import RAGIndexManager
+        from reter_code.reter_wrapper import ReterWrapper
 
         reter = ReterWrapper()
 
@@ -405,10 +405,10 @@ class TestRAGPersistence:
     def persistence(self, temp_project):
         """Create a persistence service with custom snapshots dir."""
         import os
-        from codeine.services.state_persistence import StatePersistenceService
-        from codeine.services.instance_manager import InstanceManager
+        from reter_code.services.state_persistence import StatePersistenceService
+        from reter_code.services.instance_manager import InstanceManager
 
-        os.environ["RETER_SNAPSHOTS_DIR"] = str(temp_project / ".codeine")
+        os.environ["RETER_SNAPSHOTS_DIR"] = str(temp_project / ".reter_code")
         persistence = StatePersistenceService(InstanceManager())
         yield persistence
         if "RETER_SNAPSHOTS_DIR" in os.environ:
@@ -416,8 +416,8 @@ class TestRAGPersistence:
 
     def test_save_and_load_index(self, temp_project, persistence, rag_config):
         """Test saving and loading the FAISS index."""
-        from codeine.services.rag_index_manager import RAGIndexManager
-        from codeine.reter_wrapper import ReterWrapper
+        from reter_code.services.rag_index_manager import RAGIndexManager
+        from reter_code.reter_wrapper import ReterWrapper
 
         reter = ReterWrapper()
 
@@ -465,10 +465,10 @@ class TestRAGToolsIntegration:
     def persistence(self, temp_project):
         """Create a persistence service with custom snapshots dir."""
         import os
-        from codeine.services.state_persistence import StatePersistenceService
-        from codeine.services.instance_manager import InstanceManager
+        from reter_code.services.state_persistence import StatePersistenceService
+        from reter_code.services.instance_manager import InstanceManager
 
-        os.environ["RETER_SNAPSHOTS_DIR"] = str(temp_project / ".codeine")
+        os.environ["RETER_SNAPSHOTS_DIR"] = str(temp_project / ".reter_code")
         persistence = StatePersistenceService(InstanceManager())
         yield persistence
         if "RETER_SNAPSHOTS_DIR" in os.environ:
@@ -476,8 +476,8 @@ class TestRAGToolsIntegration:
 
     def test_semantic_search_tool(self, temp_project, persistence, rag_config):
         """Test the semantic_search tool implementation."""
-        from codeine.services.rag_index_manager import RAGIndexManager
-        from codeine.reter_wrapper import ReterWrapper
+        from reter_code.services.rag_index_manager import RAGIndexManager
+        from reter_code.reter_wrapper import ReterWrapper
 
         reter = ReterWrapper()
 
@@ -500,7 +500,7 @@ class TestRAGToolsIntegration:
         )
 
         # Create the registrar (it has the tool implementations)
-        from codeine.services.default_instance_manager import DefaultInstanceManager
+        from reter_code.services.default_instance_manager import DefaultInstanceManager
         default_manager = DefaultInstanceManager(persistence)
         default_manager.set_rag_manager(rag_manager, rag_config)
 
@@ -518,10 +518,10 @@ class TestEndToEndFlow:
     def persistence(self, temp_project):
         """Create a persistence service with custom snapshots dir."""
         import os
-        from codeine.services.state_persistence import StatePersistenceService
-        from codeine.services.instance_manager import InstanceManager
+        from reter_code.services.state_persistence import StatePersistenceService
+        from reter_code.services.instance_manager import InstanceManager
 
-        os.environ["RETER_SNAPSHOTS_DIR"] = str(temp_project / ".codeine")
+        os.environ["RETER_SNAPSHOTS_DIR"] = str(temp_project / ".reter_code")
         persistence = StatePersistenceService(InstanceManager())
         yield persistence
         if "RETER_SNAPSHOTS_DIR" in os.environ:
@@ -529,8 +529,8 @@ class TestEndToEndFlow:
 
     def test_full_workflow(self, temp_project, persistence, rag_config):
         """Test complete workflow from file creation to search."""
-        from codeine.services.rag_index_manager import RAGIndexManager
-        from codeine.reter_wrapper import ReterWrapper
+        from reter_code.services.rag_index_manager import RAGIndexManager
+        from reter_code.reter_wrapper import ReterWrapper
 
         reter = ReterWrapper()
 

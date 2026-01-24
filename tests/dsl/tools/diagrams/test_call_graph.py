@@ -11,8 +11,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'src'))
 
-from codeine.dsl.tools.diagrams.call_graph import call_graph
-from codeine.dsl.core import Pipeline, Context
+from reter_code.dsl.tools.diagrams.call_graph import call_graph
+from reter_code.dsl.core import Pipeline, Context
 
 
 class TestCallGraphStructure:

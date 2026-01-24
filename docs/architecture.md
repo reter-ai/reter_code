@@ -1,6 +1,6 @@
-# Codeine Architecture
+# Reter Code Architecture
 
-Codeine is an AI-powered MCP (Model Context Protocol) server for code reasoning, built on the RETER (RETE Rule Engine) for forward-chaining inference and FAISS for semantic vector search.
+Reter Code is an AI-powered MCP (Model Context Protocol) server for code reasoning, built on the RETER (RETE Rule Engine) for forward-chaining inference and FAISS for semantic vector search.
 
 ## Overview
 
@@ -17,7 +17,7 @@ Codeine is an AI-powered MCP (Model Context Protocol) server for code reasoning,
 ```
 +-------------------------------------------------------------+
 |                      SERVER LAYER                           |
-|   server.py (CodeineServer) - FastMCP-based entry point    |
+|   server.py (Reter CodeServer) - FastMCP-based entry point    |
 |   Background initialization, tool registration              |
 +-------------------------------------------------------------+
                               |
@@ -59,7 +59,7 @@ Codeine is an AI-powered MCP (Model Context Protocol) server for code reasoning,
 
 ## Key Components
 
-### CodeineServer (`server.py`)
+### Reter CodeServer (`server.py`)
 
 The main entry point that:
 - Initializes FastMCP server with Anthropic sampling handler
@@ -168,7 +168,7 @@ ReterError (Exception)
 
 ## Initialization Flow
 
-1. **Server Start**: `CodeineServer.__init__()` loads config, creates services
+1. **Server Start**: `Reter CodeServer.__init__()` loads config, creates services
 2. **Background Init**: After 2s delay, `_async_initialize()` runs in background
 3. **RETER Loading**: Python files loaded into RETER knowledge graph
 4. **RAG Indexing**: Code entities indexed in FAISS for semantic search
@@ -176,7 +176,7 @@ ReterError (Exception)
 
 ## Configuration
 
-Configuration is loaded from `codeine.json` (or `reter.json`) in project root:
+Configuration is loaded from `reter_code.json` (or `reter.json`) in project root:
 
 ```json
 {
