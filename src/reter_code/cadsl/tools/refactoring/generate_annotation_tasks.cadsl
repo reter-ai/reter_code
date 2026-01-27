@@ -35,36 +35,54 @@ query generate_annotation_tasks(
         ORDER BY ?file ?line
     }
     | limit { {limit} }
-    | map {
-        class_name: class,
-        file: file,
-        line: line,
-        suggested_layer: (
-            file contains "test" ? "TestLayer" :
-            file contains "services" ? "ServiceLayer" :
-            file contains "tools" ? "ServiceLayer" :
-            file contains "cadsl" ? "DSLLayer" :
-            file contains "dsl" ? "DSLLayer" :
-            class contains "Service" ? "ServiceLayer" :
-            class contains "Manager" ? "ServiceLayer" :
-            class contains "Handler" ? "ServiceLayer" :
-            class contains "Parser" ? "DSLLayer" :
-            class contains "Compiler" ? "DSLLayer" :
-            class contains "Transformer" ? "DSLLayer" :
-            class contains "Wrapper" ? "InfrastructureLayer" :
-            class contains "Client" ? "InfrastructureLayer" :
-            class contains "Store" ? "InfrastructureLayer" :
-            class contains "Repository" ? "InfrastructureLayer" :
-            class contains "Step" ? "CoreLayer" :
-            class contains "Result" ? "CoreLayer" :
-            "CoreLayer"
-        )
+    | python {
+        # Convert pyarrow to list of dicts if needed
+        if hasattr(rows, 'to_pylist'):
+            rows = rows.to_pylist()
+        elif hasattr(rows, 'to_pydict'):
+            d = rows.to_pydict()
+            rows = [dict(zip(d.keys(), vals)) for vals in zip(*d.values())]
+
+        # Determine layer based on file path and class name patterns
+        output = []
+        for row in rows:
+            file = str(row.get('?file', '') or row.get('file', ''))
+            cls = str(row.get('?class', '') or row.get('class', ''))
+            # Extract just the class name from fully qualified name
+            if '.' in cls:
+                cls = cls.split('.')[-1]
+
+            # Determine layer based on file path and class name
+            if 'test' in file.lower():
+                layer = 'TestLayer'
+            elif 'services' in file or 'tools' in file:
+                layer = 'ServiceLayer'
+            elif 'cadsl' in file or 'dsl' in file:
+                layer = 'DSLLayer'
+            elif any(p in cls for p in ['Service', 'Manager', 'Handler']):
+                layer = 'ServiceLayer'
+            elif any(p in cls for p in ['Parser', 'Compiler', 'Transformer']):
+                layer = 'DSLLayer'
+            elif any(p in cls for p in ['Wrapper', 'Client', 'Store', 'Repository']):
+                layer = 'InfrastructureLayer'
+            elif any(p in cls for p in ['Step', 'Result']):
+                layer = 'CoreLayer'
+            else:
+                layer = 'CoreLayer'
+
+            row['suggested_layer'] = layer
+            row['class_name'] = cls
+            row['file'] = file
+            row['line'] = row.get('?line', '') or row.get('line', '')
+            output.append(row)
+
+        result = output
     }
     | create_task {
         name: "Add @reter: {suggested_layer}(self) to {class_name}",
         category: "annotation",
-        priority: medium,
-        description: "Add semantic layer annotation to class.\n\nFile: {file}:{line}\nSuggested layer: {suggested_layer}\n\nAdd to class docstring:\n@reter: {suggested_layer}(self)",
+        priority: low,
+        description: "Add semantic layer annotation.\n\nFile: {file}:{line}\nAdd to docstring: @reter: {suggested_layer}(self)",
         affects: file,
         dry_run: {dry_run}
     }

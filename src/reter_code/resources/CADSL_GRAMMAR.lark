@@ -547,6 +547,7 @@ create_task_param: "name" ":" STRING                    -> ct_name
                  | "affects" ":" NAME                   -> ct_affects
                  | "batch_size" ":" INT                 -> ct_batch_size
                  | "dry_run" ":" bool_val               -> ct_dry_run
+                 | "dry_run" ":" param_ref              -> ct_dry_run_param
 
 ct_priority_val: "critical" -> ct_prio_critical
                | "high"     -> ct_prio_high
@@ -734,7 +735,9 @@ PYTHON_BLOCK.2: /\{(?:[^{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*\}/
 
 // Comments and whitespace
 COMMENT: /#[^\n]*/
+LINE_COMMENT: /\/\/[^\n]*/
 WS: /\s+/
 
 %ignore WS
 %ignore COMMENT
+%ignore LINE_COMMENT

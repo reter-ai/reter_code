@@ -1596,6 +1596,8 @@ class CADSLTransformer:
                             dry_run_node = param.children[0]
                             if isinstance(dry_run_node, Tree):
                                 result["dry_run"] = dry_run_node.data == "bool_true"
+                        elif param.data == "ct_dry_run_param":
+                            result["dry_run_param"] = str(param.children[0].children[0])
 
         return result
 
