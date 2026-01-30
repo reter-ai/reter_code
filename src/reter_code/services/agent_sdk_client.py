@@ -481,7 +481,7 @@ def _create_query_tools(reter_instance=None, rag_manager=None):
         content = get_example(name)
         return {"content": [{"type": "text", "text": content}]}
 
-    @tool("search_examples", "Search for CADSL examples similar to your question using semantic similarity. Returns ranked list with scores. Use get_example to fetch full code. Helpful if unsure about syntax.", {"query": str, "max_results": int})
+    @tool("search_examples", "Search for CADSL examples similar to your question using semantic similarity. Returns top 3 matches with FULL CADSL code (use as templates), plus metadata for other matches. This is your primary tool for finding working examples to adapt.", {"query": str, "max_results": int})
     async def search_examples_tool(args):
         query = args.get("query", "")
         max_results = args.get("max_results", 10)

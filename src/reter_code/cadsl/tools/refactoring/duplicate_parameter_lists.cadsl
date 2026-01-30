@@ -1,8 +1,10 @@
 # duplicate_parameter_lists - Detect functions with similar names and many parameters
 #
 # Functions with similar names and many parameters often indicate duplicate
-# implementations or a missing abstraction. Uses LEVENSHTEIN to find
-# similarly-named functions that might share parameter patterns.
+# implementations or a missing abstraction.
+#
+# NOTE: Uses cross_join approach (get methods first, then compare) for efficiency.
+# Direct REQL self-join with LEVENSHTEIN is O(n²) and times out on large codebases.
 
 detector duplicate_parameter_lists(category="refactoring", severity="medium") {
     """Detect functions with similar names sharing complex parameter signatures."""
@@ -11,7 +13,7 @@ detector duplicate_parameter_lists(category="refactoring", severity="medium") {
     param max_name_distance: int = 2;
     param limit: int = 100;
 
-    # First get functions with many parameters
+    # First get functions with many parameters (smaller set)
     reql {
         SELECT ?m ?name ?class_name ?file ?line (COUNT(?p) AS ?param_count)
         WHERE {
@@ -20,7 +22,7 @@ detector duplicate_parameter_lists(category="refactoring", severity="medium") {
             ?m is-in-file ?file .
             ?m is-at-line ?line .
             ?p type parameter .
-            ?p is-of-function ?m .
+            ?p is-parameter-of ?m .
             OPTIONAL { ?m is-defined-in ?c . ?c has-name ?class_name }
             FILTER(!STRSTARTS(?name, "_"))
             FILTER(!STRSTARTS(?name, "test_"))
@@ -30,50 +32,33 @@ detector duplicate_parameter_lists(category="refactoring", severity="medium") {
         ORDER BY DESC(?param_count)
         LIMIT 500
     }
-    | select { name, class_name, file, line, param_count }
+    | select { m, name, class_name, file, line, param_count }
     # Cross join to find pairs with similar names
     | cross_join { unique_pairs: true, left_prefix: "left_", right_prefix: "right_" }
-    | python {
-        # Filter pairs with similar names using Levenshtein distance
-        max_dist = ctx.params.get('max_name_distance', 2)
-        limit = ctx.params.get('limit', 100)
-
-        def levenshtein(s1, s2):
-            if len(s1) < len(s2):
-                return levenshtein(s2, s1)
-            if len(s2) == 0:
-                return len(s1)
-            prev = range(len(s2) + 1)
-            for i, c1 in enumerate(s1):
-                curr = [i + 1]
-                for j, c2 in enumerate(s2):
-                    curr.append(min(prev[j+1]+1, curr[j]+1, prev[j]+(c1!=c2)))
-                prev = curr
-            return prev[-1]
-
-        findings = []
-        for row in rows:
-            n1, n2 = row.get('left_name', ''), row.get('right_name', '')
-            if n1 and n2 and n1 != n2:
-                dist = levenshtein(n1, n2)
-                if 0 < dist <= max_dist:
-                    findings.append({
-                        'name1': n1, 'name2': n2,
-                        'class1': row.get('left_class_name', ''),
-                        'class2': row.get('right_class_name', ''),
-                        'file1': row.get('left_file', ''),
-                        'file2': row.get('right_file', ''),
-                        'line1': row.get('left_line', 0),
-                        'line2': row.get('right_line', 0),
-                        'param_count1': row.get('left_param_count', 0),
-                        'param_count2': row.get('right_param_count', 0),
-                        'distance': dist,
-                        'refactoring': 'introduce_parameter_object',
-                        'message': f"Functions '{n1}' and '{n2}' have similar names and many parameters",
-                        'suggestion': 'Consider consolidating or extracting shared parameters'
-                    })
-        findings.sort(key=lambda x: (-x['param_count1'], x['name1']))
-        result = findings[:limit]
+    # Filter pairs where names are similar (using string comparison since LEVENSHTEIN not available in filter)
+    | filter {
+        left_name != right_name &&
+        (CONTAINS(left_name, right_name) || CONTAINS(right_name, left_name) ||
+         STRSTARTS(left_name, SUBSTR(right_name, 0, 5)) ||
+         STRSTARTS(right_name, SUBSTR(left_name, 0, 5)))
     }
+    | map {
+        name1: left_name,
+        name2: right_name,
+        class1: left_class_name,
+        class2: right_class_name,
+        file1: left_file,
+        file2: right_file,
+        line1: left_line,
+        line2: right_line,
+        param_count1: left_param_count,
+        param_count2: right_param_count,
+        refactoring: "introduce_parameter_object",
+        issue: "duplicate_parameter_lists",
+        message: "Functions '{left_name}' and '{right_name}' have similar names and many parameters",
+        suggestion: "Consider consolidating or extracting shared parameters"
+    }
+    | order_by { -param_count1 }
+    | limit { {limit} }
     | emit { findings }
 }

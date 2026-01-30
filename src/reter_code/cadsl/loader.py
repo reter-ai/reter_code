@@ -540,14 +540,22 @@ def build_pipeline_factory(spec: CADSLToolSpec,
                 if "description_template_param" in step_spec:
                     description_template = ctx.params.get(step_spec["description_template_param"], description_template)
 
+                batch_size = step_spec.get("batch_size", 50)
+                if "batch_size_param" in step_spec:
+                    batch_size = ctx.params.get(step_spec["batch_size_param"], batch_size)
+
+                dry_run = step_spec.get("dry_run", False)
+                if "dry_run_param" in step_spec:
+                    dry_run = ctx.params.get(step_spec["dry_run_param"], dry_run)
+
                 pipeline = pipeline >> CreateTaskStep(
                     name_template=name_template,
                     category=category,
                     priority=priority,
                     description_template=description_template,
                     affects_field=step_spec.get("affects_field"),
-                    batch_size=step_spec.get("batch_size", 50),
-                    dry_run=step_spec.get("dry_run", False),
+                    batch_size=batch_size,
+                    dry_run=dry_run,
                 )
 
         if emit_key:

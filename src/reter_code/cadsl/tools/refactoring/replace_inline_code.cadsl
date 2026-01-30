@@ -1,47 +1,53 @@
 # replace_inline_code - Detect similar methods that may contain duplicate code
 #
-# Uses LEVENSHTEIN to find methods with similar names across different classes,
+# Uses RAG semantic search to find methods with similar names across different classes,
 # which often indicates duplicate or near-duplicate implementations that could
 # be extracted into a shared function or base class method.
+#
+# NOTE: Original LEVENSHTEIN approach caused O(n²) timeout. Now uses RAG enrichment
+# for efficient O(n) similarity matching.
 
 detector replace_inline_code(category="refactoring", severity="medium") {
     """Detect methods with similar names that may share duplicate code."""
 
-    param max_distance: int = 2;
+    param similarity: float = 0.75;
     param limit: int = 100;
 
+    # Find all public methods
     reql {
-        SELECT ?m1 ?name1 ?class1 ?file1 ?line1 ?m2 ?name2 ?class2 ?file2 ?line2
+        SELECT ?m ?name ?class_name ?file ?line
         WHERE {
-            ?m1 type method .
-            ?m1 has-name ?name1 .
-            ?m1 is-in-file ?file1 .
-            ?m1 is-at-line ?line1 .
-            ?m1 is-defined-in ?c1 .
-            ?c1 has-name ?class1 .
-            ?m2 type method .
-            ?m2 has-name ?name2 .
-            ?m2 is-in-file ?file2 .
-            ?m2 is-at-line ?line2 .
-            ?m2 is-defined-in ?c2 .
-            ?c2 has-name ?class2 .
-            FILTER(?m1 != ?m2)
-            FILTER(?c1 != ?c2)
-            FILTER(LEVENSHTEIN(?name1, ?name2) <= {max_distance})
-            FILTER(!STRSTARTS(?name1, "_"))
-            FILTER(!STRSTARTS(?name1, "test_"))
+            ?m type method .
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?m is-defined-in ?c .
+            ?c has-name ?class_name .
+            FILTER(!STRSTARTS(?name, "_"))
+            FILTER(!STRSTARTS(?name, "test"))
         }
-        LIMIT 500
+        ORDER BY ?name
+        LIMIT 200
     }
-    | select { name1, name2, class1, class2, file1, file2, line1, line2 }
+    | select { method: m, name, class_name, file, line }
+    | rag_enrich {
+        query: "method implementation duplicate similar code extract refactor",
+        top_k: 3,
+        threshold: {similarity},
+        mode: all,
+        entity_types: ["method"]
+    }
+    | filter { len(rag_matches) > 0 }
     | map {
-        ...row,
+        name: name,
+        class_name: class_name,
+        file: file,
+        line: line,
+        similar_count: len(rag_matches),
         refactoring: "extract_function",
-        message: "Methods '{name1}' ({class1}) and '{name2}' ({class2}) have similar names",
-        suggestion: "Check for duplicate code - consider extracting to shared function or base class",
-        locations: "{class1}:{line1}, {class2}:{line2}"
+        message: "Method '{class_name}.{name}' has {similar_count} similar methods in other classes",
+        suggestion: "Check for duplicate code - consider extracting to shared function or base class"
     }
-    | order_by { +name1, +name2 }
     | limit { {limit} }
     | emit { findings }
 }

@@ -3,8 +3,9 @@
 # Parallel inheritance occurs when you have to create a subclass of one class
 # every time you create a subclass of another class.
 #
-# Uses LEVENSHTEIN distance to detect similar class names that may indicate
-# parallel naming patterns (e.g., UserHandler/UserValidator, OrderHandler/OrderValidator).
+# Uses REQL LEVENSHTEIN to detect similar class names between different
+# hierarchies that may indicate parallel naming patterns
+# (e.g., UserHandler/UserValidator, OrderHandler/OrderValidator).
 
 detector parallel_inheritance(category="code_smell", severity="medium") {
     """Detect parallel inheritance hierarchies - mirrored class structures."""
@@ -13,123 +14,65 @@ detector parallel_inheritance(category="code_smell", severity="medium") {
     param max_name_distance: int = 5;
     param limit: int = 100;
 
+    # Find pairs of child classes from different base hierarchies with similar names
     reql {
-        SELECT ?c ?name ?base_name ?file ?line
+        SELECT ?base1 ?base2 ?child1 ?child2 ?file ?line
         WHERE {
-            ?c type class .
-            ?c has-name ?name .
-            ?c is-in-file ?file .
-            ?c is-at-line ?line .
-            ?c inherits-from ?base .
-            ?base has-name ?base_name
+            # First hierarchy
+            ?c1 type class .
+            ?c1 has-name ?child1 .
+            ?c1 is-in-file ?file .
+            ?c1 is-at-line ?line .
+            ?c1 inherits-from ?b1 .
+            ?b1 has-name ?base1 .
+
+            # Second hierarchy
+            ?c2 type class .
+            ?c2 has-name ?child2 .
+            ?c2 inherits-from ?b2 .
+            ?b2 has-name ?base2 .
+
+            # Different hierarchies, similar child names
+            FILTER(?base1 != ?base2)
+            FILTER(?base1 < ?base2)
+            FILTER(?child1 != ?child2)
+            FILTER(LEVENSHTEIN(?child1, ?child2) <= {max_name_distance})
+            FILTER(LEVENSHTEIN(?child1, ?child2) > 0)
         }
+        LIMIT 2000
     }
-    | select { c, name, base_name, file, line }
-    # Step 1: Group children by base class
+    | select { base1, base2, child1, child2, file, line }
+    # Create combined key for grouping
+    | map {
+        base_pair: base1 + "|" + base2,
+        base1: base1,
+        base2: base2,
+        child1: child1,
+        child2: child2,
+        file: file,
+        line: line
+    }
+    # Group by base pair to count parallel children
     | collect {
-        by: base_name,
-        children: set(name),
+        by: base_pair,
+        base1: first(base1),
+        base2: first(base2),
         file: first(file),
         line: first(line),
-        child_count: count(name)
+        parallel_pairs: count(child1)
     }
-    # Need at least 1 child to compare
-    | filter { child_count >= 1 }
-    # Step 2: Cross join base class groups to compare hierarchies
-    | cross_join { unique_pairs: true, left_prefix: "left_", right_prefix: "right_" }
-    # Step 3: Flatten children to compare individual class pairs
-    # For each pair of hierarchies, we need to compare their children
-    # Use a custom approach: join left_children with right_children
+    | filter { parallel_pairs >= min_parallel_pairs }
+    | order_by { -parallel_pairs }
+    | limit { {limit} }
     | map {
-        base1: left_base_name,
-        base2: right_base_name,
-        left_children: left_children,
-        right_children: right_children,
-        file: left_file,
-        line: left_line
-    }
-    # Step 4: Use Python for nested loop comparison (still needed for complex matching)
-    | python {
-        # Compare children for parallel naming patterns using LEVENSHTEIN distance
-        min_parallel_pairs = ctx.params.get('min_parallel_pairs', 2)
-        max_name_distance = ctx.params.get('max_name_distance', 5)
-        limit = ctx.params.get('limit', 100)
-
-        def levenshtein_distance(s1, s2):
-            """Compute Levenshtein edit distance between two strings."""
-            if len(s1) < len(s2):
-                return levenshtein_distance(s2, s1)
-            if len(s2) == 0:
-                return len(s1)
-            prev_row = range(len(s2) + 1)
-            for i, c1 in enumerate(s1):
-                curr_row = [i + 1]
-                for j, c2 in enumerate(s2):
-                    insertions = prev_row[j + 1] + 1
-                    deletions = curr_row[j] + 1
-                    subs = prev_row[j] + (c1 != c2)
-                    curr_row.append(min(insertions, deletions, subs))
-                prev_row = curr_row
-            return prev_row[-1]
-
-        def names_are_parallel(n1, n2):
-            if n1 == n2 or len(n1) < 3 or len(n2) < 3:
-                return False
-            # Use LEVENSHTEIN distance for fuzzy matching
-            if levenshtein_distance(n1, n2) <= max_name_distance:
-                return True
-            min_len = min(len(n1), len(n2))
-            # Check common suffix
-            for slen in range(3, min_len):
-                if n1[-slen:] == n2[-slen:]:
-                    p1, p2 = n1[:-slen], n2[:-slen]
-                    if p1 and p2 and p1 != p2:
-                        return True
-            # Check common prefix
-            for plen in range(3, min_len):
-                if n1[:plen] == n2[:plen]:
-                    s1, s2 = n1[plen:], n2[plen:]
-                    if s1 and s2 and s1 != s2:
-                        return True
-            return False
-
-        findings = []
-        seen_pairs = set()
-
-        for row in rows:
-            base1 = row.get('base1')
-            base2 = row.get('base2')
-            children1 = row.get('left_children', [])
-            children2 = row.get('right_children', [])
-
-            if not children1 or not children2:
-                continue
-
-            # Find parallel pairs
-            parallel_pairs = []
-            for c1 in children1:
-                for c2 in children2:
-                    if names_are_parallel(c1, c2):
-                        parallel_pairs.append((c1, c2))
-
-            if len(parallel_pairs) >= min_parallel_pairs:
-                pair = tuple(sorted([base1, base2]))
-                if pair not in seen_pairs:
-                    seen_pairs.add(pair)
-                    findings.append({
-                        "base1": base1,
-                        "base2": base2,
-                        "parallel_pairs": len(parallel_pairs),
-                        "examples": parallel_pairs[:3],
-                        "file": row.get("file", ""),
-                        "line": row.get("line", 0),
-                        "issue": "parallel_inheritance",
-                        "message": f"Hierarchies under '{base1}' and '{base2}' have {len(parallel_pairs)} parallel pairs",
-                        "suggestion": "Consider merging hierarchies or using composition instead of inheritance"
-                    })
-
-        findings.sort(key=lambda x: x["parallel_pairs"], reverse=True)
-        result = findings[:limit]
+        base1: base1,
+        base2: base2,
+        parallel_pairs: parallel_pairs,
+        file: file,
+        line: line,
+        issue: "parallel_inheritance",
+        message: "Hierarchies under '{base1}' and '{base2}' have {parallel_pairs} parallel pairs",
+        suggestion: "Consider merging hierarchies or using composition instead of inheritance"
     }
     | emit { findings }
 }

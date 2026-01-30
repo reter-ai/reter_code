@@ -22,7 +22,7 @@ detector primitive_obsession(category="design", severity="medium") {
             ?m is-defined-in ?c .
             ?c has-name ?class_name .
             ?param type parameter .
-            ?param is-of-function ?m
+            ?param is-parameter-of ?m
             FILTER ( !REGEX(?name, "^__") )
         }
         GROUP BY ?m ?name ?class_name ?file ?line
@@ -30,20 +30,26 @@ detector primitive_obsession(category="design", severity="medium") {
         ORDER BY DESC(?param_count)
         LIMIT 200
     }
-    | join {
-        on: name,
-        right: rag { search, query: "string integer float boolean bytes primitive type parameter argument value raw data", top_k: 200 },
-        type: inner
+    | select { name, class_name, file, line, param_count, qualified_name: m }
+    | rag_enrich {
+        query: "primitive type string integer float boolean bytes parameter argument",
+        top_k: 1,
+        threshold: {similarity},
+        mode: all,
+        entity_types: ["method"]
     }
-    | filter { similarity >= {similarity} }
-    | select { name, class_name, file, line, param_count, similarity, qualified_name: m }
+    | filter { len(rag_matches) > 0 }
     | map {
-        ...row,
+        name: name,
+        class_name: class_name,
+        file: file,
+        line: line,
+        param_count: param_count,
+        qualified_name: qualified_name,
         issue: "primitive_obsession",
-        message: "Method '{class_name}.{name}' has {param_count} primitive-like parameters ({similarity})",
+        message: "Method '{class_name}.{name}' has {param_count} primitive-type parameters",
         suggestion: "Consider using value objects or domain types instead of primitives"
     }
-    | order_by { -similarity }
     | limit { {limit} }
     | emit { findings }
 }

@@ -1,30 +1,35 @@
 # find_unused_imports - Find imported modules/symbols that are never used
 #
 # Identifies imports that can be removed to clean up the code.
+#
+# NOTE: This detector requires usage tracking which is not yet implemented.
+# Currently lists all imports - future versions will filter to only unused ones
+# once the parser tracks import usage via references.
 
 detector find_unused_imports(category="dependencies", severity="low") {
-    """Find unused imports that can be removed."""
+    """Find imports that may be unused (requires manual verification)."""
 
     param limit: int = 100;
 
+    # Get all imports - usage tracking not yet implemented
+    # Imports have has-module-path, not has-name
     reql {
-        SELECT ?i ?import_name ?file ?line
+        SELECT ?i ?module_path ?file ?line
         WHERE {
             ?i type import .
-            ?i has-name ?import_name .
+            ?i has-module-path ?module_path .
             ?i is-in-file ?file .
-            ?i is-at-line ?line .
-            ?i isUsed false
+            ?i is-at-line ?line
         }
         ORDER BY ?file ?line
         LIMIT {limit}
     }
-    | select { import_name, file, line }
+    | select { module_path, file, line }
     | map {
         ...row,
-        issue: "unused_import",
-        message: "Unused import '{import_name}'",
-        suggestion: "Remove the unused import"
+        issue: "import_review",
+        message: "Import '{module_path}' - verify if used",
+        suggestion: "Check if this import is actually used in the file"
     }
     | emit { findings }
 }

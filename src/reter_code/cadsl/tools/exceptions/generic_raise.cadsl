@@ -14,7 +14,7 @@ detector generic_exception_raising(category="exception_handling", severity="medi
             ?r type throw-statement .
             ?r is-in-file ?file .
             ?r is-at-line ?line .
-            ?r exception-type ?exception_type .
+            ?r has-exception-type ?exception_type .
             OPTIONAL { ?r is-in-function ?f . ?f has-name ?func_name }
             FILTER ( ?exception_type = "Exception" )
         }

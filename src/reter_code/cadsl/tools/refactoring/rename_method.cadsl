@@ -1,45 +1,53 @@
 # rename_method - Suggest Rename Method refactoring opportunities
 #
 # Identifies methods with unclear, inconsistent, or confusingly similar names.
-# Uses LEVENSHTEIN to detect naming inconsistencies across the codebase.
+# Uses semantic search to efficiently find similar method names without
+# expensive N×N LEVENSHTEIN cross-joins.
+#
+# Approach: Find methods with common naming patterns (get_, set_, handle_, etc.)
+# that might benefit from consistent naming conventions.
 
 detector rename_method(category="refactoring", severity="low") {
     """Suggest Rename Method refactoring opportunities."""
 
-    param max_distance: int = 2;
+    param similarity: float = 0.60;
     param limit: int = 100;
 
+    # Find all public methods
     reql {
-        SELECT ?m1 ?name1 ?class1 ?file1 ?line1 ?m2 ?name2 ?class2 ?file2
+        SELECT ?m ?name ?class_name ?file ?line
         WHERE {
-            ?m1 type method .
-            ?m1 has-name ?name1 .
-            ?m1 is-in-file ?file1 .
-            ?m1 is-at-line ?line1 .
-            ?m1 is-defined-in ?c1 .
-            ?c1 has-name ?class1 .
-            ?m2 type method .
-            ?m2 has-name ?name2 .
-            ?m2 is-in-file ?file2 .
-            ?m2 is-defined-in ?c2 .
-            ?c2 has-name ?class2 .
-            FILTER(?m1 != ?m2)
-            FILTER(?name1 != ?name2)
-            FILTER(?class1 != ?class2)
-            FILTER(LEVENSHTEIN(?name1, ?name2) <= {max_distance})
-            FILTER(LEVENSHTEIN(?name1, ?name2) > 0)
+            ?m type method .
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?m is-defined-in ?c .
+            ?c has-name ?class_name .
+            FILTER(!STRSTARTS(?name, "_"))
+            FILTER(!STRSTARTS(?name, "test"))
         }
-        LIMIT 500
+        ORDER BY ?name
+        LIMIT 200
     }
-    | select { name1, name2, class1, class2, file1, file2, line1 }
+    | select { method: m, name, class_name, file, line }
+    | rag_enrich {
+        query: "method naming convention similar function handler getter setter processor",
+        top_k: 5,
+        threshold: {similarity},
+        mode: all,
+        entity_types: ["method"]
+    }
+    | filter { len(rag_matches) > 0 }
     | map {
-        ...row,
+        name: name,
+        class_name: class_name,
+        file: file,
+        line: line,
+        similar_count: len(rag_matches),
         refactoring: "rename_method",
-        message: "Methods '{name1}' ({class1}) and '{name2}' ({class2}) have inconsistent naming",
-        suggestion: "Consider using consistent naming convention across similar methods",
-        files: "{file1}, {file2}"
+        message: "Method '{class_name}.{name}' may have inconsistent naming - {similar_count} similar methods found",
+        suggestion: "Consider using consistent naming convention across similar methods"
     }
-    | order_by { +name1, +name2 }
     | limit { {limit} }
     | emit { findings }
 }

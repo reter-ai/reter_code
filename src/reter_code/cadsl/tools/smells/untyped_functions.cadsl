@@ -18,8 +18,8 @@ detector untyped_functions(category="code_smell", severity="low") {
             ?e has-name ?name .
             ?e is-in-file ?file .
             ?e is-at-line ?line .
-            OPTIONAL { ?param type parameter . ?param is-of-function ?e }
-            OPTIONAL { ?typed_param type parameter . ?typed_param is-of-function ?e . ?typed_param has-type-annotation ?ptype }
+            OPTIONAL { ?param type parameter . ?param is-parameter-of ?e }
+            OPTIONAL { ?typed_param type parameter . ?typed_param is-parameter-of ?e . ?typed_param has-type-annotation ?ptype }
             FILTER ( {include_private} || !STRSTARTS(?name, "_") )
             FILTER ( !REGEX(?file, "test") )
         }

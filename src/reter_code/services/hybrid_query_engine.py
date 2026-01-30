@@ -545,8 +545,17 @@ def handle_get_example(name: str) -> str:
     return f"# Example: {category}/{name}.cadsl\n\n{content}"
 
 
-def handle_search_examples(query: str, max_results: int = 10) -> str:
-    """Search for similar CADSL examples using semantic similarity."""
+def handle_search_examples(query: str, max_results: int = 10, include_code_count: int = 3) -> str:
+    """Search for similar CADSL examples using semantic similarity.
+
+    Args:
+        query: Natural language search query
+        max_results: Maximum number of examples to return
+        include_code_count: Number of top matches to include full CADSL code for
+
+    Returns:
+        Formatted string with examples (top N with full code, rest as metadata)
+    """
     tool_index = get_cadsl_tool_index()
 
     if not tool_index._tools:
@@ -558,27 +567,49 @@ def handle_search_examples(query: str, max_results: int = 10) -> str:
     if not similar:
         return f"# No examples found matching '{query}'. Try list_examples() to browse all."
 
-    # Group by category for list_examples format
-    by_category: Dict[str, List[tuple]] = {}
-    for tool, score in similar:
-        cat = tool.category
-        if cat not in by_category:
-            by_category[cat] = []
-        by_category[cat].append((tool.name, score, tool.description[:80] if tool.description else ""))
-
     result = f"# Examples matching '{query}'\n\n"
-    result += f"Found {len(similar)} similar examples (sorted by relevance):\n\n"
+    result += f"Found {len(similar)} similar examples (sorted by relevance).\n\n"
 
-    for cat, tools in sorted(by_category.items(), key=lambda x: -max(t[1] for t in x[1])):
-        result += f"## {cat}\n"
-        for name, score, desc in sorted(tools, key=lambda x: -x[1]):
-            result += f"- {cat}/{name} (score: {score:.2f})"
-            if desc:
-                result += f" - {desc}..."
+    # Include full CADSL code for top matches (case-based reasoning)
+    top_matches = similar[:include_code_count]
+    remaining_matches = similar[include_code_count:]
+
+    if top_matches:
+        result += "## Top Matches (with full code)\n\n"
+        result += "Use these as templates - adapt the patterns to your specific query:\n\n"
+
+        for tool_meta, score in top_matches:
+            content = tool_index.get_tool_content(tool_meta.name)
+            result += f"### {tool_meta.category}/{tool_meta.name} (score: {score:.2f})\n"
+            if tool_meta.description:
+                result += f"{tool_meta.description}\n"
+            result += "```cadsl\n"
+            result += content.strip() if content else "# Content not available"
+            result += "\n```\n\n"
+
+    # List remaining matches as metadata only
+    if remaining_matches:
+        result += "## Other Matches\n\n"
+
+        # Group by category for cleaner display
+        by_category: Dict[str, List[tuple]] = {}
+        for tool, score in remaining_matches:
+            cat = tool.category
+            if cat not in by_category:
+                by_category[cat] = []
+            by_category[cat].append((tool.name, score, tool.description[:80] if tool.description else ""))
+
+        for cat, tools in sorted(by_category.items(), key=lambda x: -max(t[1] for t in x[1])):
+            result += f"**{cat}:**\n"
+            for name, score, desc in sorted(tools, key=lambda x: -x[1]):
+                result += f"- {cat}/{name} (score: {score:.2f})"
+                if desc:
+                    result += f" - {desc}..."
+                result += "\n"
             result += "\n"
-        result += "\n"
 
-    result += "Use get_example('category/name') to view a specific example."
+        result += "Use get_example('category/name') to view full code for these examples."
+
     return result
 
 

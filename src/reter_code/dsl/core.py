@@ -183,6 +183,8 @@ class REQLSource(Source[pa.Table]):
     Parameter placeholders like {limit}, {target} are still supported
     and resolved from ctx.params at runtime.
 
+    Timeout can be specified via ctx.params['timeout_ms'] (default: 300000ms = 5 minutes).
+
     @reter: DSLLayer(self)
     @reter: Source(self)
     """
@@ -199,8 +201,11 @@ class REQLSource(Source[pa.Table]):
                 if placeholder in query:
                     query = query.replace(placeholder, str(value))
 
+            # Get timeout from params (default 5 minutes = 300000ms)
+            timeout_ms = ctx.params.get('timeout_ms', 300000)
+
             # Execute query - returns PyArrow table directly
-            table = ctx.reter.reql(query)
+            table = ctx.reter.reql(query, timeout_ms=timeout_ms)
 
             if table is None or table.num_rows == 0:
                 return pipeline_ok(pa.table({}))

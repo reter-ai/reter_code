@@ -11,8 +11,9 @@ detector feature_envy(category="design", severity="medium") {
     param min_external: int = 3;
     param limit: int = 50;
 
+    # Get external calls grouped by method and external class
     reql {
-        SELECT ?m ?name ?class_name ?ext_class_name ?file ?line (COUNT(?ext_call) AS ?external_calls)
+        SELECT ?m ?name ?class_name ?ext_class_name ?file ?line (COUNT(?ext_call) AS ?call_count)
         WHERE {
             ?m type method .
             ?m has-name ?name .
@@ -23,14 +24,27 @@ detector feature_envy(category="design", severity="medium") {
             ?m calls ?ext_call .
             ?ext_call is-defined-in ?ext_class .
             ?ext_class has-name ?ext_class_name .
-            FILTER ( ?class_name != ?ext_class_name )
+            FILTER(?class_name != ?ext_class_name)
         }
         GROUP BY ?m ?name ?class_name ?ext_class_name ?file ?line
-        HAVING (?external_calls >= {min_external})
-        ORDER BY DESC(?external_calls)
-        LIMIT {limit}
+        ORDER BY ?m DESC(?call_count)
+        LIMIT 5000
     }
-    | select { name, class_name, file, line, external_calls }
+    | select { m, name, class_name, ext_class_name, file, line, call_count }
+    # Collect by method to aggregate external calls
+    | collect {
+        by: m,
+        name: first(name),
+        class_name: first(class_name),
+        file: first(file),
+        line: first(line),
+        external_calls: sum(call_count),
+        top_external_class: first(ext_class_name),
+        top_external_count: max(call_count)
+    }
+    | filter { external_calls >= min_external }
+    | order_by { -external_calls }
+    | limit { {limit} }
     | rag_enrich {
         query: "{name} {class_name} encapsulated method",
         top_k: 3,
@@ -44,9 +58,10 @@ detector feature_envy(category="design", severity="medium") {
         file: file,
         line: line,
         external_calls: external_calls,
+        top_external_class: top_external_class,
         issue: "feature_envy",
-        message: "Method '{name}' in '{class_name}' makes {external_calls} calls to other classes",
-        suggestion: "Consider moving this method to the class it envies",
+        message: "Method '{name}' in '{class_name}' makes {external_calls} calls to other classes (mainly to '{top_external_class}')",
+        suggestion: "Consider moving this method to '{top_external_class}'",
         example_count: len(rag_matches),
         well_encapsulated_examples: rag_matches
     }
@@ -61,7 +76,7 @@ detector feature_envy_fast(category="design", severity="medium") {
     param limit: int = 100;
 
     reql {
-        SELECT ?m ?name ?class_name ?ext_class_name ?file ?line (COUNT(?ext_call) AS ?external_calls)
+        SELECT ?m ?name ?class_name ?ext_class_name ?file ?line (COUNT(?ext_call) AS ?call_count)
         WHERE {
             ?m type method .
             ?m has-name ?name .
@@ -72,19 +87,32 @@ detector feature_envy_fast(category="design", severity="medium") {
             ?m calls ?ext_call .
             ?ext_call is-defined-in ?ext_class .
             ?ext_class has-name ?ext_class_name .
-            FILTER ( ?class_name != ?ext_class_name )
+            FILTER(?class_name != ?ext_class_name)
         }
         GROUP BY ?m ?name ?class_name ?ext_class_name ?file ?line
-        HAVING (?external_calls >= {min_external})
-        ORDER BY DESC(?external_calls)
-        LIMIT {limit}
+        ORDER BY ?m DESC(?call_count)
+        LIMIT 5000
     }
-    | select { name, class_name, file, line, external_calls, qualified_name: m }
+    | select { m, name, class_name, ext_class_name, file, line, call_count }
+    | collect {
+        by: m,
+        name: first(name),
+        class_name: first(class_name),
+        file: first(file),
+        line: first(line),
+        external_calls: sum(call_count),
+        top_external_class: first(ext_class_name),
+        top_external_count: max(call_count),
+        qualified_name: first(m)
+    }
+    | filter { external_calls >= min_external }
+    | order_by { -external_calls }
+    | limit { {limit} }
     | map {
         ...row,
         issue: "feature_envy",
         message: "Method '{name}' in '{class_name}' makes {external_calls} calls to other classes",
-        suggestion: "Consider moving this method to the class it envies"
+        suggestion: "Consider moving this method to '{top_external_class}'"
     }
     | emit { findings }
 }

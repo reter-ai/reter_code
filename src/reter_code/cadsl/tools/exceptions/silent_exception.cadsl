@@ -9,20 +9,19 @@ detector silent_exception_swallowing(category="exception_handling", severity="cr
     param limit: int = 100;
 
     reql {
-        SELECT ?h ?exception_type ?func_name ?file ?line ?body_size
+        SELECT ?h ?exception_type ?func_name ?file ?line
         WHERE {
             ?h type catch-clause .
             ?h is-in-file ?file .
             ?h is-at-line ?line .
-            ?h body-size ?body_size .
-            OPTIONAL { ?h exception-type ?exception_type }
+            ?h is-silent-swallow true .
+            OPTIONAL { ?h has-exception-type ?exception_type }
             OPTIONAL { ?h is-in-function ?f . ?f has-name ?func_name }
-            FILTER ( ?body_size <= 1 )
         }
         ORDER BY ?file ?line
         LIMIT {limit}
     }
-    | select { exception_type, func_name, file, line, body_size }
+    | select { exception_type, func_name, file, line }
     | map {
         ...row,
         issue: "silent_exception_swallowing",

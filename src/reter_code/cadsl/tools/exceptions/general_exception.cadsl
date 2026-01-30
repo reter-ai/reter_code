@@ -14,7 +14,7 @@ detector too_general_exceptions(category="exception_handling", severity="high") 
             ?h type catch-clause .
             ?h is-in-file ?file .
             ?h is-at-line ?line .
-            ?h exception-type ?exception_type .
+            ?h has-exception-type ?exception_type .
             OPTIONAL { ?h is-in-function ?f . ?f has-name ?func_name }
             FILTER ( ?exception_type = "Exception" || ?exception_type = "BaseException" || ?exception_type = "" )
         }

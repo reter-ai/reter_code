@@ -1,6 +1,6 @@
-// Generate annotation tasks for classes without layer annotations
-// Creates tasks in RETER session for each unannotated class
-// Each task requires manual analysis to determine the correct layer
+# Generate annotation tasks for classes without layer annotations
+# Creates tasks in RETER session for each unannotated class
+# Each task requires manual analysis to determine the correct layer
 
 query generate_annotation_tasks(
     category = "annotation",
@@ -13,16 +13,17 @@ query generate_annotation_tasks(
     tasks for manual layer determination and annotation.
 
     Parameters:
-        dry_run: If true, returns task data without creating tasks (default: false)
-        limit: Maximum number of tasks to generate (default: 2000)
+        dry_run: If true, returns task data without creating tasks (default: true)
+        limit: Maximum number of tasks to generate (default: 100)
     """
 
-    param dry_run: bool = false;
-    param limit: int = 2000;
+    param dry_run: bool = true;
+    param limit: int = 100;
 
     reql {
-        SELECT ?class ?file ?line WHERE {
+        SELECT ?class ?name ?file ?line WHERE {
             ?class type class .
+            ?class has-name ?name .
             ?class is-in-file ?file .
             ?class is-at-line ?line .
             FILTER NOT EXISTS { ?class type user:PresentationLayer }
@@ -32,16 +33,16 @@ query generate_annotation_tasks(
             FILTER NOT EXISTS { ?class type user:CoreLayer }
             FILTER NOT EXISTS { ?class type user:TestLayer }
             FILTER NOT EXISTS { ?class type user:UtilityLayer }
-            FILTER (!contains(?file, "test"))
-            FILTER (!contains(?file, "tests"))
-            FILTER (!contains(?file, "_test.py"))
-            FILTER (!contains(?file, "test_"))
+            FILTER (!CONTAINS(?file, "test"))
+            FILTER (!CONTAINS(?file, "tests"))
+            FILTER (!CONTAINS(?file, "_test.py"))
+            FILTER (!CONTAINS(?file, "test_"))
         }
         ORDER BY ?file ?line
     }
     | limit { {limit} }
     | map {
-        class_name: class,
+        class_name: name,
         file: file,
         line: line
     }

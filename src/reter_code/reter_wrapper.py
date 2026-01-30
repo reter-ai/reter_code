@@ -172,9 +172,9 @@ def check_initialization() -> None:
 # Max length for parameter/return value logging
 DEBUG_MAX_VALUE_LEN = int(os.getenv("RETER_DEBUG_MAX_VALUE_LEN", "200"))
 
-# REQL query timeout in milliseconds (default: 3 minutes = 180000ms)
+# REQL query timeout in milliseconds (default: 5 minutes = 300000ms)
 # Set RETER_REQL_TIMEOUT environment variable to override (in seconds)
-RETER_REQL_TIMEOUT_MS = int(os.getenv("RETER_REQL_TIMEOUT", "180")) * 1000
+RETER_REQL_TIMEOUT_MS = int(os.getenv("RETER_REQL_TIMEOUT", "300")) * 1000
 
 
 def debug_log(msg: str):
@@ -982,7 +982,7 @@ class ReterWrapper:
         Args:
             query: REQL query string
             timeout_ms: Query timeout in milliseconds. If None, uses RETER_REQL_TIMEOUT_MS
-                       (default 180000ms = 3 minutes). Set to 0 for no timeout.
+                       (default 300000ms = 5 minutes). Set to 0 for no timeout.
 
         Returns:
             PyArrow Table with query results

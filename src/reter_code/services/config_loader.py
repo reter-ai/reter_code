@@ -14,6 +14,7 @@ Supported settings in reter_code.json:
     "project_exclude": "test_*.py,**/__pycache__/*",  // -> RETER_PROJECT_EXCLUDE
     "anthropic_model": "claude-opus-4-5-20251101",    // -> ANTHROPIC_MODEL_NAME
     "anthropic_max_tokens": 1024,          // -> ANTHROPIC_MAX_TOKENS
+    "tools_available": "full",             // -> TOOLS_AVAILABLE ("default" or "full")
 
     // RAG Configuration
     "rag_enabled": true,                   // -> RETER_RAG_ENABLED
@@ -52,6 +53,8 @@ class ConfigLoader:
         "anthropic_max_tokens": "ANTHROPIC_MAX_TOKENS",
         "snapshots_dir": "RETER_SNAPSHOTS_DIR",
         "debug_log": "RETER_DEBUG_LOG",
+        # Tools configuration
+        "tools_available": "TOOLS_AVAILABLE",  # "default" or "full"
         # RAG configuration
         "rag_enabled": "RETER_RAG_ENABLED",
         "rag_embedding_model": "RETER_RAG_MODEL",

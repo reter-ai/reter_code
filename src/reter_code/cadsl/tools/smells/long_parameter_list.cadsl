@@ -17,7 +17,7 @@ detector long_parameter_list(category="complexity", severity="low") {
             ?m is-in-file ?file .
             ?m is-at-line ?line .
             ?param type parameter .
-            ?param is-of-function ?m
+            ?param is-parameter-of ?m
         }
         GROUP BY ?m ?name ?file ?line
         HAVING (?param_count > {max_params})

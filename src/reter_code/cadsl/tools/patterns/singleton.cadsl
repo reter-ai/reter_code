@@ -1,25 +1,46 @@
-# find_singleton_pattern - Find classes implementing singleton pattern
+# find_singleton_pattern - Find classes that may implement singleton pattern
 #
-# Identifies classes that use singleton pattern implementation.
+# Identifies classes that might use singleton pattern by looking for:
+# - Classes with methods named 'get_instance', 'getInstance', 'instance'
+# - Classes with __new__ method (Python singleton approach)
+#
+# NOTE: is-singleton predicate not tracked, using heuristic detection.
 
 detector find_singleton_pattern(category="patterns", severity="info") {
-    """Find classes implementing singleton pattern."""
+    """Find classes that may implement singleton pattern."""
 
     param limit: int = 100;
 
+    # Look for classes with get_instance or getInstance methods
     reql {
-        SELECT ?c ?name ?file ?line ?implementation_type
+        SELECT ?c ?class_name ?file ?line ?method_name
         WHERE {
             ?c type class .
-            ?c has-name ?name .
+            ?c has-name ?class_name .
             ?c is-in-file ?file .
             ?c is-at-line ?line .
-            ?c is-singleton true .
-            OPTIONAL { ?c singleton-type ?implementation_type }
+            ?m type method .
+            ?m is-defined-in ?c .
+            ?m has-name ?method_name .
+            FILTER(
+                ?method_name = "get_instance" ||
+                ?method_name = "getInstance" ||
+                ?method_name = "instance" ||
+                ?method_name = "__new__"
+            )
         }
         ORDER BY ?file ?line
         LIMIT {limit}
     }
-    | select { name, file, line, implementation_type }
+    | select { class_name, file, line, method_name }
+    | map {
+        name: class_name,
+        file: file,
+        line: line,
+        implementation_type: method_name,
+        issue: "singleton_pattern",
+        message: "Class '{class_name}' may implement singleton pattern (has '{method_name}' method)",
+        suggestion: "Verify if singleton is intentional and well-documented"
+    }
     | emit { findings }
 }

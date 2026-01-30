@@ -764,7 +764,8 @@ class ToolRegistrar:
         @app.tool()
         def execute_cadsl(
             script: str,
-            params: Optional[Dict[str, Any]] = None
+            params: Optional[Dict[str, Any]] = None,
+            timeout_ms: int = 300000
         ) -> Dict[str, Any]:
             """
             Execute a CADSL script for code analysis.
@@ -778,6 +779,8 @@ class ToolRegistrar:
                         it will be read from disk.
                 params: Optional dictionary of parameters to pass to the CADSL tool.
                         These override default parameter values defined in the script.
+                timeout_ms: Query timeout in milliseconds (default: 300000 = 5 minutes).
+                        Set to 0 for no timeout. For heavy queries like call_graph, use 600000 (10 min).
 
             Returns:
                 success: Whether execution succeeded
@@ -806,6 +809,9 @@ class ToolRegistrar:
 
                 # Execute from file
                 execute_cadsl("path/to/detector.cadsl", params={"threshold": 15})
+
+                # Execute with longer timeout for heavy queries
+                execute_cadsl("path/to/call_graph.cadsl", params={"target": "main"}, timeout_ms=600000)
             """
             import os
             import time
@@ -885,7 +891,7 @@ class ToolRegistrar:
                 from ..dsl.core import Context as PipelineContext
 
                 # Start with default param values from CADSL file
-                pipeline_params = {"rag_manager": rag_manager}
+                pipeline_params = {"rag_manager": rag_manager, "timeout_ms": timeout_ms}
                 for param_spec in tool_spec.params:
                     if param_spec.default is not None:
                         pipeline_params[param_spec.name] = param_spec.default

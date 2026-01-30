@@ -22,7 +22,7 @@ detector find_extraction_opportunities(category="refactoring", severity="high") 
             ?m is-defined-in ?c .
             ?c has-name ?class_name .
             OPTIONAL { ?m has-line-count ?line_count }
-            OPTIONAL { ?param type parameter . ?param is-of-function ?m }
+            OPTIONAL { ?param type parameter . ?param is-parameter-of ?m }
         }
         GROUP BY ?m ?name ?file ?line ?line_count ?class_name
     }

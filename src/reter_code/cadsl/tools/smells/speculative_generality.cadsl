@@ -1,35 +1,37 @@
-# speculative_generality - Detect abstract classes with only one subclass
+# speculative_generality - Detect base classes with only one subclass
 #
 # Speculative generality occurs when code is made more abstract than necessary
 # "just in case" it might be needed, but the flexibility is never used.
+#
+# NOTE: is-abstract predicate not tracked, so we detect any base class with
+# exactly one subclass (which may indicate unnecessary abstraction).
 
 detector speculative_generality(category="code_smell", severity="low") {
-    """Detect speculative generality - unnecessary abstraction."""
+    """Detect speculative generality - base classes with only one subclass."""
 
     param limit: int = 100;
 
+    # Find classes that have exactly one subclass
     reql {
-        SELECT ?c ?name ?file ?line ?subclass_name (COUNT(?sub) AS ?subclass_count)
+        SELECT ?c ?name ?file ?line (COUNT(?sub) AS ?subclass_count)
         WHERE {
             ?c type class .
             ?c has-name ?name .
             ?c is-in-file ?file .
             ?c is-at-line ?line .
-            ?c is-abstract true .
-            ?sub inherits-from ?c .
-            ?sub has-name ?subclass_name
+            ?sub inherits-from ?c
         }
-        GROUP BY ?c ?name ?file ?line ?subclass_name
+        GROUP BY ?c ?name ?file ?line
         HAVING (?subclass_count = 1)
         ORDER BY ?file ?line
         LIMIT {limit}
     }
-    | select { name, file, line, subclass_name, subclass_count }
+    | select { name, file, line, subclass_count }
     | map {
         ...row,
         issue: "speculative_generality",
-        message: "Abstract class '{name}' has only one subclass: '{subclass_name}'",
-        suggestion: "Consider collapsing hierarchy or waiting until you need the abstraction"
+        message: "Class '{name}' has only one subclass",
+        suggestion: "Consider collapsing hierarchy if the abstraction isn't needed"
     }
     | emit { findings }
 }

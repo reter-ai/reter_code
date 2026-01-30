@@ -8,16 +8,18 @@ detector global_data(category="code_smell", severity="high") {
 
     param limit: int = 100;
 
+    # Assignments use has-target and is-nested-in predicates
+    # Module-level = not nested in any function/method (no is-nested-in predicate)
     reql {
         SELECT ?a ?target ?value ?module ?line
         WHERE {
             ?a type assignment .
-            ?a target ?target .
+            ?a has-target ?target .
             ?a is-in-module ?module .
             OPTIONAL { ?a has-value ?value }
             OPTIONAL { ?a is-at-line ?line }
-            MINUS { ?a is-in-function ?f }
-            MINUS { ?a is-in-class ?c }
+            MINUS { ?a is-nested-in ?nested }
+            MINUS { ?a is-member-of ?member }
             FILTER ( !STRSTARTS(?target, "_") )
             FILTER ( !REGEX(?target, "^[A-Z_]+$") )
         }

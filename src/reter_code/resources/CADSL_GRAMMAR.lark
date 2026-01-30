@@ -61,13 +61,19 @@ source: reql_source
 reql_source: "reql" REQL_BLOCK
 
 // Merge multiple sources into one: merge { source1, source2, ... }
+// Each source can optionally have pipeline steps applied before merging
 merge_source: "merge" "{" source_list "}"
 
 source_list: source_item ("," source_item)*
 
-source_item: reql_source
-           | rag_source
-           | value_source
+// Source item: a source that can optionally have pipeline steps applied
+// Examples:
+//   reql { ... }
+//   reql { ... } | select { ... } | map { ... }
+source_item: (reql_source | rag_source | value_source) source_steps?
+
+// Pipeline steps to apply to a source before merging
+source_steps: ("|" step)+
 
 rag_source: "rag" "{" rag_args "}"
 
@@ -277,6 +283,10 @@ mermaid_param: "type" ":" mermaid_type      -> mermaid_type_spec
              | "methods" ":" NAME           -> mermaid_methods
              | "attributes" ":" NAME        -> mermaid_attributes
              | "inheritance" ":" NAME "->" NAME -> mermaid_inheritance
+             | "composition" ":" NAME "*->" NAME -> mermaid_composition
+             | "composition" ":" NAME "->" NAME -> mermaid_composition
+             | "association" ":" NAME "-->" NAME -> mermaid_association
+             | "association" ":" NAME "->" NAME -> mermaid_association
              // Pie chart specific
              | "labels" ":" NAME            -> mermaid_labels
              | "values" ":" NAME            -> mermaid_values
@@ -595,8 +605,12 @@ format_value: STRING
 
 field_list: field_item ("," field_item)*
 
+// Field items in select step:
+// - NAME as NAME: alias (e.g., "id as user_id")
+// - NAME: expr: assign expression or rename (e.g., "type: \"class\"" or "new_name: old_name")
+// - NAME: simple field selection
 field_item: NAME "as" NAME            -> field_alias
-          | NAME ":" NAME             -> field_rename
+          | NAME ":" expr             -> field_expr
           | NAME                      -> field_simple
 
 order_field: "-" NAME                 -> order_desc
@@ -617,8 +631,9 @@ not_cond: "not" not_cond              -> not_expr
         | "!" not_cond                -> not_expr
         | comparison
 
-?comparison: expr comp_op expr                    -> binary_comp
-           | expr "in" "[" value_list "]"         -> in_list
+// Note: Simple comparisons (a == b, a > b) are handled by expr -> comp_expr
+// This rule handles special comparison forms and parenthesized conditions
+?comparison: expr "in" "[" value_list "]"         -> in_list
            | expr "in" param_ref                  -> in_param
            | expr "matches" STRING                -> regex_match
            | expr "starts_with" STRING            -> starts_with
@@ -627,6 +642,7 @@ not_cond: "not" not_cond              -> not_expr
            | expr "is" "null"                     -> is_null
            | expr "is" "not" "null"               -> is_not_null
            | "(" condition ")"                    -> paren_cond
+           | expr                                 -> expr_cond
 
 comp_op: ">"   -> op_gt
        | "<"   -> op_lt
@@ -642,8 +658,12 @@ comp_op: ">"   -> op_gt
 // Ternary conditional: value if condition else other
 ?expr: ternary_expr
 
-?ternary_expr: add_expr "?" add_expr ":" add_expr  -> ternary
-             | add_expr
+?ternary_expr: comp_expr "?" comp_expr ":" comp_expr  -> ternary
+             | comp_expr
+
+// Comparison expressions: a > b, a == b, etc.
+?comp_expr: add_expr comp_op add_expr  -> comparison
+          | add_expr
 
 ?add_expr: mul_expr (add_op mul_expr)*
 

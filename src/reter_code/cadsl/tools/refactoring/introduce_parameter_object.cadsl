@@ -12,13 +12,14 @@ detector introduce_parameter_object(category="refactoring", severity="medium") {
     reql {
         SELECT ?m ?name ?class_name ?file ?line (COUNT(?param) AS ?param_count)
         WHERE {
-            { ?m type method } UNION { ?m type function }
+            ?m type method .
             ?m has-name ?name .
             ?m is-in-file ?file .
             ?m is-at-line ?line .
+            ?m is-defined-in ?c .
+            ?c has-name ?class_name .
             ?param type parameter .
-            ?param is-of-function ?m .
-            OPTIONAL { ?m is-defined-in ?c . ?c has-name ?class_name }
+            ?param is-parameter-of ?m
         }
         GROUP BY ?m ?name ?class_name ?file ?line
         HAVING (?param_count >= {min_params})
@@ -29,7 +30,7 @@ detector introduce_parameter_object(category="refactoring", severity="medium") {
     | map {
         ...row,
         refactoring: "introduce_parameter_object",
-        message: "Method '{name}' has {param_count} parameters",
+        message: "Method '{class_name}.{name}' has {param_count} parameters",
         suggestion: "Consider grouping related parameters into a parameter object"
     }
     | emit { findings }

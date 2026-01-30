@@ -17,11 +17,13 @@ query list_classes() {
             ?c is-in-file ?file .
             ?c is-at-line ?line .
             OPTIONAL { ?method type method . ?method is-defined-in ?c }
+            FILTER(CONTAINS(?file, "{module}"))
         }
         GROUP BY ?c ?name ?file ?line
         ORDER BY ?name
+        LIMIT {limit}
+        OFFSET {offset}
     }
-    | filter { "{module}" == "" or row.file contains "{module}" }
     | select { name, file, line, methodCount, qualified_name: c }
     | emit { classes }
 }

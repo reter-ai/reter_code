@@ -556,7 +556,9 @@ create_task_param: "name" ":" STRING                    -> ct_name
                  | "description" ":" param_ref          -> ct_description_param
                  | "affects" ":" NAME                   -> ct_affects
                  | "batch_size" ":" INT                 -> ct_batch_size
+                 | "batch_size" ":" param_ref           -> ct_batch_size_param
                  | "dry_run" ":" bool_val               -> ct_dry_run
+                 | "dry_run" ":" param_ref              -> ct_dry_run_param
 
 ct_priority_val: "critical" -> ct_prio_critical
                | "high"     -> ct_prio_high
@@ -631,8 +633,9 @@ not_cond: "not" not_cond              -> not_expr
         | "!" not_cond                -> not_expr
         | comparison
 
-?comparison: expr comp_op expr                    -> binary_comp
-           | expr "in" "[" value_list "]"         -> in_list
+// Note: Simple comparisons (a == b, a > b) are handled by expr -> comp_expr
+// This rule handles special comparison forms and parenthesized conditions
+?comparison: expr "in" "[" value_list "]"         -> in_list
            | expr "in" param_ref                  -> in_param
            | expr "matches" STRING                -> regex_match
            | expr "starts_with" STRING            -> starts_with
@@ -641,6 +644,7 @@ not_cond: "not" not_cond              -> not_expr
            | expr "is" "null"                     -> is_null
            | expr "is" "not" "null"               -> is_not_null
            | "(" condition ")"                    -> paren_cond
+           | expr                                 -> expr_cond
 
 comp_op: ">"   -> op_gt
        | "<"   -> op_lt
