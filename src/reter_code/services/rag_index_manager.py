@@ -10,11 +10,104 @@ import hashlib
 import json
 import logging
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, UTC
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple, Callable, TYPE_CHECKING
 
 import numpy as np
+
+
+# ============================================================
+# SYNC DATA CLASSES
+# ============================================================
+
+@dataclass
+class LanguageSourceChanges:
+    """
+    Source changes for a single language type.
+
+    @reter-cnl: This is-in-layer Utility-Layer.
+    @reter-cnl: This is a value-object.
+
+    Groups changed and deleted source IDs for one language.
+    """
+    changed: List[str] = field(default_factory=list)
+    deleted: List[str] = field(default_factory=list)
+
+
+@dataclass
+class SyncChanges:
+    """
+    All source changes for RAG index synchronization.
+
+    @reter-cnl: This is-in-layer Utility-Layer.
+    @reter-cnl: This is a value-object.
+
+    Consolidates 12 individual parameters (6 languages × 2 change types)
+    into a structured object organized by language.
+    """
+    python: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    javascript: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    html: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    csharp: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    cpp: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    markdown: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+
+    @classmethod
+    def from_params(
+        cls,
+        changed_python_sources: Optional[List[str]] = None,
+        deleted_python_sources: Optional[List[str]] = None,
+        changed_javascript_sources: Optional[List[str]] = None,
+        deleted_javascript_sources: Optional[List[str]] = None,
+        changed_html_sources: Optional[List[str]] = None,
+        deleted_html_sources: Optional[List[str]] = None,
+        changed_csharp_sources: Optional[List[str]] = None,
+        deleted_csharp_sources: Optional[List[str]] = None,
+        changed_cpp_sources: Optional[List[str]] = None,
+        deleted_cpp_sources: Optional[List[str]] = None,
+        changed_markdown_files: Optional[List[str]] = None,
+        deleted_markdown_files: Optional[List[str]] = None,
+    ) -> "SyncChanges":
+        """Create SyncChanges from individual parameters for backward compatibility."""
+        return cls(
+            python=LanguageSourceChanges(
+                changed=changed_python_sources or [],
+                deleted=deleted_python_sources or [],
+            ),
+            javascript=LanguageSourceChanges(
+                changed=changed_javascript_sources or [],
+                deleted=deleted_javascript_sources or [],
+            ),
+            html=LanguageSourceChanges(
+                changed=changed_html_sources or [],
+                deleted=deleted_html_sources or [],
+            ),
+            csharp=LanguageSourceChanges(
+                changed=changed_csharp_sources or [],
+                deleted=deleted_csharp_sources or [],
+            ),
+            cpp=LanguageSourceChanges(
+                changed=changed_cpp_sources or [],
+                deleted=deleted_cpp_sources or [],
+            ),
+            markdown=LanguageSourceChanges(
+                changed=changed_markdown_files or [],
+                deleted=deleted_markdown_files or [],
+            ),
+        )
+
+    def has_changes(self) -> bool:
+        """Check if there are any changes to sync."""
+        return any([
+            self.python.changed, self.python.deleted,
+            self.javascript.changed, self.javascript.deleted,
+            self.html.changed, self.html.deleted,
+            self.csharp.changed, self.csharp.deleted,
+            self.cpp.changed, self.cpp.deleted,
+            self.markdown.changed, self.markdown.deleted,
+        ])
 
 from .faiss_wrapper import FAISSWrapper, SearchResult, FAISS_AVAILABLE
 from .embedding_service import EmbeddingService, get_embedding_service
@@ -607,9 +700,10 @@ class RAGIndexManager:
         deleted_cpp_sources: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
-        Synchronize FAISS index after file changes.
+        Synchronize FAISS index after file changes (backward compatible signature).
 
-        Called by DefaultInstanceManager after syncing Python/JavaScript/HTML/C#/C++ files.
+        This method preserves the original 15-parameter signature for backward
+        compatibility. New code should use sync_with_changes() with SyncChanges.
 
         Args:
             reter: RETER instance for code entity queries
@@ -629,6 +723,48 @@ class RAGIndexManager:
 
         Returns:
             Sync statistics
+        """
+        changes = SyncChanges.from_params(
+            changed_python_sources=changed_python_sources,
+            deleted_python_sources=deleted_python_sources,
+            changed_javascript_sources=changed_javascript_sources,
+            deleted_javascript_sources=deleted_javascript_sources,
+            changed_html_sources=changed_html_sources,
+            deleted_html_sources=deleted_html_sources,
+            changed_csharp_sources=changed_csharp_sources,
+            deleted_csharp_sources=deleted_csharp_sources,
+            changed_cpp_sources=changed_cpp_sources,
+            deleted_cpp_sources=deleted_cpp_sources,
+            changed_markdown_files=changed_markdown_files,
+            deleted_markdown_files=deleted_markdown_files,
+        )
+        return self.sync_with_changes(reter, project_root, changes)
+
+    def sync_with_changes(
+        self,
+        reter: "ReterWrapper",
+        project_root: Path,
+        changes: SyncChanges,
+    ) -> Dict[str, Any]:
+        """
+        Synchronize FAISS index after file changes.
+
+        Called by DefaultInstanceManager after syncing source files.
+
+        Args:
+            reter: RETER instance for code entity queries
+            project_root: Project root for resolving paths
+            changes: SyncChanges object containing all language change lists
+
+        Returns:
+            Sync statistics
+
+        Example:
+            changes = SyncChanges(
+                python=LanguageSourceChanges(changed=["mod1.py"], deleted=[]),
+                markdown=LanguageSourceChanges(changed=["README.md"], deleted=[]),
+            )
+            stats = manager.sync_with_changes(reter, project_root, changes)
         """
         if not self._enabled or not self._initialized:
             return {"status": "disabled"}
@@ -655,62 +791,51 @@ class RAGIndexManager:
             "errors": [],
         }
 
-        changed_markdown_files = changed_markdown_files or []
-        deleted_markdown_files = deleted_markdown_files or []
-        changed_javascript_sources = changed_javascript_sources or []
-        deleted_javascript_sources = deleted_javascript_sources or []
-        changed_html_sources = changed_html_sources or []
-        deleted_html_sources = deleted_html_sources or []
-        changed_csharp_sources = changed_csharp_sources or []
-        deleted_csharp_sources = deleted_csharp_sources or []
-        changed_cpp_sources = changed_cpp_sources or []
-        deleted_cpp_sources = deleted_cpp_sources or []
-
         # Update content extractor project root
         self._content_extractor.project_root = project_root
 
         # 1. Remove vectors for deleted sources
-        for source_id in deleted_python_sources:
+        for source_id in changes.python.deleted:
             removed = self._remove_vectors_for_source(source_id)
             stats["python_vectors_removed"] += removed
 
-        for source_id in deleted_javascript_sources:
+        for source_id in changes.javascript.deleted:
             removed = self._remove_vectors_for_source(source_id)
             stats["javascript_vectors_removed"] += removed
 
-        for source_id in deleted_html_sources:
+        for source_id in changes.html.deleted:
             removed = self._remove_vectors_for_source(source_id)
             stats["html_vectors_removed"] += removed
 
-        for source_id in deleted_csharp_sources:
+        for source_id in changes.csharp.deleted:
             removed = self._remove_vectors_for_source(source_id)
             stats["csharp_vectors_removed"] += removed
 
-        for source_id in deleted_cpp_sources:
+        for source_id in changes.cpp.deleted:
             removed = self._remove_vectors_for_source(source_id)
             stats["cpp_vectors_removed"] += removed
 
-        for rel_path in deleted_markdown_files:
+        for rel_path in changes.markdown.deleted:
             removed = self._remove_vectors_for_markdown(rel_path)
             stats["markdown_vectors_removed"] += removed
 
         # 2. Re-remove vectors for changed sources (they'll be re-indexed)
-        for source_id in changed_python_sources:
+        for source_id in changes.python.changed:
             self._remove_vectors_for_source(source_id)
 
-        for source_id in changed_javascript_sources:
+        for source_id in changes.javascript.changed:
             self._remove_vectors_for_source(source_id)
 
-        for source_id in changed_html_sources:
+        for source_id in changes.html.changed:
             self._remove_vectors_for_source(source_id)
 
-        for source_id in changed_csharp_sources:
+        for source_id in changes.csharp.changed:
             self._remove_vectors_for_source(source_id)
 
-        for source_id in changed_cpp_sources:
+        for source_id in changes.cpp.changed:
             self._remove_vectors_for_source(source_id)
 
-        for rel_path in changed_markdown_files:
+        for rel_path in changes.markdown.changed:
             self._remove_vectors_for_markdown(rel_path)
 
         # 3. BATCHED INDEXING: Collect all texts first, then generate embeddings in one batch
@@ -719,7 +844,7 @@ class RAGIndexManager:
         source_tracking = []  # (source_id, file_type, start_idx, count)
 
         # 3a. Collect Python entities and comments
-        for source_id in changed_python_sources:
+        for source_id in changes.python.changed:
             try:
                 entities = self._query_entities_for_source(reter, source_id, language="python")
                 texts, metadata = self._collect_python_entities(entities, source_id, project_root)
@@ -738,9 +863,9 @@ class RAGIndexManager:
                 stats["errors"].append(f"Python: {source_id}: {e}")
 
         # 3b. Collect Python literals (only from changed sources)
-        if changed_python_sources:
+        if changes.python.changed:
             literal_texts, literal_metadata = self._collect_all_python_literals_bulk(
-                reter, project_root, changed_sources=changed_python_sources
+                reter, project_root, changed_sources=changes.python.changed
             )
             if literal_texts:
                 source_tracking.append(("python_literals_bulk", "python_literal", len(all_texts), len(literal_texts)))
@@ -748,7 +873,7 @@ class RAGIndexManager:
                 all_metadata.extend(literal_metadata)
 
         # 3c. Collect JavaScript entities
-        for source_id in changed_javascript_sources:
+        for source_id in changes.javascript.changed:
             try:
                 entities = self._query_entities_for_source(reter, source_id, language="javascript")
                 texts, metadata = self._collect_javascript_entities(entities, source_id, project_root)
@@ -761,9 +886,9 @@ class RAGIndexManager:
                 stats["errors"].append(f"JavaScript: {source_id}: {e}")
 
         # 3d. Collect JavaScript literals (bulk query - filtered by changed sources)
-        if changed_javascript_sources:
+        if changes.javascript.changed:
             js_literal_texts, js_literal_metadata = self._collect_all_javascript_literals_bulk(
-                reter, project_root, changed_sources=changed_javascript_sources
+                reter, project_root, changed_sources=changes.javascript.changed
             )
             if js_literal_texts:
                 source_tracking.append(("javascript_literals_bulk", "javascript_literal", len(all_texts), len(js_literal_texts)))
@@ -771,7 +896,7 @@ class RAGIndexManager:
                 all_metadata.extend(js_literal_metadata)
 
         # 3e. Collect HTML entities
-        for source_id in changed_html_sources:
+        for source_id in changes.html.changed:
             try:
                 entities = self._query_html_entities_for_source(reter, source_id)
                 texts, metadata = self._collect_html_entities(entities, source_id, project_root)
@@ -784,7 +909,7 @@ class RAGIndexManager:
                 stats["errors"].append(f"HTML: {source_id}: {e}")
 
         # 3f. Collect C# entities (uses similar pattern to Python)
-        for source_id in changed_csharp_sources:
+        for source_id in changes.csharp.changed:
             try:
                 entities = self._query_entities_for_source(reter, source_id, language="csharp")
                 texts, metadata = self._collect_csharp_entities(entities, source_id, project_root)
@@ -797,7 +922,7 @@ class RAGIndexManager:
                 stats["errors"].append(f"C#: {source_id}: {e}")
 
         # 3g. Collect C++ entities (uses similar pattern to C#)
-        for source_id in changed_cpp_sources:
+        for source_id in changes.cpp.changed:
             try:
                 entities = self._query_entities_for_source(reter, source_id, language="cpp")
                 texts, metadata = self._collect_cpp_entities(entities, source_id, project_root)
@@ -810,7 +935,7 @@ class RAGIndexManager:
                 stats["errors"].append(f"C++: {source_id}: {e}")
 
         # 3h. Collect Markdown chunks
-        for rel_path in changed_markdown_files:
+        for rel_path in changes.markdown.changed:
             try:
                 abs_path = project_root / rel_path
                 chunks = self._markdown_indexer.parse_file(str(abs_path))

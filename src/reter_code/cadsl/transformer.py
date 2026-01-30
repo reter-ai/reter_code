@@ -1890,38 +1890,7 @@ class PipelineBuilder:
                     pipeline = pipeline >> GraphTraverseStep(from_field, to_field, algorithm, max_depth, root)
 
                 elif step_type == "render_mermaid":
-                    pipeline = pipeline >> RenderMermaidStep(
-                        mermaid_type=step_spec.get("mermaid_type", "flowchart"),
-                        nodes=step_spec.get("nodes"),
-                        edges_from=step_spec.get("edges_from"),
-                        edges_to=step_spec.get("edges_to"),
-                        direction=step_spec.get("direction", "TB"),
-                        title=step_spec.get("title"),
-                        participants=step_spec.get("participants"),
-                        messages_from=step_spec.get("messages_from"),
-                        messages_to=step_spec.get("messages_to"),
-                        messages_label=step_spec.get("messages_label"),
-                        # Class diagram
-                        classes=step_spec.get("classes"),
-                        methods=step_spec.get("methods"),
-                        attributes=step_spec.get("attributes"),
-                        inheritance_from=step_spec.get("inheritance_from"),
-                        inheritance_to=step_spec.get("inheritance_to"),
-                        composition_from=step_spec.get("composition_from"),
-                        composition_to=step_spec.get("composition_to"),
-                        association_from=step_spec.get("association_from"),
-                        association_to=step_spec.get("association_to"),
-                        # Pie chart
-                        labels=step_spec.get("labels"),
-                        values=step_spec.get("values"),
-                        # State diagram
-                        states=step_spec.get("states"),
-                        transitions_from=step_spec.get("transitions_from"),
-                        transitions_to=step_spec.get("transitions_to"),
-                        # ER diagram
-                        entities=step_spec.get("entities"),
-                        relationships=step_spec.get("relationships"),
-                    )
+                    pipeline = pipeline >> RenderMermaidStep.from_spec(step_spec)
 
                 elif step_type == "pivot":
                     pipeline = pipeline >> PivotStep(
@@ -2984,6 +2953,162 @@ class RenderChartStep:
         return "\n".join(lines)
 
 
+# ============================================================
+# MERMAID DIAGRAM CONFIG DATACLASSES
+# ============================================================
+
+@dataclass
+class FlowchartConfig:
+    """Configuration for flowchart diagrams.
+
+    @reter-cnl: This is-in-layer Domain-Specific-Language-Layer.
+    @reter-cnl: This is a value-object.
+    """
+    nodes: Optional[str] = None
+    edges_from: Optional[str] = None
+    edges_to: Optional[str] = None
+    direction: str = "TB"
+
+
+@dataclass
+class SequenceConfig:
+    """Configuration for sequence diagrams.
+
+    @reter-cnl: This is-in-layer Domain-Specific-Language-Layer.
+    @reter-cnl: This is a value-object.
+    """
+    participants: Optional[str] = None
+    messages_from: Optional[str] = None
+    messages_to: Optional[str] = None
+    messages_label: Optional[str] = None
+
+
+@dataclass
+class ClassDiagramConfig:
+    """Configuration for class diagrams.
+
+    @reter-cnl: This is-in-layer Domain-Specific-Language-Layer.
+    @reter-cnl: This is a value-object.
+    """
+    classes: Optional[str] = None
+    methods: Optional[str] = None
+    attributes: Optional[str] = None
+    inheritance_from: Optional[str] = None
+    inheritance_to: Optional[str] = None
+    composition_from: Optional[str] = None
+    composition_to: Optional[str] = None
+    association_from: Optional[str] = None
+    association_to: Optional[str] = None
+
+
+@dataclass
+class PieChartConfig:
+    """Configuration for pie charts.
+
+    @reter-cnl: This is-in-layer Domain-Specific-Language-Layer.
+    @reter-cnl: This is a value-object.
+    """
+    labels: Optional[str] = None
+    values: Optional[str] = None
+
+
+@dataclass
+class StateDiagramConfig:
+    """Configuration for state diagrams.
+
+    @reter-cnl: This is-in-layer Domain-Specific-Language-Layer.
+    @reter-cnl: This is a value-object.
+    """
+    states: Optional[str] = None
+    transitions_from: Optional[str] = None
+    transitions_to: Optional[str] = None
+
+
+@dataclass
+class ERDiagramConfig:
+    """Configuration for ER diagrams.
+
+    @reter-cnl: This is-in-layer Domain-Specific-Language-Layer.
+    @reter-cnl: This is a value-object.
+    """
+    entities: Optional[str] = None
+    relationships: Optional[str] = None
+
+
+@dataclass
+class MermaidConfig:
+    """Unified configuration for all Mermaid diagram types.
+
+    Groups related parameters by diagram type, reducing the parameter count
+    from 27 individual parameters to a single structured config object.
+
+    @reter-cnl: This is-in-layer Domain-Specific-Language-Layer.
+    @reter-cnl: This is a value-object.
+    """
+    mermaid_type: str = "flowchart"
+    title: Optional[str] = None
+    flowchart: FlowchartConfig = field(default_factory=FlowchartConfig)
+    sequence: SequenceConfig = field(default_factory=SequenceConfig)
+    class_diagram: ClassDiagramConfig = field(default_factory=ClassDiagramConfig)
+    pie_chart: PieChartConfig = field(default_factory=PieChartConfig)
+    state_diagram: StateDiagramConfig = field(default_factory=StateDiagramConfig)
+    er_diagram: ERDiagramConfig = field(default_factory=ERDiagramConfig)
+
+    @classmethod
+    def from_spec(cls, spec: Dict[str, Any]) -> "MermaidConfig":
+        """Create MermaidConfig from a specification dict.
+
+        This factory method provides backward compatibility with dict-based
+        configuration, extracting and grouping parameters appropriately.
+
+        Args:
+            spec: Dictionary with mermaid configuration parameters
+
+        Returns:
+            MermaidConfig instance with grouped parameters
+        """
+        return cls(
+            mermaid_type=spec.get("mermaid_type", "flowchart"),
+            title=spec.get("title"),
+            flowchart=FlowchartConfig(
+                nodes=spec.get("nodes"),
+                edges_from=spec.get("edges_from"),
+                edges_to=spec.get("edges_to"),
+                direction=spec.get("direction", "TB"),
+            ),
+            sequence=SequenceConfig(
+                participants=spec.get("participants"),
+                messages_from=spec.get("messages_from"),
+                messages_to=spec.get("messages_to"),
+                messages_label=spec.get("messages_label"),
+            ),
+            class_diagram=ClassDiagramConfig(
+                classes=spec.get("classes"),
+                methods=spec.get("methods"),
+                attributes=spec.get("attributes"),
+                inheritance_from=spec.get("inheritance_from"),
+                inheritance_to=spec.get("inheritance_to"),
+                composition_from=spec.get("composition_from"),
+                composition_to=spec.get("composition_to"),
+                association_from=spec.get("association_from"),
+                association_to=spec.get("association_to"),
+            ),
+            pie_chart=PieChartConfig(
+                labels=spec.get("labels"),
+                values=spec.get("values"),
+            ),
+            state_diagram=StateDiagramConfig(
+                states=spec.get("states"),
+                transitions_from=spec.get("transitions_from"),
+                transitions_to=spec.get("transitions_to"),
+            ),
+            er_diagram=ERDiagramConfig(
+                entities=spec.get("entities"),
+                relationships=spec.get("relationships"),
+            ),
+        )
+
+
 class RenderMermaidStep:
     """
     Render data to a Mermaid diagram.
@@ -2995,42 +3120,31 @@ class RenderMermaidStep:
     @reter-cnl: This is a step.
     """
 
-    def __init__(self, mermaid_type, nodes=None, edges_from=None, edges_to=None, direction="TB",
-                 title=None, participants=None, messages_from=None, messages_to=None, messages_label=None,
-                 classes=None, methods=None, attributes=None, inheritance_from=None, inheritance_to=None,
-                 composition_from=None, composition_to=None, association_from=None, association_to=None,
-                 labels=None, values=None, states=None, transitions_from=None, transitions_to=None,
-                 entities=None, relationships=None):
-        self.mermaid_type = mermaid_type
-        self.nodes = nodes
-        self.edges_from = edges_from
-        self.edges_to = edges_to
-        self.direction = direction
-        self.title = title
-        self.participants = participants
-        self.messages_from = messages_from
-        self.messages_to = messages_to
-        self.messages_label = messages_label
-        # Class diagram
-        self.classes = classes
-        self.methods = methods
-        self.attributes = attributes
-        self.inheritance_from = inheritance_from
-        self.inheritance_to = inheritance_to
-        self.composition_from = composition_from
-        self.composition_to = composition_to
-        self.association_from = association_from
-        self.association_to = association_to
-        # Pie chart
-        self.labels = labels
-        self.values = values
-        # State diagram
-        self.states = states
-        self.transitions_from = transitions_from
-        self.transitions_to = transitions_to
-        # ER diagram
-        self.entities = entities
-        self.relationships = relationships
+    def __init__(self, config: MermaidConfig):
+        """Initialize RenderMermaidStep with a MermaidConfig.
+
+        Args:
+            config: MermaidConfig instance containing all diagram parameters
+        """
+        self.config = config
+        # Expose commonly used attributes for convenience
+        self.mermaid_type = config.mermaid_type
+        self.title = config.title
+
+    @classmethod
+    def from_spec(cls, spec: Dict[str, Any]) -> "RenderMermaidStep":
+        """Create RenderMermaidStep from a specification dict.
+
+        This factory method provides backward compatibility with dict-based
+        configuration used by the CADSL transformer and loader.
+
+        Args:
+            spec: Dictionary with mermaid configuration parameters
+
+        Returns:
+            RenderMermaidStep instance
+        """
+        return cls(MermaidConfig.from_spec(spec))
 
     def execute(self, data, ctx=None):
         """Render to Mermaid diagram."""
@@ -3064,21 +3178,22 @@ class RenderMermaidStep:
 
     def _render_flowchart(self, data):
         """Render a flowchart."""
-        lines = [f"flowchart {self.direction}"]
+        fc = self.config.flowchart
+        lines = [f"flowchart {fc.direction}"]
 
         # Collect unique nodes and edges
         nodes = set()
         edges = set()
         for row in data:
-            if self.edges_from and self.edges_to:
-                from_val = row.get(self.edges_from)
-                to_val = row.get(self.edges_to)
+            if fc.edges_from and fc.edges_to:
+                from_val = row.get(fc.edges_from)
+                to_val = row.get(fc.edges_to)
                 if from_val and to_val:
                     nodes.add(from_val)
                     nodes.add(to_val)
                     edges.add((from_val, to_val))
-            elif self.nodes:
-                nodes.add(row.get(self.nodes))
+            elif fc.nodes:
+                nodes.add(row.get(fc.nodes))
 
         # Render edges (nodes are implicit in edges)
         for from_val, to_val in sorted(edges):
@@ -3090,22 +3205,23 @@ class RenderMermaidStep:
 
     def _render_sequence(self, data):
         """Render a sequence diagram."""
+        seq = self.config.sequence
         lines = ["sequenceDiagram"]
 
         # Collect participants
         participants = set()
         messages = []
         for row in data:
-            if self.messages_from and self.messages_to:
-                from_val = row.get(self.messages_from)
-                to_val = row.get(self.messages_to)
-                label = row.get(self.messages_label, "") if self.messages_label else ""
+            if seq.messages_from and seq.messages_to:
+                from_val = row.get(seq.messages_from)
+                to_val = row.get(seq.messages_to)
+                label = row.get(seq.messages_label, "") if seq.messages_label else ""
                 if from_val and to_val:
                     participants.add(from_val)
                     participants.add(to_val)
                     messages.append((from_val, to_val, label))
-            elif self.participants:
-                participants.add(row.get(self.participants))
+            elif seq.participants:
+                participants.add(row.get(seq.participants))
 
         # Render participants
         for p in sorted(participants):
@@ -3123,6 +3239,7 @@ class RenderMermaidStep:
 
     def _render_class(self, data):
         """Render a class diagram with methods, attributes, and relationships."""
+        cd = self.config.class_diagram
         lines = ["classDiagram"]
 
         # Aggregate class data
@@ -3132,7 +3249,7 @@ class RenderMermaidStep:
         association_rels = set()  # from --> to (uses/references)
 
         for row in data:
-            class_name = row.get(self.classes) if self.classes else row.get("class_name") or row.get("name")
+            class_name = row.get(cd.classes) if cd.classes else row.get("class_name") or row.get("name")
             if not class_name:
                 continue
 
@@ -3140,21 +3257,21 @@ class RenderMermaidStep:
                 class_info[class_name] = {"methods": set(), "attributes": set()}
 
             # Collect methods
-            if self.methods:
-                method = row.get(self.methods)
+            if cd.methods:
+                method = row.get(cd.methods)
                 if method:
                     class_info[class_name]["methods"].add(method)
 
             # Collect attributes
-            if self.attributes:
-                attr = row.get(self.attributes)
+            if cd.attributes:
+                attr = row.get(cd.attributes)
                 if attr:
                     class_info[class_name]["attributes"].add(attr)
 
             # Collect inheritance
-            if self.inheritance_from and self.inheritance_to:
-                parent = row.get(self.inheritance_from)
-                child = row.get(self.inheritance_to)
+            if cd.inheritance_from and cd.inheritance_to:
+                parent = row.get(cd.inheritance_from)
+                child = row.get(cd.inheritance_to)
                 if parent and child:
                     inheritance_rels.add((parent, child))
             elif row.get("parent_name") or row.get("inherits_from"):
@@ -3163,9 +3280,9 @@ class RenderMermaidStep:
                     inheritance_rels.add((parent, class_name))
 
             # Collect composition (owner *-- owned)
-            if self.composition_from and self.composition_to:
-                owner = row.get(self.composition_from)
-                owned = row.get(self.composition_to)
+            if cd.composition_from and cd.composition_to:
+                owner = row.get(cd.composition_from)
+                owned = row.get(cd.composition_to)
                 if owner and owned:
                     composition_rels.add((owner, owned))
             elif row.get("composition_from") and row.get("composition_to"):
@@ -3175,9 +3292,9 @@ class RenderMermaidStep:
                     composition_rels.add((owner, owned))
 
             # Collect associations (from --> to)
-            if self.association_from and self.association_to:
-                from_cls = row.get(self.association_from)
-                to_cls = row.get(self.association_to)
+            if cd.association_from and cd.association_to:
+                from_cls = row.get(cd.association_from)
+                to_cls = row.get(cd.association_to)
                 if from_cls and to_cls:
                     association_rels.add((from_cls, to_cls))
             elif row.get("assoc_from") and row.get("assoc_to"):
@@ -3241,13 +3358,14 @@ class RenderMermaidStep:
 
     def _render_pie(self, data):
         """Render a pie chart."""
+        pie = self.config.pie_chart
         lines = ["pie showData"]
         if self.title:
             lines[0] = f'pie showData title {self.title}'
 
         for row in data:
-            label = row.get(self.labels) if self.labels else row.get("label") or row.get("name")
-            value = row.get(self.values) if self.values else row.get("value") or row.get("count")
+            label = row.get(pie.labels) if pie.labels else row.get("label") or row.get("name")
+            value = row.get(pie.values) if pie.values else row.get("value") or row.get("count")
             if label and value:
                 lines.append(f'    "{label}" : {value}')
 
@@ -3255,20 +3373,21 @@ class RenderMermaidStep:
 
     def _render_state(self, data):
         """Render a state diagram."""
+        sd = self.config.state_diagram
         lines = ["stateDiagram-v2"]
 
         transitions = set()
         states = set()
 
         for row in data:
-            if self.states:
-                state = row.get(self.states)
+            if sd.states:
+                state = row.get(sd.states)
                 if state:
                     states.add(state)
 
-            if self.transitions_from and self.transitions_to:
-                from_state = row.get(self.transitions_from)
-                to_state = row.get(self.transitions_to)
+            if sd.transitions_from and sd.transitions_to:
+                from_state = row.get(sd.transitions_from)
+                to_state = row.get(sd.transitions_to)
                 if from_state and to_state:
                     transitions.add((from_state, to_state))
                     states.add(from_state)
@@ -3281,10 +3400,11 @@ class RenderMermaidStep:
 
     def _render_er(self, data):
         """Render an ER diagram."""
+        er = self.config.er_diagram
         lines = ["erDiagram"]
 
         for row in data:
-            entity = row.get(self.entities) if self.entities else row.get("entity")
+            entity = row.get(er.entities) if er.entities else row.get("entity")
             if entity:
                 lines.append(f"    {entity}")
 

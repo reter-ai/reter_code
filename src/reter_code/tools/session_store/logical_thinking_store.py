@@ -9,10 +9,11 @@ UPDATED: Now uses UnifiedStore as backend for single database consolidation.
 import json
 import sqlite3
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
 
 from ..unified.store import UnifiedStore
+from ..dataclasses import ThoughtStoreData, LogicData, ReasoningMeta, BranchingInfo
 
 
 class LogicalThinkingStore:
@@ -215,6 +216,53 @@ class LogicalThinkingStore:
     def add_thought(
         self,
         session_id: str,
+        data: ThoughtStoreData,
+    ) -> str:
+        """
+        Add a thought to a session.
+
+        Args:
+            session_id: Session UUID
+            data: ThoughtStoreData containing all thought parameters
+
+        Returns:
+            thought_id: UUID of the created thought
+
+        Example:
+            # Using structured data
+            data = ThoughtStoreData(
+                thought="Analysis complete",
+                thought_number=1,
+                total_thoughts=3,
+                next_thought_needed=True,
+                logic=LogicData(query_results={"count": 10}),
+                reasoning=ReasoningMeta(confidence=0.95),
+            )
+            thought_id = store.add_thought(session_id, data)
+
+            # Using from_params for backward compatibility
+            data = ThoughtStoreData.from_params(
+                thought="Analysis",
+                thought_number=1,
+                total_thoughts=3,
+                next_thought_needed=True,
+                confidence=0.9,
+            )
+            thought_id = store.add_thought(session_id, data)
+        """
+        thought_id = self._store.add_item(
+            session_id=session_id,
+            item_type="thought",
+            content=data.thought,
+            status="completed",
+            metadata=data.to_metadata()
+        )
+
+        return thought_id
+
+    def add_thought_from_params(
+        self,
+        session_id: str,
         thought: str,
         thought_number: int,
         total_thoughts: int,
@@ -234,40 +282,35 @@ class LogicalThinkingStore:
         needs_more_thoughts: bool = False
     ) -> str:
         """
-        Add a thought to a session.
+        Add a thought using individual parameters (backward compatibility).
+
+        This method preserves the original 19-parameter signature for
+        backward compatibility. New code should use add_thought() with
+        ThoughtStoreData instead.
 
         Returns:
             thought_id: UUID of the created thought
         """
-        # Store as item with type="thought" and metadata
-        metadata = {
-            "thought_number": thought_number,
-            "total_thoughts": total_thoughts,
-            "next_thought_needed": next_thought_needed,
-            "thought_type": thought_type,
-            "logic_operation": logic_operation,
-            "query_results": query_results,
-            "inferences": [i.dict() if hasattr(i, 'dict') else i for i in inferences] if inferences else None,
-            "contradictions": contradictions,
-            "confidence": confidence,
-            "justification": justification,
-            "assumptions": assumptions,
-            "is_revision": is_revision,
-            "revises_thought": revises_thought,
-            "branch_from_thought": branch_from_thought,
-            "branch_id": branch_id,
-            "needs_more_thoughts": needs_more_thoughts
-        }
-
-        thought_id = self._store.add_item(
-            session_id=session_id,
-            item_type="thought",
-            content=thought,
-            status="completed",
-            metadata=metadata
+        data = ThoughtStoreData.from_params(
+            thought=thought,
+            thought_number=thought_number,
+            total_thoughts=total_thoughts,
+            next_thought_needed=next_thought_needed,
+            thought_type=thought_type,
+            logic_operation=logic_operation,
+            query_results=query_results,
+            inferences=inferences,
+            contradictions=contradictions,
+            confidence=confidence,
+            justification=justification,
+            assumptions=assumptions,
+            is_revision=is_revision,
+            revises_thought=revises_thought,
+            branch_from_thought=branch_from_thought,
+            branch_id=branch_id,
+            needs_more_thoughts=needs_more_thoughts,
         )
-
-        return thought_id
+        return self.add_thought(session_id, data)
 
     def get_thought(self, thought_id: str) -> Optional[Dict[str, Any]]:
         """

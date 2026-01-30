@@ -455,34 +455,7 @@ def build_pipeline_factory(spec: CADSLToolSpec,
             elif step_type == "render_mermaid":
                 # Render to Mermaid diagram
                 from .transformer import RenderMermaidStep
-                pipeline = pipeline >> RenderMermaidStep(
-                    mermaid_type=step_spec.get("mermaid_type", "flowchart"),
-                    nodes=step_spec.get("nodes"),
-                    edges_from=step_spec.get("edges_from"),
-                    edges_to=step_spec.get("edges_to"),
-                    direction=step_spec.get("direction", "TB"),
-                    title=step_spec.get("title"),
-                    participants=step_spec.get("participants"),
-                    messages_from=step_spec.get("messages_from"),
-                    messages_to=step_spec.get("messages_to"),
-                    messages_label=step_spec.get("messages_label"),
-                    classes=step_spec.get("classes"),
-                    methods=step_spec.get("methods"),
-                    attributes=step_spec.get("attributes"),
-                    inheritance_from=step_spec.get("inheritance_from"),
-                    inheritance_to=step_spec.get("inheritance_to"),
-                    composition_from=step_spec.get("composition_from"),
-                    composition_to=step_spec.get("composition_to"),
-                    association_from=step_spec.get("association_from"),
-                    association_to=step_spec.get("association_to"),
-                    labels=step_spec.get("labels"),
-                    values=step_spec.get("values"),
-                    states=step_spec.get("states"),
-                    transitions_from=step_spec.get("transitions_from"),
-                    transitions_to=step_spec.get("transitions_to"),
-                    entities=step_spec.get("entities"),
-                    relationships=step_spec.get("relationships"),
-                )
+                pipeline = pipeline >> RenderMermaidStep.from_spec(step_spec)
 
             elif step_type == "rag_enrich":
                 # Per-row RAG enrichment step
