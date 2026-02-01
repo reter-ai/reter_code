@@ -19,6 +19,9 @@ class WhenStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, condition, inner_step_spec):
@@ -82,6 +85,9 @@ class UnlessStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, condition, inner_step_spec):
@@ -120,6 +126,9 @@ class BranchStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, condition, then_step_spec, else_step_spec=None):
@@ -164,6 +173,9 @@ class CatchStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, default_fn):

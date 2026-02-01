@@ -968,6 +968,46 @@ TYPE vs CONCEPT:
 - `?x concept ?t` - Returns ONLY asserted type - ONE row per entity (e.g., "method")
 - CRITICAL: When using `concept` with FILTER in UNION queries, include the variable in SELECT!
 
+FILE_SCAN SOURCE (grep-like file search):
+Use `file_scan` for file-level analysis, text search, and stats from loaded sources.
+
+Basic syntax:
+```
+file_scan { glob: "*.py" }
+```
+
+Full parameters:
+- `glob: "pattern"` or `glob: {param}` - file pattern (e.g., "*.py", "**/*.ts")
+- `exclude: ["pattern1", "pattern2"]` - patterns to exclude
+- `contains: "regex"` - grep-like search for text/regex in files
+- `not_contains: "regex"` - exclude files containing text
+- `case_sensitive: true/false` - case sensitivity for search (default: false)
+- `include_matches: true` - include matching lines in output
+- `context_lines: N` - lines of context around matches
+- `max_matches_per_file: N` - limit matches per file
+- `include_stats: true` - include line_count, file_size, last_modified
+
+Returns:
+- `file` - normalized file path (always)
+- `line_count`, `file_size`, `last_modified` - when include_stats: true
+- `match_count` - when contains is used
+- `matches` - array of {line_number, content, context_before, context_after} when include_matches: true
+
+Example - find TODOs with context:
+```
+file_scan { glob: "*.py", contains: "TODO|FIXME", include_matches: true, context_lines: 2 }
+| filter { match_count > 0 }
+| emit { file, matches }
+```
+
+Example - large files with stats:
+```
+file_scan { glob: "*.py", include_stats: true }
+| filter { line_count > 500 }
+| join { on: file, right: reql { SELECT ?file (COUNT(?c) AS ?class_count) WHERE { ?c type class . ?c is-in-file ?file } GROUP BY ?file } }
+| emit { file, line_count, class_count }
+```
+
 RECOMMENDED: Call get_example() to see the EXACT syntax used in working examples.
 
 When ready, return ONLY the CADSL query (no explanation).

@@ -1,0 +1,36 @@
+# find_imports - Search for specific import statements
+#
+# Find files that import specific modules or packages.
+# Useful for dependency analysis and migration planning.
+
+query find_imports() {
+    """
+    Find files importing specific modules.
+
+    Useful for:
+    - Dependency analysis
+    - Migration planning (find all usages of deprecated library)
+    - Understanding module coupling
+
+    Parameters:
+        module: Module/package name to search for (required)
+        glob: File pattern to search (default: *.py)
+        limit: Maximum results (default: 100)
+    """
+
+    param module: str = "typing";
+    param glob: str = "*.py";
+    param limit: int = 100;
+
+    file_scan {
+        glob: {glob},
+        contains: {module},
+        include_matches: true,
+        context_lines: 0,
+        case_sensitive: true
+    }
+    | filter { match_count > 0 }
+    | order_by { -match_count }
+    | limit { {limit} }
+    | emit { file, match_count, matches }
+}

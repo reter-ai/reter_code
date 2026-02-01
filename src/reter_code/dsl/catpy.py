@@ -42,6 +42,8 @@ class Functor(ABC, Generic[T]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a type-class.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     @abstractmethod
@@ -70,6 +72,8 @@ class Applicative(Functor[T], ABC):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a type-class.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     @classmethod
@@ -105,6 +109,8 @@ class Monad(Applicative[T], ABC):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a type-class.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     @abstractmethod
@@ -142,6 +148,8 @@ class Maybe(Monad[T], ABC):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a monad.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     @classmethod
@@ -173,6 +181,8 @@ class Just(Maybe[T]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a monad.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     value: T
 
@@ -200,6 +210,8 @@ class Nothing(Maybe[Any]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a monad.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     def bind(self, f: Callable[[Any], Maybe[U]]) -> Maybe[U]:
         return self  # type: ignore[return-value]
@@ -228,6 +240,8 @@ class Result(Monad[T], ABC, Generic[T, E]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a monad.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     @classmethod
@@ -265,6 +279,8 @@ class Ok(Result[T, E]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a monad.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     value: T
 
@@ -291,6 +307,8 @@ class Err(Result[Any, E]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a monad.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     error: E
 
@@ -319,6 +337,8 @@ class ListF(Monad[T]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a monad.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     items: Tuple[T, ...]
 

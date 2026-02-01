@@ -22,6 +22,11 @@ class RAGCollectorMixin:
 
     Requires:
         - self._content_extractor: ContentExtractor instance
+
+    ::: This is-in-layer Service-Layer.
+    ::: This is a extractor.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def _collect_python_entities(

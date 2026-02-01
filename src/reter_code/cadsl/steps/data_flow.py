@@ -20,6 +20,9 @@ class CollectStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, by: str, fields: dict):
@@ -93,6 +96,9 @@ class NestStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, parent: str, child: str, root=None, max_depth=10, children_key="children"):

@@ -46,6 +46,9 @@ class RegistryToolSpec:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a adapter.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
+    ::: This is serializable.
     """
     name: str
     type: str  # "query", "detector", "diagram"
@@ -78,7 +81,9 @@ class CADSLToolModule:
     so changes to .cadsl files take effect immediately.
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
-    ::: This is a module.
+    ::: This is a loader.
+    ::: This is-in-process Main-Process.
+    ::: This is stateful.
     """
 
     def __init__(self, name: str, tools_path: Path):

@@ -72,6 +72,8 @@ class FlushingStreamHandler(logging.StreamHandler):
 
     ::: This is-in-layer Infrastructure-Layer.
     ::: This is a handler.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     def emit(self, record):
         super().emit(record)

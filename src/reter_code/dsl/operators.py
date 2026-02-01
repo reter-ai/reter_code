@@ -31,6 +31,8 @@ class ConditionalStep(Step[T, T]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     inner_step: Step[T, T]
     condition: Callable[[], bool]
@@ -124,6 +126,8 @@ class BranchStep(Step[T, U]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     condition: Callable[[T], bool]
     then_step: Step[T, U]
@@ -188,6 +192,8 @@ class MergeStep(Step[Any, List]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     pipelines: List[Pipeline]
     merge_fn: Callable[[List[Any]], Any]
@@ -241,6 +247,8 @@ class IdentityStep(Step[T, T]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def execute(self, data: T) -> PipelineResult[T]:
@@ -268,6 +276,8 @@ class TapStep(Step[T, T]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     fn: Callable[[T], None]
 
@@ -309,6 +319,8 @@ class CatchStep(Step[T, T]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     handler: Callable[[Err], T]
 
@@ -353,6 +365,8 @@ class ParallelStep(Step[T, List]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     steps: List[Step]
 
@@ -435,6 +449,8 @@ def compose(*steps: Step) -> Step:
 
         ::: This is-in-layer Domain-Specific-Language-Layer.
         ::: This is a step.
+        ::: This is-in-process Main-Process.
+        ::: This is stateless.
         """
         inner_steps: List[Step]
 

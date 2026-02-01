@@ -1,0 +1,38 @@
+# find_todos - Find TODO, FIXME, HACK, and XXX comments in codebase
+#
+# Searches for common task markers left in code that indicate
+# incomplete work, workarounds, or areas needing attention.
+
+query find_todos() {
+    """
+    Find TODO, FIXME, HACK, and XXX comments with surrounding context.
+
+    Useful for:
+    - Sprint planning (what's left to do)
+    - Code review (finding shortcuts)
+    - Technical debt assessment
+
+    Parameters:
+        pattern: Regex pattern to search (default: TODO|FIXME|HACK|XXX)
+        glob: File pattern to search (default: *)
+        context: Lines of context around matches (default: 1)
+        limit: Maximum results (default: 100)
+    """
+
+    param pattern: str = "TODO|FIXME|HACK|XXX";
+    param glob: str = "*";
+    param context: int = 1;
+    param limit: int = 100;
+
+    file_scan {
+        glob: {glob},
+        contains: {pattern},
+        include_matches: true,
+        context_lines: {context},
+        case_sensitive: false
+    }
+    | filter { match_count > 0 }
+    | order_by { -match_count }
+    | limit { {limit} }
+    | emit { file, match_count, matches }
+}

@@ -107,6 +107,8 @@ class LanguageSupport:
 
     ::: This is-in-layer Utility-Layer.
     ::: This is a utility.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
 
     This enables language-independent code analysis tools by abstracting
     the ontology prefix (oo:, py:, js:) from the query logic.

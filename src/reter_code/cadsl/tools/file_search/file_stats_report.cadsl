@@ -1,0 +1,71 @@
+# file_stats_report - Generate file statistics report
+#
+# Provides overview of codebase files with size metrics,
+# combined with code entity counts from RETER.
+
+query file_stats_report() {
+    """
+    Generate a file statistics report with code metrics.
+
+    Shows for each file:
+    - Line count and file size
+    - Number of classes and functions
+    - Last modified timestamp
+
+    Useful for:
+    - Codebase overview
+    - Identifying large/complex files
+    - Finding stale files
+
+    Parameters:
+        glob: File pattern (default: *)
+        min_lines: Minimum lines to include (default: 0)
+        limit: Maximum results (default: 100)
+    """
+
+    param glob: str = "*";
+    param min_lines: int = 0;
+    param limit: int = 100;
+
+    file_scan {
+        glob: {glob},
+        include_stats: true
+    }
+    | unique { file }
+    | filter { line_count >= {min_lines} }
+    | join {
+        on: file,
+        right: reql {
+            SELECT ?file (COUNT(DISTINCT ?c) AS ?class_count)
+            WHERE {
+                ?c type class .
+                ?c is-in-file ?file
+            }
+            GROUP BY ?file
+        },
+        type: left
+    }
+    | join {
+        on: file,
+        right: reql {
+            SELECT ?file (COUNT(?f) AS ?function_count)
+            WHERE {
+                ?f type function .
+                ?f is-in-file ?file
+            }
+            GROUP BY ?file
+        },
+        type: left
+    }
+    | map {
+        file: file,
+        line_count: line_count,
+        file_size: file_size,
+        last_modified: last_modified,
+        classes: class_count ?? 0,
+        functions: function_count ?? 0
+    }
+    | order_by { -line_count }
+    | limit { {limit} }
+    | emit { results }
+}

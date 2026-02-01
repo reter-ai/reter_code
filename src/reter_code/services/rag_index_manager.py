@@ -70,7 +70,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
     ::: This is-in-process Main-Process.
     ::: This is stateful.
     ::: This holds-expensive-resource "faiss-index".
-    ::: This has-startup-order 3.
+    ::: This has-startup-order = 3.
     ::: This has-singleton-scope.
     """
 

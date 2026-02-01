@@ -58,6 +58,33 @@ query sync_annotations_v1(
             FILTER NOT EXISTS { ?class type loader }
             FILTER NOT EXISTS { ?class type extractor }
             FILTER NOT EXISTS { ?class type provider }
+            FILTER NOT EXISTS { ?class type wrapper }
+            FILTER NOT EXISTS { ?class type data-transfer-object }
+            FILTER NOT EXISTS { ?class type data-transformer }
+            FILTER NOT EXISTS { ?class type public-application-programming-interface }
+            FILTER NOT EXISTS { ?class type internal-application-programming-interface }
+            FILTER NOT EXISTS { ?class type step }
+            FILTER NOT EXISTS { ?class type pipeline-step }
+            FILTER NOT EXISTS { ?class type result-set }
+            FILTER NOT EXISTS { ?class type query-executor }
+            FILTER NOT EXISTS { ?class type coordinator }
+            FILTER NOT EXISTS { ?class type client }
+            FILTER NOT EXISTS { ?class type algorithm }
+            FILTER NOT EXISTS { ?class type data-structure }
+            FILTER NOT EXISTS { ?class type monad }
+            FILTER NOT EXISTS { ?class type functor }
+            FILTER NOT EXISTS { ?class type type-class }
+            FILTER NOT EXISTS { ?class type stateless }
+            FILTER NOT EXISTS { ?class type stateful }
+            FILTER NOT EXISTS { ?class type serializable }
+            FILTER NOT EXISTS { ?class type not-serializable }
+            FILTER NOT EXISTS { ?class type base-class }
+            FILTER NOT EXISTS { ?class type abstract-class }
+            FILTER NOT EXISTS { ?class type source }
+            FILTER NOT EXISTS { ?class type detector }
+            FILTER NOT EXISTS { ?class type diagram }
+            FILTER NOT EXISTS { ?class type error }
+            FILTER NOT EXISTS { ?class type exception }
             # Exclude test files
             FILTER (!CONTAINS(?file, "test"))
         }

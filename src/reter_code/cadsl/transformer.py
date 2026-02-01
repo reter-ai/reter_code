@@ -377,6 +377,8 @@ class CADSLTransformer:
 
                 if data == "fs_glob":
                     params["glob"] = self._extract_fs_string(child)
+                elif data == "fs_glob_param":
+                    params["glob"] = self._extract_fs_param_ref(child)
                 elif data == "fs_exclude":
                     params["exclude"] = self._extract_fs_string_list(child)
                 elif data == "fs_contains":
@@ -2138,6 +2140,8 @@ class RenderTableStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, format="markdown", columns=None, title=None, totals=False,
@@ -2303,6 +2307,8 @@ class RenderChartStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, chart_type="bar", x=None, y=None, series=None, title=None,
@@ -2592,6 +2598,8 @@ class RenderMermaidStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, config: MermaidConfig):
@@ -2893,6 +2901,8 @@ class PivotStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, rows, cols, value, aggregate="sum"):
@@ -2969,6 +2979,8 @@ class ComputeStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, computations):
@@ -3009,6 +3021,8 @@ class JoinStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, left_key, right_source_spec, right_key, join_type="inner"):
@@ -3173,6 +3187,8 @@ class MergeSource:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a source.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, source_specs):
@@ -3309,6 +3325,8 @@ class CrossJoinStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, unique_pairs=True, exclude_self=True, left_prefix="left_", right_prefix="right_"):
@@ -3389,6 +3407,8 @@ class SetSimilarityStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, left_col, right_col, sim_type="jaccard", output="similarity",
@@ -3469,6 +3489,8 @@ class StringMatchStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, left_col, right_col, match_type="common_affix", min_length=3,
@@ -3591,6 +3613,8 @@ class RagEnrichStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, query_template, top_k=1, threshold=None, mode="best",
@@ -3799,6 +3823,8 @@ class CreateTaskStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, name_template, category="annotation", priority="medium",
@@ -3983,6 +4009,8 @@ class PythonStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, code: str):

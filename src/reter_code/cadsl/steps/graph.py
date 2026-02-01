@@ -22,6 +22,9 @@ class GraphCyclesStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, from_field, to_field):
@@ -94,6 +97,9 @@ class GraphClosureStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, from_field, to_field, max_depth=10):
@@ -160,6 +166,9 @@ class GraphTraverseStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, from_field, to_field, algorithm="bfs", max_depth=10, root=None):
@@ -280,6 +289,9 @@ class ParallelStep:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, step_specs):

@@ -110,6 +110,8 @@ class Context:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a context.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     reter: Any  # RETER instance
     params: Dict[str, Any] = field(default_factory=dict)
@@ -145,6 +147,8 @@ class Source(ABC, Generic[T]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a source.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     @abstractmethod
@@ -163,6 +167,8 @@ class MappedSource(Source[U], Generic[T, U]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a source.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     inner: Source[T]
     transform: Callable[[T], U]
@@ -187,6 +193,8 @@ class REQLSource(Source[pa.Table]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a source.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     query: str
 
@@ -221,6 +229,8 @@ class ValueSource(Source[T], Generic[T]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a source.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     value: T
 
@@ -248,6 +258,8 @@ class RAGSearchSource(Source[List[Dict[str, Any]]]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a source.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     query: str
     top_k: int = 10
@@ -285,6 +297,8 @@ class RAGDuplicatesSource(Source[List[Dict[str, Any]]]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a source.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     similarity: float = 0.85
     limit: int = 50
@@ -337,6 +351,8 @@ class RAGClustersSource(Source[List[Dict[str, Any]]]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a source.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     n_clusters: int = 50
     min_size: int = 2
@@ -396,6 +412,8 @@ class FileScanSource(Source[List[Dict[str, Any]]]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a source.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     glob: str = "*"
     exclude: Optional[List[str]] = None
@@ -550,6 +568,8 @@ class Step(ABC, Generic[T, U]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     @abstractmethod
@@ -581,6 +601,8 @@ class ComposedStep(Step[T, V], Generic[T, U, V]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     first: Step[T, U]
     second: Step[U, V]
@@ -598,6 +620,8 @@ class FilterStep(Step[Union[pa.Table, List[T]], Union[pa.Table, List[T]]], Gener
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     predicate: Callable[[T], bool]
     condition: Optional[Callable[[], bool]] = None  # when/unless condition
@@ -652,6 +676,8 @@ class SelectStep(Step[Union[pa.Table, List[Dict]], Union[pa.Table, List[Dict]]])
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     fields: Dict[str, str]  # output_name -> source_name
 
@@ -705,6 +731,8 @@ class OrderByStep(Step[Union[pa.Table, List[Dict]], Union[pa.Table, List[Dict]]]
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     field_name: str
     descending: bool = False
@@ -748,6 +776,8 @@ class LimitStep(Step[Union[pa.Table, List[T]], Union[pa.Table, List[T]]], Generi
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     count: int
 
@@ -763,6 +793,8 @@ class OffsetStep(Step[Union[pa.Table, List[T]], Union[pa.Table, List[T]]], Gener
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     count: int
 
@@ -778,6 +810,8 @@ class MapStep(Step[Union[pa.Table, List[T]], Union[pa.Table, List[U]]], Generic[
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     transform: Callable[[T], U]
 
@@ -803,6 +837,8 @@ class FlatMapStep(Step[Union[pa.Table, List[T]], Union[pa.Table, List[U]]], Gene
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     transform: Callable[[T], List[U]]
 
@@ -830,6 +866,8 @@ class GroupByStep(Step[List[Dict], Dict[str, Any]]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     field_name: Optional[str] = None
     key_fn: Optional[Callable[[Dict], str]] = None
@@ -880,6 +918,8 @@ class AggregateStep(Step[Union[pa.Table, List[Dict]], Dict[str, Any]]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     aggregations: Dict[str, Tuple[str, str]]  # output -> (field, func)
 
@@ -942,6 +982,8 @@ class FlattenStep(Step[List[List[T]], List[T]], Generic[T]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def execute(self, data: List[List[T]], ctx: Optional["Context"] = None) -> PipelineResult[List[T]]:
@@ -957,6 +999,8 @@ class UniqueStep(Step[Union[pa.Table, List[T]], Union[pa.Table, List[T]]], Gener
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     key: Optional[Callable[[T], Any]] = None
     columns: Optional[List[str]] = None  # For Arrow: columns to dedupe on
@@ -1019,6 +1063,8 @@ class TapStep(Step[T, T], Generic[T]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     fn: Callable[[T], Any]
 
@@ -1055,6 +1101,8 @@ class RenderStep(Step[Any, str]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     format: str
     renderer: Callable[[Any, str], Any]
@@ -1331,6 +1379,8 @@ class BoundPipeline(Generic[T, U]):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a monad.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     def __init__(self, source_pipeline: Pipeline[T], continuation: Callable[[T], Pipeline[U]]):
         self.source_pipeline = source_pipeline
@@ -1402,6 +1452,8 @@ class ToolType(Enum):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a value-object.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     QUERY = "query"
     DETECTOR = "detector"
@@ -1414,6 +1466,8 @@ class ParamSpec:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a value-object.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     name: str
     type: type
@@ -1461,6 +1515,8 @@ class ToolSpec:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a value-object.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     name: str
     type: ToolType
@@ -1482,6 +1538,8 @@ class Query:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a tool.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, spec: ToolSpec):
@@ -1501,6 +1559,8 @@ class Detector:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a tool.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, spec: ToolSpec):
@@ -1525,6 +1585,8 @@ class Diagram:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a tool.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
 
     def __init__(self, spec: ToolSpec):

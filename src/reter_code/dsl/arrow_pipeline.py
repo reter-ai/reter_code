@@ -103,6 +103,9 @@ class ArrowSource(ABC):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a source.
+    ::: This is a data-source.
+    ::: This is stateless.
+    ::: This is-in-process Main-Process.
     """
 
     @abstractmethod
@@ -121,6 +124,9 @@ class ArrowREQLSource(ArrowSource):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a source.
+    ::: This is a data-source.
+    ::: This is stateless.
+    ::: This is-in-process Main-Process.
     """
     query: str
 
@@ -152,6 +158,9 @@ class ArrowRAGSource(ArrowSource):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a source.
+    ::: This is a data-source.
+    ::: This is stateless.
+    ::: This is-in-process Main-Process.
     """
     operation: Literal["search", "duplicates", "clusters"]
     params: Dict[str, Any] = field(default_factory=dict)
@@ -232,6 +241,9 @@ class ArrowValueSource(ArrowSource):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a source.
+    ::: This is a data-source.
+    ::: This is stateless.
+    ::: This is-in-process Main-Process.
     """
     value: Union[List[Dict], pa.Table]
 
@@ -245,6 +257,9 @@ class ArrowMergeSource(ArrowSource):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a source.
+    ::: This is a data-source.
+    ::: This is stateless.
+    ::: This is-in-process Main-Process.
     """
     sources: List[ArrowSource]
 
@@ -279,6 +294,9 @@ class ArrowStep(ABC):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is stateless.
+    ::: This is-in-process Main-Process.
     """
 
     @abstractmethod
@@ -293,6 +311,9 @@ class ArrowFilterStep(ArrowStep):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is stateless.
+    ::: This is-in-process Main-Process.
     """
     condition: str  # Expression like "count > 10"
 
@@ -389,6 +410,9 @@ class ArrowSelectStep(ArrowStep):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is stateless.
+    ::: This is-in-process Main-Process.
     """
     fields: Dict[str, str]  # output_name -> source_name
 
@@ -422,6 +446,9 @@ class ArrowOrderByStep(ArrowStep):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is stateless.
+    ::: This is-in-process Main-Process.
     """
     field_name: str
     descending: bool = False
@@ -453,6 +480,9 @@ class ArrowLimitStep(ArrowStep):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is stateless.
+    ::: This is-in-process Main-Process.
     """
     count: int
 
@@ -470,6 +500,9 @@ class ArrowOffsetStep(ArrowStep):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is stateless.
+    ::: This is-in-process Main-Process.
     """
     count: int
 
@@ -483,6 +516,9 @@ class ArrowUniqueStep(ArrowStep):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is stateless.
+    ::: This is-in-process Main-Process.
     """
     columns: Optional[List[str]] = None
 
@@ -521,6 +557,9 @@ class ArrowMapStep(ArrowStep):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is stateless.
+    ::: This is-in-process Main-Process.
     """
     transforms: Dict[str, Any]
 
@@ -581,6 +620,9 @@ class ArrowAggregateStep(ArrowStep):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is stateless.
+    ::: This is-in-process Main-Process.
     """
     aggregations: Dict[str, Tuple[str, str]]  # output -> (field, func)
 
@@ -623,6 +665,9 @@ class ArrowGroupByStep(ArrowStep):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is stateless.
+    ::: This is-in-process Main-Process.
     """
     group_columns: List[str]
     aggregations: List[Tuple[str, str, str]]  # (output_name, source_column, func)
@@ -678,6 +723,9 @@ class ArrowJoinStep(ArrowStep):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is stateless.
+    ::: This is-in-process Main-Process.
     """
     right_source: ArrowSource
     left_keys: List[str]
@@ -735,6 +783,9 @@ class ArrowPythonStep(ArrowStep):
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
+    ::: This is a pipeline-step.
+    ::: This is stateless.
+    ::: This is-in-process Main-Process.
     """
     code: str
 
@@ -785,6 +836,9 @@ class ArrowPipeline:
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a monad.
+    ::: This is a executor.
+    ::: This is stateful.
+    ::: This is-in-process Main-Process.
     """
     _source: ArrowSource
     _steps: List[ArrowStep] = field(default_factory=list)

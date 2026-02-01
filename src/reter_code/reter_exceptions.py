@@ -11,6 +11,8 @@ class ReterError(Exception):
 
     ::: This is-in-layer Utility-Layer.
     ::: This is a exception.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     pass
 
@@ -21,6 +23,8 @@ class ReterFileError(ReterError):
 
     ::: This is-in-layer Utility-Layer.
     ::: This is a exception.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     pass
 
@@ -31,6 +35,8 @@ class ReterFileNotFoundError(ReterFileError):
 
     ::: This is-in-layer Utility-Layer.
     ::: This is a exception.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     pass
 
@@ -41,6 +47,8 @@ class ReterSaveError(ReterFileError):
 
     ::: This is-in-layer Utility-Layer.
     ::: This is a exception.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     pass
 
@@ -51,6 +59,8 @@ class ReterLoadError(ReterFileError):
 
     ::: This is-in-layer Utility-Layer.
     ::: This is a exception.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     pass
 
@@ -61,6 +71,8 @@ class ReterQueryError(ReterError):
 
     ::: This is-in-layer Utility-Layer.
     ::: This is a exception.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     pass
 
@@ -71,6 +83,8 @@ class ReterOntologyError(ReterError):
 
     ::: This is-in-layer Utility-Layer.
     ::: This is a exception.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
     """
     pass
 
@@ -81,6 +95,8 @@ class DefaultInstanceNotInitialised(ReterError):
 
     ::: This is-in-layer Utility-Layer.
     ::: This is a exception.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
 
     This exception is thrown by ReterWrapper and RAGIndexManager when:
     - Server is starting up and background initialization hasn't completed

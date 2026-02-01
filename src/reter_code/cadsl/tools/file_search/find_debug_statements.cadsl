@@ -1,0 +1,35 @@
+# find_debug_statements - Find debug prints and console logs
+#
+# Searches for debugging statements that should be removed before
+# production: print(), console.log(), debugger, etc.
+
+query find_debug_statements() {
+    """
+    Find debug statements that should be removed before production.
+
+    Detects:
+    - Python: print(), pdb, breakpoint()
+    - JavaScript/TypeScript: console.log/warn/error, debugger
+    - C#: Debug.WriteLine, Console.WriteLine
+    - C++: std::cout, printf, std::cerr
+
+    Parameters:
+        glob: File pattern to search (default: *)
+        limit: Maximum results (default: 50)
+    """
+
+    param glob: str = "*";
+    param limit: int = 50;
+
+    file_scan {
+        glob: {glob},
+        contains: "print[(]|console[.]log|console[.]warn|console[.]error|debugger|breakpoint[(]|pdb[.]|Debug[.]Write|std::cout|std::cerr|printf[(]",
+        include_matches: true,
+        context_lines: 0,
+        case_sensitive: true
+    }
+    | filter { match_count > 0 }
+    | order_by { -match_count }
+    | limit { {limit} }
+    | emit { file, match_count, matches }
+}

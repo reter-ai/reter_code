@@ -115,6 +115,7 @@ file_scan_source: "file_scan" "{" file_scan_spec "}"
 file_scan_spec: file_scan_param ("," file_scan_param)*
 
 file_scan_param: "glob" ":" STRING                    -> fs_glob
+               | "glob" ":" param_ref                 -> fs_glob_param
                | "exclude" ":" fs_string_list         -> fs_exclude
                | "contains" ":" STRING                -> fs_contains
                | "contains" ":" param_ref             -> fs_contains_param

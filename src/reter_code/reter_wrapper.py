@@ -93,7 +93,7 @@ class ReterWrapper(ReterLoaderMixin):
     ::: This is-in-process Main-Process.
     ::: This is stateful.
     ::: This holds-expensive-resource "rete-network".
-    ::: This has-startup-order 1.
+    ::: This has-startup-order = 1.
     ::: This is not-serializable.
     ::: This has-singleton-scope.
     """
@@ -717,7 +717,7 @@ class ReterWrapper(ReterLoaderMixin):
             Exception: If query execution fails
 
         ::: This is-exposed-via-ipc.
-        ::: This has-ipc-timeout 300000.
+        ::: This has-ipc-timeout = 300000.
         ::: This communicates-sync.
         """
         check_initialization()

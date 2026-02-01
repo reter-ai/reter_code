@@ -24,6 +24,8 @@ class RAGAnalysisMixin:
 
     ::: This is-in-layer Service-Layer.
     ::: This is-part-of-component RAG-Index.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
 
     These methods require:
     - self._initialized: bool

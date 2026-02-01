@@ -203,6 +203,7 @@ REQL_SYSTEM_PROMPT_TEMPLATE = """You are a REQL query generator. Generate valid 
 
 **Testing Tools (MANDATORY):**
 - `run_reql` - Test your REQL query before final output
+- `run_file_scan` - Test file_scan source parameters (glob, contains, exclude, include_matches, context_lines, limit)
 
 **Verification Tools:**
 - `Read` - Read source files to verify results are valid. IMPORTANT: Use paths relative to PROJECT ROOT above.
@@ -263,6 +264,7 @@ CADSL_SYSTEM_PROMPT_TEMPLATE = """You are a CADSL query generator. Your ONLY job
 **Testing Tools (MANDATORY):**
 - `run_cadsl` - Test full CADSL pipelines before final output. **ALWAYS USE THIS!**
 - `run_reql` - Test REQL queries to verify data exists
+- `run_file_scan` - Test file_scan source parameters (glob, contains, exclude, include_matches, context_lines, limit)
 - `run_rag_search` - Test semantic search
 - `run_rag_duplicates` - Test duplicate detection
 - `run_rag_clusters` - Test clustering
@@ -734,9 +736,104 @@ def _create_query_tools(reter_instance=None, rag_manager=None):
             debug_log.debug(f"run_cadsl error: {e}", exc_info=True)
             return {"content": [{"type": "text", "text": error_msg}], "is_error": True}
 
+    @tool("run_file_scan", "Test file_scan CADSL source block. Scans RETER-tracked sources with glob/content patterns. Use to verify file_scan parameters before using in CADSL pipelines.", {"glob": str, "contains": str, "exclude": str, "include_matches": bool, "context_lines": int, "limit": int})
+    async def run_file_scan_tool(args):
+        """Execute a file scan over RETER sources and return results."""
+        debug_log.debug(f"run_file_scan called with args: {args}")
+
+        if reter_instance is None:
+            debug_log.debug("run_file_scan: RETER instance not available")
+            return {"content": [{"type": "text", "text": "Error: RETER instance not available"}], "is_error": True}
+
+        # Extract parameters
+        glob_pattern = args.get("glob", "*")
+        contains = args.get("contains") or None
+        exclude_str = args.get("exclude", "")
+        exclude = [p.strip() for p in exclude_str.split(",")] if exclude_str else None
+        include_matches = args.get("include_matches", False)
+        context_lines = args.get("context_lines", 0)
+        limit = args.get("limit", 50)
+
+        try:
+            # Import and create FileScanSource
+            from ..dsl.core import FileScanSource, Context as PipelineContext
+            from ..dsl.catpy import Ok, Err
+
+            debug_log.debug(f"run_file_scan: glob={glob_pattern}, contains={contains}, exclude={exclude}")
+
+            # Create the source
+            source = FileScanSource(
+                glob=glob_pattern,
+                exclude=exclude,
+                contains=contains,
+                case_sensitive=False,  # Case-insensitive by default for usability
+                include_matches=include_matches,
+                context_lines=context_lines,
+                include_stats=True
+            )
+
+            # Build context and execute
+            pipeline_ctx = PipelineContext(reter=reter_instance, params={})
+            result = source.execute(pipeline_ctx)
+
+            # Handle Result monad
+            if isinstance(result, Err):
+                error_msg = f"File scan error: {result.value}"
+                debug_log.debug(f"run_file_scan error: {error_msg}")
+                return {"content": [{"type": "text", "text": error_msg}], "is_error": True}
+
+            if isinstance(result, Ok):
+                files = result.value
+            else:
+                files = result
+
+            debug_log.debug(f"run_file_scan result: {len(files)} files")
+
+            # Build output
+            total_files = len(files)
+            files = files[:limit]
+
+            content = f"File scan completed. {total_files} files matched.\n\n"
+
+            if contains:
+                content += f"Pattern: '{contains}'\n"
+            content += f"Glob: '{glob_pattern}'\n\n"
+
+            content += f"Showing {len(files)} of {total_files} files:\n\n"
+
+            for i, f in enumerate(files):
+                file_path = f.get("file", "?")
+                line_count = f.get("line_count", "?")
+                match_count = f.get("match_count", 0)
+
+                if contains:
+                    content += f"{i+1}. {file_path} ({line_count} lines, {match_count} matches)\n"
+                else:
+                    content += f"{i+1}. {file_path} ({line_count} lines)\n"
+
+                # Show matches if requested
+                if include_matches and "matches" in f:
+                    for m in f["matches"][:3]:  # Show first 3 matches
+                        line_num = m.get("line_number", "?")
+                        line_content = m.get("content", "").strip()[:80]
+                        content += f"   L{line_num}: {line_content}\n"
+                    if len(f["matches"]) > 3:
+                        content += f"   ... and {len(f['matches']) - 3} more matches\n"
+
+            if total_files > limit:
+                content += f"\n... and {total_files - limit} more files"
+
+            return {"content": [{"type": "text", "text": content}]}
+
+        except Exception as e:
+            error_msg = f"File scan error: {str(e)}"
+            debug_log.debug(f"run_file_scan error: {e}", exc_info=True)
+            return {"content": [{"type": "text", "text": error_msg}], "is_error": True}
+
     tools = [get_grammar_tool, list_examples_tool, search_examples_tool, get_example_tool]
     if reter_instance is not None:
         tools.append(run_reql_tool)
+        tools.append(run_file_scan_tool)
     if rag_manager is not None:
         tools.append(run_rag_search_tool)
         tools.append(run_rag_duplicates_tool)
@@ -768,6 +865,7 @@ def _build_agent_options(system_prompt: str, max_turns: int, reter_instance, rag
     ]
     if reter_instance is not None:
         base_tools.append("mcp__query_helpers__run_reql")
+        base_tools.append("mcp__query_helpers__run_file_scan")
     if rag_manager is not None:
         base_tools.append("mcp__query_helpers__run_rag_search")
         base_tools.append("mcp__query_helpers__run_rag_duplicates")

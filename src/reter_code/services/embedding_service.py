@@ -76,7 +76,7 @@ class EmbeddingService:
     ::: This is-in-process Main-Process.
     ::: This is stateful.
     ::: This holds-expensive-resource "embedding-model".
-    ::: This has-startup-order 2.
+    ::: This has-startup-order = 2.
     ::: This has-singleton-scope.
     """
 
@@ -589,6 +589,8 @@ class LightweightEmbeddingService(EmbeddingService):
 
     ::: This is-in-layer Service-Layer.
     ::: This is a service.
+    ::: This is-in-process Main-Process.
+    ::: This is stateful.
 
     Uses hash-based embeddings that maintain some semantic properties
     (same text = same embedding) but are NOT suitable for production.

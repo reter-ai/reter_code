@@ -31,6 +31,8 @@ class StderrSuppressor:
 
     ::: This is-in-layer Utility-Layer.
     ::: This is a utility.
+    ::: This is-in-process Main-Process.
+    ::: This is stateful.
     """
 
     def __init__(self):

@@ -22,6 +22,9 @@ class LogicalThinkingStore:
 
     ::: This is-in-layer Service-Layer.
     ::: This is a repository.
+    ::: This is-in-process Main-Process.
+    ::: This is stateful.
+    ::: This holds-expensive-resource "sqlite-database".
 
     Features:
     - Session persistence per RETER instance
