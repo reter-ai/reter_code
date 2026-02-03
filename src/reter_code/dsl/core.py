@@ -429,8 +429,17 @@ class FileScanSource(Source[List[Dict[str, Any]]]):
         """Scan RETER sources for matching files."""
         import re
         import fnmatch
-        from pathlib import Path
+        from pathlib import Path, PurePosixPath
         from datetime import datetime
+
+        def matches_glob(path: str, pattern: str) -> bool:
+            """Match path against glob pattern, supporting ** for recursive matching."""
+            # PurePosixPath.match() properly handles ** patterns
+            # For patterns without **, use fnmatch for performance
+            if '**' in pattern:
+                return PurePosixPath(path).match(pattern)
+            else:
+                return fnmatch.fnmatch(path, pattern)
 
         try:
             # Get RETER instance
@@ -453,14 +462,33 @@ class FileScanSource(Source[List[Dict[str, Any]]]):
             contains_re = re.compile(self.contains, flags) if self.contains else None
             not_contains_re = re.compile(self.not_contains, flags) if self.not_contains else None
 
-            # Get base directory from RETER or use current directory
-            base_dir = getattr(reter, 'base_directory', None)
+            # Get base directory - same pattern as logging_config.py
+            # Priority: 1. RETER_PROJECT_ROOT env var, 2. reter.base_directory, 3. Path.cwd()
+            import os
+            base_dir = os.environ.get('RETER_PROJECT_ROOT')
+            if base_dir is None:
+                base_dir = getattr(reter, 'base_directory', None)
+            if base_dir is None:
+                base_dir = getattr(reter, 'working_directory', None)
             if base_dir is None:
                 base_dir = Path.cwd()
             else:
                 base_dir = Path(base_dir)
 
             results = []
+
+            # Debug: track why files are filtered
+            debug_stats = {
+                "total_sources": len(sources),
+                "glob_filtered": 0,
+                "excluded": 0,
+                "not_found": 0,
+                "content_filtered": 0,
+                "matched": 0,
+                "base_dir": str(base_dir),
+                "glob_pattern": self.glob,
+                "sample_sources": sources[:3] if sources else []
+            }
 
             for source_id in sources:
                 # Parse source ID: "hash|relative_path"
@@ -472,18 +500,20 @@ class FileScanSource(Source[List[Dict[str, Any]]]):
                 # Normalize path to forward slashes (matches REQL is-in-file format)
                 normalized_path = rel_path.replace('\\', '/')
 
-                # Apply glob filter
-                if not fnmatch.fnmatch(normalized_path, self.glob):
+                # Apply glob filter using helper that supports **
+                if not matches_glob(normalized_path, self.glob):
+                    debug_stats["glob_filtered"] += 1
                     continue
 
                 # Apply exclusion filters
                 if self.exclude:
                     excluded = False
                     for pattern in self.exclude:
-                        if fnmatch.fnmatch(normalized_path, pattern):
+                        if matches_glob(normalized_path, pattern):
                             excluded = True
                             break
                     if excluded:
+                        debug_stats["excluded"] += 1
                         continue
 
                 # Try to read the file for content filtering and stats
@@ -492,6 +522,7 @@ class FileScanSource(Source[List[Dict[str, Any]]]):
                     # Try with original path
                     abs_path = base_dir / rel_path
                     if not abs_path.exists():
+                        debug_stats["not_found"] += 1
                         continue
 
                 try:
@@ -500,11 +531,15 @@ class FileScanSource(Source[List[Dict[str, Any]]]):
 
                     # Apply not_contains filter
                     if not_contains_re and not_contains_re.search(content):
+                        debug_stats["content_filtered"] += 1
                         continue
 
                     # Apply contains filter
                     if contains_re and not contains_re.search(content):
+                        debug_stats["content_filtered"] += 1
                         continue
+
+                    debug_stats["matched"] += 1
 
                     # Build result
                     result = {
@@ -543,7 +578,16 @@ class FileScanSource(Source[List[Dict[str, Any]]]):
 
                 except (IOError, UnicodeDecodeError, PermissionError):
                     # Skip files that can't be read
+                    debug_stats["not_found"] += 1
                     continue
+
+            # Return results with debug stats if no matches found
+            if not results:
+                return pipeline_ok({
+                    "files": [],
+                    "count": 0,
+                    "debug": debug_stats
+                })
 
             return pipeline_ok(results)
 
