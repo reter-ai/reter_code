@@ -142,9 +142,63 @@ The MCP client automatically discovers the server via `.reter_code/server.json`.
 
 ---
 
-## Environment Variables
+## Configuration
 
-### Server
+### reter_code.json
+
+Place a `reter_code.json` in your project root to configure the server. All settings are optional — defaults are used for anything not specified. Environment variables always take precedence over config file values.
+
+```json
+{
+    "project_include": "**/*.*",
+    "project_exclude": "**/__pycache__/*,**/node_modules/*",
+    "tools_available": "full",
+    "rag_embedding_model": "flax-sentence-embeddings/st-codesearch-distilroberta-base",
+    "rag_markdown_include": "**/*.md",
+    "rag_markdown_exclude": "node_modules/**"
+}
+```
+
+#### Project Settings
+
+| Key | Env Variable | Description | Default |
+|-----|-------------|-------------|---------|
+| `project_include` | `RETER_PROJECT_INCLUDE` | Glob patterns for files to analyze | `**/*.*` |
+| `project_exclude` | `RETER_PROJECT_EXCLUDE` | Glob patterns for files to skip | `**/__pycache__/*` |
+| `tools_available` | `TOOLS_AVAILABLE` | Tool set: `"default"` or `"full"` | `"default"` |
+
+#### RAG Settings
+
+| Key | Env Variable | Description | Default |
+|-----|-------------|-------------|---------|
+| `rag_enabled` | `RETER_RAG_ENABLED` | Enable/disable RAG indexing | `true` |
+| `rag_embedding_model` | `RETER_RAG_MODEL` | Sentence-transformers model for embeddings | `flax-sentence-embeddings/st-codesearch-distilroberta-base` |
+| `rag_embedding_cache_size` | `RETER_RAG_CACHE_SIZE` | Embedding cache size | `1000` |
+| `rag_max_body_lines` | `RETER_RAG_MAX_BODY_LINES` | Max lines per method body for embedding | `50` |
+| `rag_batch_size` | `RETER_RAG_BATCH_SIZE` | Batch size for embedding computation | `32` |
+
+#### Markdown Indexing
+
+| Key | Env Variable | Description | Default |
+|-----|-------------|-------------|---------|
+| `rag_index_markdown` | `RETER_RAG_INDEX_MARKDOWN` | Index markdown files into RAG | `true` |
+| `rag_markdown_include` | `RETER_RAG_MARKDOWN_INCLUDE` | Glob for markdown files to index | `**/*.md` |
+| `rag_markdown_exclude` | `RETER_RAG_MARKDOWN_EXCLUDE` | Glob for markdown files to skip | `node_modules/**` |
+| `rag_markdown_max_chunk_words` | `RETER_RAG_MARKDOWN_MAX_CHUNK_WORDS` | Max words per markdown chunk | `500` |
+| `rag_markdown_min_chunk_words` | `RETER_RAG_MARKDOWN_MIN_CHUNK_WORDS` | Min words per markdown chunk | `50` |
+
+#### Code Chunking
+
+| Key | Env Variable | Description | Default |
+|-----|-------------|-------------|---------|
+| `rag_code_chunk_enabled` | `RETER_RAG_CODE_CHUNK_ENABLED` | Enable code chunking for large methods | `true` |
+| `rag_code_chunk_size` | `RETER_RAG_CODE_CHUNK_SIZE` | Chunk size in lines | `30` |
+| `rag_code_chunk_overlap` | `RETER_RAG_CODE_CHUNK_OVERLAP` | Overlap between chunks in lines | `10` |
+| `rag_code_chunk_min_size` | `RETER_RAG_CODE_CHUNK_MIN_SIZE` | Min chunk size in lines | `15` |
+
+### Environment Variables
+
+#### Server
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -152,7 +206,7 @@ The MCP client automatically discovers the server via `.reter_code/server.json`.
 | `RETER_HOST` | Server bind address | `127.0.0.1` |
 | `RETER_QUERY_PORT` | ZeroMQ query port | `5555` |
 
-### MCP Client
+#### MCP Client
 
 | Variable | Description | Default |
 |----------|-------------|---------|
