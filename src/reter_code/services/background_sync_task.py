@@ -183,7 +183,11 @@ class BackgroundSyncTask:
                 sync_message="Saving snapshot..."
             )
             snapshot_path = self._instance_manager._persistence.snapshots_dir / ".default.reter"
-            self._reter.save_network(str(snapshot_path))
+            # CRITICAL: Use incremental save for hybrid mode
+            if self._reter.is_hybrid_mode():
+                self._reter.save_incremental()
+            else:
+                self._reter.save_network(str(snapshot_path))
             self._reter.mark_clean()
 
             # Complete

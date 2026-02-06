@@ -95,6 +95,8 @@ __all__ = [
     "Context", "Source", "Step", "Pipeline",
     "Query", "Detector", "Diagram",
     "ToolSpec", "ParamSpec", "ToolType",
+    # Step types
+    "TapStep",
     # Source builders
     "reql", "rag", "value",
 ]
@@ -396,6 +398,68 @@ class RAGClustersSource(Source[List[Dict[str, Any]]]):
             return pipeline_ok(findings)
         except Exception as e:
             return pipeline_err("rag", f"Clustering failed: {e}", e)
+
+
+@dataclass
+class RAGDBScanSource(Source[List[Dict[str, Any]]]):
+    """RAG code clustering source using DBSCAN (Density-Based Spatial Clustering).
+
+    DBSCAN advantages over K-means:
+    - No need to specify number of clusters upfront
+    - Automatically discovers natural groupings in the data
+    - Identifies outliers/noise points (not forced into clusters)
+    - Better for finding tight clusters of truly similar code
+
+    ::: This is-in-layer Domain-Specific-Language-Layer.
+    ::: This is a source.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
+    """
+    eps: float = 0.5  # Max distance between neighbors (0.3-0.8 typical)
+    min_samples: int = 3  # Min points to form dense region
+    min_size: int = 2  # Min cluster size to return
+    exclude_same_file: bool = True
+    exclude_same_class: bool = True
+    entity_types: Optional[List[str]] = None
+
+    def execute(self, ctx: Context) -> PipelineResult[List[Dict[str, Any]]]:
+        """Find code clusters using DBSCAN on RAG embeddings."""
+        try:
+            rag_manager = _get_rag_manager(ctx)
+            if rag_manager is None:
+                return pipeline_err("rag", "RAG manager not available")
+
+            result = rag_manager.find_similar_clusters_dbscan(
+                eps=self.eps,
+                min_samples=self.min_samples,
+                min_cluster_size=self.min_size,
+                exclude_same_file=self.exclude_same_file,
+                exclude_same_class=self.exclude_same_class,
+                entity_types=self.entity_types or ["method", "function"]
+            )
+
+            if not result.get("success"):
+                return pipeline_err("rag", result.get("error", "DBSCAN clustering failed"))
+
+            # Transform clusters to findings
+            findings = []
+            for cluster in result.get("clusters", []):
+                member_names = [m["name"] for m in cluster["members"]]
+                member_files = list(set(m["file"] for m in cluster["members"]))
+                findings.append({
+                    "cluster_id": cluster["cluster_id"],
+                    "member_count": cluster["member_count"],
+                    "unique_files": cluster["unique_files"],
+                    "members": member_names,
+                    "files": member_files,
+                    "avg_distance": cluster.get("avg_distance", 0),
+                    "avg_similarity": cluster.get("avg_similarity", 0),
+                    "details": cluster["members"]
+                })
+
+            return pipeline_ok(findings)
+        except Exception as e:
+            return pipeline_err("rag", f"DBSCAN clustering failed: {e}", e)
 
 
 @dataclass
@@ -1227,13 +1291,20 @@ class Pipeline(Monad[T], Generic[T]):
         """Map a function over the pipeline output (Functor.fmap)."""
         # For lists, we want to map over each element
         # This creates a new pipeline with a map step
-        new_steps = self._steps + [MapStep(f)]
-        return Pipeline(_source=self._source, _steps=new_steps, _emit_key=self._emit_key)
+        return self._add_step(MapStep(f))
 
     def ap(self, x: "Pipeline[T]") -> "Pipeline[U]":
         """Apply a wrapped function to a wrapped value (Applicative.ap)."""
         # Default monad implementation
         return self.bind(lambda f: x.bind(lambda a: Pipeline.pure(f(a))))
+
+    def _add_step(self, step: Step) -> "Pipeline":
+        """Add a step to the pipeline and return a new pipeline."""
+        return Pipeline(
+            _source=self._source,
+            _steps=self._steps + [step],
+            _emit_key=self._emit_key
+        )
 
     # -------------------------------------------------------------------------
     # Constructors
@@ -1267,75 +1338,62 @@ class Pipeline(Monad[T], Generic[T]):
     def filter(self, predicate: Callable[[Any], bool],
                when: Optional[Callable[[], bool]] = None) -> "Pipeline":
         """Filter items matching predicate."""
-        new_steps = self._steps + [FilterStep(predicate, when)]
-        return Pipeline(_source=self._source, _steps=new_steps, _emit_key=self._emit_key)
+        return self._add_step(FilterStep(predicate, when))
 
     def select(self, *fields: str, **renames: str) -> "Pipeline":
         """Select and optionally rename fields."""
         field_map = {f: f for f in fields}
         field_map.update(renames)
-        new_steps = self._steps + [SelectStep(field_map)]
-        return Pipeline(_source=self._source, _steps=new_steps, _emit_key=self._emit_key)
+        return self._add_step(SelectStep(field_map))
 
     def order_by(self, field: str) -> "Pipeline":
         """Sort by field. Prefix with - for descending."""
         descending = field.startswith("-")
         if descending:
             field = field[1:]
-        new_steps = self._steps + [OrderByStep(field, descending)]
-        return Pipeline(_source=self._source, _steps=new_steps, _emit_key=self._emit_key)
+        return self._add_step(OrderByStep(field, descending))
 
     def limit(self, count: int) -> "Pipeline":
         """Limit number of results."""
-        new_steps = self._steps + [LimitStep(count)]
-        return Pipeline(_source=self._source, _steps=new_steps, _emit_key=self._emit_key)
+        return self._add_step(LimitStep(count))
 
     def offset(self, count: int) -> "Pipeline":
         """Skip first N results."""
-        new_steps = self._steps + [OffsetStep(count)]
-        return Pipeline(_source=self._source, _steps=new_steps, _emit_key=self._emit_key)
+        return self._add_step(OffsetStep(count))
 
     def map(self, transform: Callable[[Any], Any]) -> "Pipeline":
         """Transform each item (alias for fmap on list elements)."""
-        new_steps = self._steps + [MapStep(transform)]
-        return Pipeline(_source=self._source, _steps=new_steps, _emit_key=self._emit_key)
+        return self._add_step(MapStep(transform))
 
     def flat_map(self, transform: Callable[[Any], List]) -> "Pipeline":
         """Transform and flatten (monadic bind for lists)."""
-        new_steps = self._steps + [FlatMapStep(transform)]
-        return Pipeline(_source=self._source, _steps=new_steps, _emit_key=self._emit_key)
+        return self._add_step(FlatMapStep(transform))
 
     def group_by(self, field: Optional[str] = None, *,
                  key: Optional[Callable[[Any], str]] = None,
                  aggregate: Optional[Callable[[List], Any]] = None) -> "Pipeline":
         """Group items by field or key function, with optional aggregation."""
-        new_steps = self._steps + [GroupByStep(field_name=field, key_fn=key, aggregate_fn=aggregate)]
-        return Pipeline(_source=self._source, _steps=new_steps, _emit_key=self._emit_key)
+        return self._add_step(GroupByStep(field_name=field, key_fn=key, aggregate_fn=aggregate))
 
     def aggregate(self, **aggregations: Tuple[str, str]) -> "Pipeline":
         """Aggregate with functions: field=("source", "sum|avg|min|max|count")"""
-        new_steps = self._steps + [AggregateStep(aggregations)]
-        return Pipeline(_source=self._source, _steps=new_steps, _emit_key=self._emit_key)
+        return self._add_step(AggregateStep(aggregations))
 
     def flatten(self) -> "Pipeline":
         """Flatten nested lists (monad join)."""
-        new_steps = self._steps + [FlattenStep()]
-        return Pipeline(_source=self._source, _steps=new_steps, _emit_key=self._emit_key)
+        return self._add_step(FlattenStep())
 
     def unique(self, key: Optional[Callable[[Any], Any]] = None) -> "Pipeline":
         """Remove duplicates."""
-        new_steps = self._steps + [UniqueStep(key)]
-        return Pipeline(_source=self._source, _steps=new_steps, _emit_key=self._emit_key)
+        return self._add_step(UniqueStep(key))
 
     def tap(self, fn: Callable[[Any], Any]) -> "Pipeline":
         """Execute a side effect function and pass through data unchanged."""
-        new_steps = self._steps + [TapStep(fn)]
-        return Pipeline(_source=self._source, _steps=new_steps, _emit_key=self._emit_key)
+        return self._add_step(TapStep(fn))
 
     def render(self, format: str, renderer: Callable[[Any, str], Any]) -> "Pipeline":
         """Render data into a formatted output."""
-        new_steps = self._steps + [RenderStep(format, renderer)]
-        return Pipeline(_source=self._source, _steps=new_steps, _emit_key=self._emit_key)
+        return self._add_step(RenderStep(format, renderer))
 
     def emit(self, key: str) -> "Pipeline":
         """Set the output key for the result."""
@@ -1347,8 +1405,7 @@ class Pipeline(Monad[T], Generic[T]):
 
     def __rshift__(self, step: Step) -> "Pipeline":
         """Syntactic sugar: pipeline >> step"""
-        new_steps = self._steps + [step]
-        return Pipeline(_source=self._source, _steps=new_steps, _emit_key=self._emit_key)
+        return self._add_step(step)
 
     def __or__(self, step: Step) -> "Pipeline":
         """Alternative syntax: pipeline | step"""

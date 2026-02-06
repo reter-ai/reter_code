@@ -266,7 +266,16 @@ class BackgroundInitializer:
         if added > 0 or modified > 0 or deleted > 0:
             debug_log(f"[BackgroundInit] Changes: +{added} ~{modified} -{deleted}")
             snapshot_path = self._instance_manager._persistence.snapshots_dir / ".default.reter"
-            reter.save_network(str(snapshot_path))
+
+            # Create progress callback for save operation
+            def save_progress(percent: int) -> None:
+                self._progress.update(init_message=f"Saving snapshot... {percent}%")
+
+            # CRITICAL: Use incremental save for hybrid mode
+            if reter.is_hybrid_mode():
+                reter.save_incremental()
+            else:
+                reter.save_network(str(snapshot_path), save_progress)
             reter.mark_clean()
 
         self._progress.update(

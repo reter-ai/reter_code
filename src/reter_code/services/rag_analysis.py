@@ -167,6 +167,152 @@ class RAGAnalysisMixin:
             }
         }
 
+    def find_similar_clusters_dbscan(
+        self,
+        eps: float = 0.5,
+        min_samples: int = 3,
+        min_cluster_size: int = 2,
+        exclude_same_file: bool = True,
+        exclude_same_class: bool = True,
+        entity_types: Optional[List[str]] = None,
+        source_type: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Find clusters of semantically similar code using DBSCAN clustering.
+
+        DBSCAN advantages over K-means:
+        - No need to specify number of clusters upfront
+        - Automatically discovers natural groupings
+        - Identifies outliers/noise (not forced into clusters)
+        - Better for finding tight clusters of truly similar code
+
+        Args:
+            eps: Maximum distance between samples to be neighbors (0.3-0.8 typical).
+                 Smaller = tighter clusters, more of them.
+            min_samples: Minimum points to form a dense region.
+                        Higher = fewer, denser clusters.
+            min_cluster_size: Minimum members for a cluster to be returned
+            exclude_same_file: Exclude cluster members from the same file
+            exclude_same_class: Exclude cluster members from the same class
+            entity_types: Filter by entity type (e.g., ["method", "function"])
+            source_type: Filter by source ("python" or "markdown")
+
+        Returns:
+            Dict with clusters, each containing similar code entities
+
+        Raises:
+            ComponentNotReadyError: If RAG code index is not ready
+        """
+        require_rag_code_index()
+
+        start_time = time.time()
+
+        # Defensive type coercion - parameters may come as strings from CADSL
+        eps = float(eps) if eps is not None else 0.5
+        min_samples = int(min_samples) if min_samples is not None else 3
+        min_cluster_size = int(min_cluster_size) if min_cluster_size is not None else 2
+
+        if not self._initialized or self._faiss_wrapper is None:
+            return {
+                "success": False,
+                "error": "RAG index not initialized",
+                "clusters": [],
+            }
+
+        # Get DBSCAN clusters from FAISS wrapper
+        clusters, assignments = self._faiss_wrapper.cluster_vectors_dbscan(
+            eps=eps,
+            min_samples=min_samples,
+            min_cluster_size=min_cluster_size,
+        )
+
+        # Count noise points
+        n_noise = int(np.sum(assignments == -1)) if len(assignments) > 0 else 0
+
+        # Enrich clusters with metadata and filter
+        enriched_clusters = []
+
+        for cluster in clusters:
+            members = []
+            files_in_cluster = set()
+            classes_in_cluster = set()
+
+            for vector_id in cluster.member_ids:
+                meta = self._metadata.get("vectors", {}).get(str(vector_id))
+                if not meta:
+                    continue
+
+                # Apply filters
+                if entity_types and meta.get("entity_type") not in entity_types:
+                    continue
+                if source_type and meta.get("source_type") != source_type:
+                    continue
+
+                file_path = meta.get("file", "")
+                class_name = meta.get("class_name", "")
+
+                members.append({
+                    "vector_id": vector_id,
+                    "name": meta.get("name", ""),
+                    "qualified_name": meta.get("qualified_name", ""),
+                    "entity_type": meta.get("entity_type", ""),
+                    "file": file_path,
+                    "line": meta.get("line", 0),
+                    "end_line": meta.get("end_line"),
+                    "class_name": class_name,
+                    "source_type": meta.get("source_type", ""),
+                    "docstring_preview": meta.get("docstring_preview", ""),
+                })
+
+                files_in_cluster.add(file_path.replace("\\", "/"))
+                if class_name:
+                    classes_in_cluster.add(class_name)
+
+            # Apply exclusion filters
+            if exclude_same_file and len(files_in_cluster) <= 1:
+                continue
+            if exclude_same_class and len(classes_in_cluster) <= 1 and len(members) > 1:
+                continue
+
+            if len(members) >= min_cluster_size:
+                avg_similarity = max(0.0, 1.0 - cluster.avg_distance_to_centroid / 2.0)
+                enriched_clusters.append({
+                    "cluster_id": cluster.cluster_id,
+                    "member_count": len(members),
+                    "unique_files": len(files_in_cluster),
+                    "unique_classes": len(classes_in_cluster),
+                    "avg_similarity": round(avg_similarity, 4),
+                    "avg_distance": round(cluster.avg_distance_to_centroid, 4),
+                    "members": members,
+                })
+
+        # Sort by potential interest
+        enriched_clusters.sort(
+            key=lambda c: (c["unique_files"], c["member_count"]),
+            reverse=True
+        )
+
+        time_ms = int((time.time() - start_time) * 1000)
+
+        return {
+            "success": True,
+            "algorithm": "dbscan",
+            "total_clusters": len(enriched_clusters),
+            "noise_points": n_noise,
+            "total_vectors_analyzed": self._faiss_wrapper.total_vectors,
+            "clusters": enriched_clusters,
+            "time_ms": time_ms,
+            "filters": {
+                "eps": eps,
+                "min_samples": min_samples,
+                "min_cluster_size": min_cluster_size,
+                "exclude_same_file": exclude_same_file,
+                "exclude_same_class": exclude_same_class,
+                "entity_types": entity_types,
+                "source_type": source_type,
+            },
+        }
+
     def find_duplicate_candidates(
         self,
         similarity_threshold: float = 0.85,

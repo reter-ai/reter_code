@@ -5,9 +5,11 @@ Provides a clean Python interface to RETER's C++ reasoning engine
 using the AI lexer variant for natural language DL syntax.
 """
 
+import os
+import sys
 import time
 from pathlib import Path
-from typing import List, Optional, Any, Tuple, Dict, Set
+from typing import List, Optional, Any, Tuple, Dict, Set, Callable
 import functools
 
 from reter import Reter
@@ -655,7 +657,11 @@ class ReterWrapper(ReterLoaderMixin):
         """
         check_initialization()
         start_time = time.time()
+
+        # Unified storage: ReteNetwork handles hybrid mode internally
+        # When in hybrid mode, add_fact() writes to delta automatically
         wme_count = safe_cpp_call(self.reasoner.load_ontology, ontology, source)
+
         self._session_stats["total_wmes"] += wme_count
         self._session_stats["total_sources"] += 1
         time_ms = (time.time() - start_time) * 1000
@@ -724,7 +730,8 @@ class ReterWrapper(ReterLoaderMixin):
         # Use default timeout if not specified
         if timeout_ms is None:
             timeout_ms = RETER_REQL_TIMEOUT_MS
-        # Returns PyArrow table directly - wrap with safe call for C++ protection
+
+        # Unified storage: ReteNetwork handles hybrid mode internally
         return safe_cpp_call(self.reasoner.reql, query, timeout_ms)
 
     def get_all_sources(self) -> Tuple[List[str], float]:
@@ -749,7 +756,10 @@ class ReterWrapper(ReterLoaderMixin):
         """
         check_initialization()
         start_time = time.time()
+
+        # Unified storage: ReteNetwork handles hybrid mode internally
         sources = safe_cpp_call(self.reasoner.get_all_sources)
+
         time_ms = (time.time() - start_time) * 1000
         return sources, time_ms
 
@@ -773,7 +783,10 @@ class ReterWrapper(ReterLoaderMixin):
         """
         check_initialization()
         start_time = time.time()
+
+        # Unified storage: ReteNetwork handles hybrid mode internally
         fact_ids = safe_cpp_call(self.reasoner.get_facts_from_source, source)
+
         time_ms = (time.time() - start_time) * 1000
         return fact_ids, source, time_ms
 
@@ -799,12 +812,25 @@ class ReterWrapper(ReterLoaderMixin):
         """
         check_initialization()
         start_time = time.time()
-        safe_cpp_call(self.reasoner.remove_source, source)
+
+        # Normalize path separators in source ID for cross-platform consistency
+        # Try forward slashes first (new format), then backslashes (legacy format)
+        normalized_source = source.replace('\\', '/')
+        safe_cpp_call(self.reasoner.remove_source, normalized_source)
+
+        # Also try backslash version in case RETER has legacy format
+        if '/' in source:
+            backslash_source = source.replace('/', '\\')
+            try:
+                safe_cpp_call(self.reasoner.remove_source, backslash_source)
+            except Exception:
+                pass  # Ignore if not found with backslashes
+
         time_ms = (time.time() - start_time) * 1000
         self._dirty = True  # Mark instance as modified
         return source, time_ms
 
-    def save_network(self, filename: str) -> Tuple[bool, str, float]:
+    def save_network(self, filename: str, progress_callback: Optional[Callable[[int], None]] = None) -> Tuple[bool, str, float]:
         """
         Save entire RETER network state to binary file
 
@@ -816,6 +842,7 @@ class ReterWrapper(ReterLoaderMixin):
 
         Args:
             filename: Path to save file
+            progress_callback: Optional callback receiving percent (0-100)
 
         Returns:
             Tuple[bool, str, float]: (success, filename, time_ms)
@@ -829,8 +856,17 @@ class ReterWrapper(ReterLoaderMixin):
         """
         check_initialization()
         start_time = time.time()
+
+        # CRITICAL: In hybrid mode, use incremental save to avoid corrupting the base
+        # The ReteNetwork in hybrid mode only contains synced files (not the full base),
+        # so using network.save() would write a partial/corrupt snapshot.
+        if self.is_hybrid_mode():
+            success, delta_path, time_ms = self.save_incremental()
+            debug_log(f"save_network: redirected to save_incremental in hybrid mode")
+            return success, delta_path, time_ms
+
         # Use network.save() method from C++ bindings - wrap with safe call for C++ protection
-        success = safe_cpp_call(self.reasoner.network.save, filename)
+        success = safe_cpp_call(self.reasoner.network.save, filename, progress_callback)
         time_ms = (time.time() - start_time) * 1000
 
         if not success:
@@ -904,7 +940,8 @@ class ReterWrapper(ReterLoaderMixin):
         """
         check_initialization()
         start_time = time.time()
-        # Wrap with safe call for C++ protection
+
+        # Unified storage: ReteNetwork handles hybrid mode internally
         result = safe_cpp_call(self.reasoner.check_consistency)
         is_consistent, inconsistencies = result
         time_ms = (time.time() - start_time) * 1000
@@ -937,6 +974,190 @@ class ReterWrapper(ReterLoaderMixin):
         return self._last_save_time
 
     # =========================================================================
+    # Unified Storage API (Hybrid mode integrated into ReteNetwork)
+    # =========================================================================
+
+    def open_hybrid(self, filename: str) -> Tuple[bool, str, float]:
+        """
+        Open a snapshot in hybrid mode for incremental saves.
+
+        This enables delta-based persistence where modifications are
+        written to a small delta journal file instead of rewriting the
+        entire base snapshot. Much faster for frequent saves.
+
+        Args:
+            filename: Path to base snapshot file (.reter)
+
+        Returns:
+            Tuple[bool, str, float]: (success, filename, time_ms)
+
+        After calling this:
+        - save_incremental() writes only changes to .delta file (fast)
+        - compact() merges delta into base when needed
+        - The reasoner continues to work normally
+        """
+        check_initialization()
+        from pathlib import Path
+        import glob as glob_module
+
+        start_time = time.time()
+
+        try:
+            # Check for base file OR versioned files (.v1, .v2, etc.)
+            base_exists = Path(filename).exists()
+            versioned_exists = bool(glob_module.glob(f"{filename}.v*"))
+            if not base_exists and not versioned_exists:
+                time_ms = (time.time() - start_time) * 1000
+                raise ReterFileNotFoundError(f"File not found: {filename}")
+
+            # Use unified ReteNetwork.open() API
+            success = self.reasoner.network.open(filename)
+            time_ms = (time.time() - start_time) * 1000
+
+            if not success:
+                raise ReterLoadError(f"Failed to open hybrid network from {filename}")
+
+            self._dirty = False
+            self._last_save_time = time.time()
+
+            debug_log(f"Opened hybrid network: base={self.reasoner.network.base_fact_count()}, "
+                     f"delta={self.reasoner.network.delta_fact_count()}")
+
+            return success, filename, time_ms
+
+        except ReterFileError:
+            raise
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            raise ReterLoadError(f"Open hybrid error: {str(e)}") from e
+
+    def is_hybrid_mode(self) -> bool:
+        """Check if hybrid/incremental mode is enabled."""
+        return self.reasoner.network.is_hybrid()
+
+    def save_incremental(self) -> Tuple[bool, str, float]:
+        """
+        Save changes incrementally using delta journal (fast).
+
+        Only available when hybrid mode is enabled via open_hybrid().
+        Writes only the changes since last save to the delta file,
+        which is much faster than full serialization.
+
+        Returns:
+            Tuple[bool, str, float]: (success, delta_path, time_ms)
+
+        Raises:
+            ReterSaveError: If not in hybrid mode or save fails
+        """
+        check_initialization()
+        start_time = time.time()
+
+        if not self.is_hybrid_mode():
+            raise ReterSaveError("Not in hybrid mode. Call open_hybrid() first.")
+
+        try:
+            self.reasoner.network.save()
+            time_ms = (time.time() - start_time) * 1000
+
+            self._dirty = False
+            self._last_save_time = time.time()
+
+            delta_path = self.reasoner.network.delta_path()
+            debug_log(f"Incremental save: delta={self.reasoner.network.delta_fact_count()} facts, "
+                     f"size={self.reasoner.network.delta_file_size()} bytes")
+
+            return True, delta_path, time_ms
+
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            raise ReterSaveError(f"Incremental save error: {str(e)}") from e
+
+    def compact(self, progress_callback: Optional[Callable[[int], None]] = None) -> Tuple[bool, float]:
+        """
+        Compact delta journal into base snapshot.
+
+        Merges all delta changes into the base file and resets the delta.
+        Call this periodically when delta grows large.
+
+        Args:
+            progress_callback: Optional callback receiving percent (0-100)
+
+        Returns:
+            Tuple[bool, float]: (success, time_ms)
+
+        Raises:
+            ReterSaveError: If not in hybrid mode or compact fails
+        """
+        check_initialization()
+        start_time = time.time()
+
+        if not self.is_hybrid_mode():
+            raise ReterSaveError("Not in hybrid mode. Call open_hybrid() first.")
+
+        try:
+            self.reasoner.network.compact(progress_callback)
+            time_ms = (time.time() - start_time) * 1000
+
+            debug_log(f"Compacted: base now has {self.reasoner.network.base_fact_count()} facts")
+
+            return True, time_ms
+
+        except Exception as e:
+            time_ms = (time.time() - start_time) * 1000
+            raise ReterSaveError(f"Compact error: {str(e)}") from e
+
+    def needs_compaction(self, threshold_ratio: float = 0.2) -> bool:
+        """
+        Check if delta journal should be compacted.
+
+        Args:
+            threshold_ratio: Compact when delta_facts > base_facts * threshold_ratio
+
+        Returns:
+            True if compaction is recommended
+        """
+        if not self.is_hybrid_mode():
+            return False
+
+        # Check threshold in Python since C++ uses built-in thresholds
+        base_facts = self.reasoner.network.base_fact_count()
+        delta_facts = self.reasoner.network.delta_fact_count()
+
+        # Compact when delta exceeds threshold ratio of base
+        return delta_facts > base_facts * threshold_ratio
+
+    def get_hybrid_stats(self) -> Dict[str, Any]:
+        """
+        Get statistics about hybrid network state.
+
+        Returns:
+            Dict with base_facts, delta_facts, deleted_facts, delta_file_size
+        """
+        if not self.is_hybrid_mode():
+            return {"hybrid_mode": False}
+
+        return {
+            "hybrid_mode": True,
+            "base_facts": self.reasoner.network.base_fact_count(),
+            "delta_facts": self.reasoner.network.delta_fact_count(),
+            "deleted_facts": self.reasoner.network.deleted_fact_count(),
+            "delta_file_size": self.reasoner.network.delta_file_size(),
+            "delta_path": self.reasoner.network.delta_path(),
+        }
+
+    def close_hybrid(self) -> None:
+        """
+        Close hybrid network and disable incremental mode.
+
+        After calling this, use regular save_network()/load_network().
+        """
+        if self.is_hybrid_mode():
+            try:
+                self.reasoner.network.close()
+            except Exception as e:
+                debug_log(f"Error closing hybrid network: {e}")
+
+    # =========================================================================
     # Entity Accumulation API (for cross-file deduplication)
     # =========================================================================
 
@@ -963,6 +1184,9 @@ class ReterWrapper(ReterLoaderMixin):
 
         Call end_entity_accumulation() to finalize and add all merged entity facts.
         """
+        # In hybrid mode WITHOUT materialization, entity accumulation works on empty ReteNetwork
+        # New facts will be synced to hybrid network's delta after accumulation ends
+        # This avoids slow materialization - facts are queryable via Arrow without RETE
         safe_cpp_call(self.reasoner.network.begin_entity_accumulation)
 
     def end_entity_accumulation(self) -> None:

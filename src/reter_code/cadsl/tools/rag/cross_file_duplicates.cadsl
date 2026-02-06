@@ -1,0 +1,32 @@
+# cross_file_duplicates - Find similar code across different files
+#
+# Uses RAG pairwise similarity to find code that is duplicated
+# across different files - candidates for shared utility extraction.
+
+detector find_cross_file_duplicates(category="duplication", severity="high") {
+    """Find highly similar code pairs across different files."""
+
+    param similarity: float = 0.85;
+    param limit: int = 50;
+
+    rag { duplicates, similarity: {similarity}, limit: {limit}, exclude_same_file: true, exclude_same_class: true }
+    | select {
+        similarity,
+        method1: entity1_name,
+        file1: entity1_file,
+        line1: entity1_line,
+        class1: entity1_class,
+        method2: entity2_name,
+        file2: entity2_file,
+        line2: entity2_line,
+        class2: entity2_class
+    }
+    | map {
+        ...row,
+        issue: "cross_file_duplicate",
+        message: "'{method1}' in {file1} and '{method2}' in {file2} are {similarity} similar",
+        suggestion: "Extract common logic into shared utility module"
+    }
+    | order_by { -similarity }
+    | emit { findings }
+}

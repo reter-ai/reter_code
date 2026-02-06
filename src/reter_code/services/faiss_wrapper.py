@@ -553,6 +553,94 @@ class FAISSWrapper:
         logger.info(f"Found {len(clusters)} clusters with >= {min_cluster_size} members")
         return clusters, assignments
 
+    def cluster_vectors_dbscan(
+        self,
+        eps: float = 0.5,
+        min_samples: int = 3,
+        min_cluster_size: int = 2
+    ) -> Tuple[List[ClusterInfo], np.ndarray]:
+        """
+        Cluster vectors using DBSCAN (Density-Based Spatial Clustering).
+
+        DBSCAN advantages over K-means:
+        - No need to specify number of clusters upfront
+        - Can find arbitrarily shaped clusters
+        - Identifies outliers/noise points (cluster_id = -1)
+        - Better for finding natural groupings in data
+
+        Args:
+            eps: Maximum distance between two samples to be considered neighbors.
+                 Smaller values = tighter, more clusters. For normalized embeddings,
+                 typical range is 0.3-0.8.
+            min_samples: Minimum points required to form a dense region (core point).
+                        Higher values = fewer, denser clusters.
+            min_cluster_size: Minimum members for a cluster to be returned.
+
+        Returns:
+            Tuple of (clusters, assignments) where:
+            - clusters: List of ClusterInfo objects (sorted by member count)
+            - assignments: Array mapping vector index to cluster_id (-1 = noise)
+        """
+        if self._index is None or self._index.ntotal == 0:
+            return [], np.array([], dtype=np.int64)
+
+        try:
+            from sklearn.cluster import DBSCAN
+        except ImportError:
+            logger.error("sklearn not available for DBSCAN clustering")
+            return [], np.array([], dtype=np.int64)
+
+        vectors, ids = self.get_all_vectors_with_ids()
+        n_vectors = len(vectors)
+
+        if n_vectors < min_samples:
+            logger.warning(f"Not enough vectors ({n_vectors}) for DBSCAN with min_samples={min_samples}")
+            return [], np.array([], dtype=np.int64)
+
+        logger.info(f"DBSCAN clustering {n_vectors} vectors (eps={eps}, min_samples={min_samples})...")
+
+        # Run DBSCAN
+        # metric='euclidean' works well for normalized embeddings
+        dbscan = DBSCAN(eps=eps, min_samples=min_samples, metric='euclidean', n_jobs=-1)
+        assignments = dbscan.fit_predict(vectors)
+
+        # Get unique cluster IDs (excluding -1 which is noise)
+        unique_labels = set(assignments)
+        unique_labels.discard(-1)
+
+        n_noise = np.sum(assignments == -1)
+        logger.info(f"DBSCAN found {len(unique_labels)} clusters, {n_noise} noise points")
+
+        clusters = []
+        for cluster_id in unique_labels:
+            mask = assignments == cluster_id
+            member_indices = np.where(mask)[0]
+
+            if len(member_indices) < min_cluster_size:
+                continue
+
+            member_ids = [int(ids[i]) for i in member_indices]
+            member_vectors = vectors[mask]
+
+            # Compute centroid as mean of member vectors
+            centroid = np.mean(member_vectors, axis=0)
+
+            # Compute average distance to centroid
+            distances = np.linalg.norm(member_vectors - centroid, axis=1)
+            avg_distance = float(np.mean(distances))
+
+            clusters.append(ClusterInfo(
+                cluster_id=int(cluster_id),
+                centroid=centroid,
+                member_ids=member_ids,
+                member_count=len(member_ids),
+                avg_distance_to_centroid=avg_distance
+            ))
+
+        clusters.sort(key=lambda c: c.member_count, reverse=True)
+        logger.info(f"Returning {len(clusters)} clusters with >= {min_cluster_size} members")
+        return clusters, assignments
+
     def find_similar_pairs(self, similarity_threshold=0.85, max_pairs=100, k=10):
         """Find pairs of vectors that are highly similar.
 

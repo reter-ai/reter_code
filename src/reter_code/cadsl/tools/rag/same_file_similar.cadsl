@@ -1,0 +1,32 @@
+# same_file_similar - Find similar methods/functions within same file
+#
+# Uses RAG pairwise similarity to find code that may be duplicated
+# within the same file - good candidates for local extraction.
+
+detector find_same_file_similar(category="refactoring", severity="medium") {
+    """Find similar code pairs within the same file for potential extraction."""
+
+    param similarity: float = 0.75;
+    param limit: int = 30;
+
+    rag { duplicates, similarity: {similarity}, limit: {limit}, exclude_same_file: false, exclude_same_class: true }
+    | filter { entity1_file == entity2_file }
+    | select {
+        similarity,
+        file: entity1_file,
+        method1: entity1_name,
+        line1: entity1_line,
+        class1: entity1_class,
+        method2: entity2_name,
+        line2: entity2_line,
+        class2: entity2_class
+    }
+    | map {
+        ...row,
+        issue: "same_file_similar",
+        message: "'{method1}' and '{method2}' in same file are {similarity} similar",
+        suggestion: "Consider extracting common logic into shared helper method"
+    }
+    | order_by { -similarity }
+    | emit { findings }
+}

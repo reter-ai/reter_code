@@ -1,0 +1,94 @@
+# same_file_duplicates - Find similar methods within the SAME file
+#
+# Finds semantically similar methods in the same file using RAG embeddings.
+# These are easier to fix than cross-file duplicates since refactoring
+# is localized to a single file.
+#
+# Uses fetch_content to extract actual method body for accurate similarity.
+
+detector same_file_duplicates(category="smell-review", severity="low") {
+    """
+    Find similar methods within the SAME file - local extraction opportunities.
+
+    These are easier to fix than cross-file duplicates since refactoring
+    is localized to a single file.
+
+    Parameters:
+        min_similarity: Minimum similarity threshold (default: 0.75)
+        min_lines: Minimum method lines (default: 5)
+        limit: Maximum methods to check (default: 50)
+        dry_run: Preview without creating tasks (default: true)
+    """
+
+    param min_similarity: float = 0.75;
+    param min_lines: int = 5;
+    param limit: int = 50;
+    param dry_run: bool = true;
+
+    reql {
+        SELECT ?m ?name ?file ?line ?end_line ?line_count ?class_name
+        WHERE {
+            ?m type method .
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            OPTIONAL { ?m has-end-line ?end_line }
+            OPTIONAL { ?m has-line-count ?line_count }
+            OPTIONAL { ?m is-defined-in ?c . ?c has-name ?class_name }
+            FILTER(!STRSTARTS(?name, "_"))
+            FILTER(!STRSTARTS(?name, "test"))
+            FILTER(!CONTAINS(?file, "/test/"))
+        }
+        ORDER BY DESC(?line_count)
+        LIMIT {limit}
+    }
+    | filter { (line_count ?? 0) >= {min_lines} }
+    | select {
+        method_name: name,
+        class_name: class_name ?? "(module)",
+        file: file,
+        line: line,
+        end_line: end_line ?? (line + (line_count ?? 10)),
+        line_count: line_count ?? 0
+    }
+    # Fetch actual method body content from source files
+    | fetch_content {
+        file: file,
+        start_line: line,
+        end_line: end_line,
+        output: body,
+        max_lines: 50
+    }
+    | rag_enrich {
+        query: "{body}",
+        top_k: 5,
+        threshold: {min_similarity},
+        mode: best,
+        entity_types: ["method"]
+    }
+    # Keep only SAME-file matches
+    | filter {
+        (similarity ?? 0) >= {min_similarity} and
+        similar_file == file and
+        similar_entity != method_name
+    }
+    | map {
+        entity1: method_name,
+        entity2: similar_entity ?? "",
+        file: file,
+        class_name: class_name,
+        similarity: similarity ?? 0,
+        line_count: line_count
+    }
+    | filter { similarity > 0 }
+    | order_by { -similarity }
+    | create_task {
+        name: "[extract-local] {entity1} ~ {entity2} in {class_name}",
+        category: "smell-review",
+        priority: low,
+        description: "**Same-File Duplicate** - Local extraction opportunity\n\n**File**: `{file}`\n**Class**: `{class_name}`\n**Method 1**: `{entity1}` ({line_count} lines)\n**Method 2**: `{entity2}`\n**Similarity**: {similarity}\n\n---\n\nBoth methods are in the same file. Consider:\n1. Extract common logic to private helper method\n2. Use Template Method if same structure, different details\n3. Parameterize differences\n\n```python\nRead(file_path=\"{file}\")\n```",
+        affects: file,
+        dry_run: {dry_run}
+    }
+    | emit { tasks }
+}

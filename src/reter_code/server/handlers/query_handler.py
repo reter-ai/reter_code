@@ -30,10 +30,9 @@ from ..protocol import (
 class QueryHandler(BaseHandler):
     """Handler for query operations (REQL, DL, CADSL).
 
-    ::: This is-defined-in Query-Handlers.
-    ::: This handles-method reql.
-    ::: This handles-method dl.
-    ::: This handles-method execute_cadsl.
+    ::: This is-in-layer Service-Layer.
+    ::: This is a handler.
+    ::: This is stateful.
     """
 
     def _register_methods(self) -> None:
@@ -51,6 +50,24 @@ class QueryHandler(BaseHandler):
         """Check if this handler can process the method."""
         return method in self._methods
 
+    def _ensure_synced(self) -> None:
+        """Ensure default instance is synced with file changes before query.
+
+        This checks the dirty flag from the file watcher and syncs if needed.
+        Only syncs the "default" instance that auto-tracks project files.
+        """
+        # Get the DefaultInstanceManager which has the dirty flag and sync logic
+        default_manager = None
+        if hasattr(self.instance_manager, 'get_default_instance_manager'):
+            default_manager = self.instance_manager.get_default_instance_manager()
+
+        if default_manager and default_manager._dirty:
+            # File changes detected - sync before query
+            rebuilt = default_manager.ensure_default_instance_synced(self.reter)
+            if rebuilt is not None:
+                # Instance was rebuilt - update the context's reter reference
+                self.context.reter = rebuilt
+
     def _handle_reql(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Execute REQL query.
 
@@ -66,6 +83,9 @@ class QueryHandler(BaseHandler):
 
         if not query:
             raise ValueError("Query string is required")
+
+        # Sync files before query if changes detected (file watcher sets dirty flag)
+        self._ensure_synced()
 
         # Execute query - returns PyArrow table
         result = self.reter.reql(query, timeout_ms=timeout_ms)
@@ -86,6 +106,9 @@ class QueryHandler(BaseHandler):
 
         if not query:
             raise ValueError("Query string is required")
+
+        # Sync files before query if changes detected
+        self._ensure_synced()
 
         # Execute DL query
         result = self.reter.reasoner.dl(query)
@@ -109,6 +132,9 @@ class QueryHandler(BaseHandler):
         if not query:
             raise ValueError("Query string is required")
 
+        # Sync files before query if changes detected
+        self._ensure_synced()
+
         # Execute pattern query
         result = self.reter.reasoner.pattern(query)
 
@@ -130,6 +156,9 @@ class QueryHandler(BaseHandler):
         from ...cadsl.loader import build_pipeline_factory
         from ...dsl.core import Context as PipelineContext
         from ...dsl.catpy import Err, Ok
+
+        # Sync files before query if changes detected
+        self._ensure_synced()
 
         script = params.get("script", "")
         script_params = params.get("params", {})
@@ -215,8 +244,20 @@ class QueryHandler(BaseHandler):
             # Build pipeline context
             rag_manager = self.rag_manager if hasattr(self, 'rag_manager') else None
 
+            # Get project root for content extraction
+            project_root = None
+            default_manager = None
+            if hasattr(self.instance_manager, 'get_default_instance_manager'):
+                default_manager = self.instance_manager.get_default_instance_manager()
+                if default_manager and default_manager.project_root:
+                    project_root = str(default_manager.project_root)
+
             # Start with default param values from CADSL file
-            pipeline_params = {"rag_manager": rag_manager, "timeout_ms": timeout_ms}
+            pipeline_params = {
+                "rag_manager": rag_manager,
+                "timeout_ms": timeout_ms,
+                "project_root": project_root,
+            }
             for param_spec in tool_spec.params:
                 if param_spec.default is not None:
                     pipeline_params[param_spec.name] = param_spec.default

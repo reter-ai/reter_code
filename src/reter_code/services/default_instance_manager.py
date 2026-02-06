@@ -32,6 +32,7 @@ from ..reter_wrapper import ReterWrapper, debug_log
 from .gitignore_parser import GitignoreParser
 from .source_state_manager import SourceStateManager, SyncChanges, FileInfo
 from .rag_index_manager import SyncChanges as RAGSyncChanges, LanguageSourceChanges
+from .utils import matches_pattern
 
 try:
     from watchdog.observers import Observer
@@ -89,17 +90,23 @@ class _FileChangeHandler(FileSystemEventHandler):
         if event.is_directory:
             return
 
+        # For move events, check destination path (e.g., atomic writes: tmp -> target)
+        # This handles Claude Code's atomic write pattern: write to .tmp, rename to .py
+        if hasattr(event, 'dest_path') and event.dest_path:
+            file_path = Path(event.dest_path)
+        else:
+            file_path = Path(event.src_path)
+
         # Get relative path
         try:
-            src_path = Path(event.src_path)
             if not self._manager._project_root:
                 return
-            rel_path = src_path.relative_to(self._manager._project_root)
+            rel_path = file_path.relative_to(self._manager._project_root)
         except (ValueError, TypeError):
             return
 
         # Check if it's a supported code file
-        ext = src_path.suffix.lower()
+        ext = file_path.suffix.lower()
         if ext not in self._manager.ALL_CODE_EXTENSIONS:
             return
 
@@ -111,8 +118,8 @@ class _FileChangeHandler(FileSystemEventHandler):
         # This filters out false positives from antivirus, indexers, etc.
         if check_mtime:
             try:
-                current_mtime = src_path.stat().st_mtime
-                path_key = str(src_path)
+                current_mtime = file_path.stat().st_mtime
+                path_key = str(file_path)
                 last_mtime = self._last_mtime.get(path_key, 0)
                 if current_mtime == last_mtime:
                     # mtime unchanged - likely a false positive (read, not write)
@@ -122,9 +129,14 @@ class _FileChangeHandler(FileSystemEventHandler):
                 # File might have been deleted, let it through
                 pass
 
-        # Set dirty flag
+        # Track the file for targeted sync (just record that it changed, not the event type)
+        rel_path_str = str(rel_path).replace('\\', '/')
+        self._manager._pending_changes.add(rel_path_str)
+
         if not self._manager._dirty:
-            debug_log(f"[FileWatcher] Change detected: {rel_path} ({event.event_type})")
+            # Get event type name for logging
+            event_type_name = type(event).__name__
+            debug_log(f"[FileWatcher] Change detected: {rel_path} ({event_type_name})")
             self._manager._dirty = True
 
     def on_created(self, event: "FileSystemEvent") -> None:
@@ -206,6 +218,10 @@ class DefaultInstanceManager:
         self._dirty = True  # Start dirty - need initial scan
         self._observer: Optional["Observer"] = None
         self._watcher_started = False
+
+        # Pending changes from file watcher - avoids full rescan
+        # Just stores rel_paths of files that changed (we detect add/modify/delete during sync)
+        self._pending_changes: Set[str] = set()
 
         # Read configuration from environment
         self._load_config()
@@ -542,7 +558,16 @@ class DefaultInstanceManager:
             else:
                 self._progress_callback.set_phase("Saving snapshot...")
             save_start = time.time()
-            fresh_reter.save_network(str(snapshot_path))
+
+            # Create progress callback for save operation
+            def save_progress(percent: int) -> None:
+                if self._progress_callback:
+                    self._progress_callback.set_phase(f"Saving snapshot... {percent}%")
+                else:
+                    if percent % 10 == 0:
+                        print(f"[default] Saving... {percent}%", file=sys.stderr, flush=True)
+
+            fresh_reter.save_network(str(snapshot_path), save_progress)
             fresh_reter.mark_clean()
             if self._progress_callback is None:
                 print(f"[default] Compacted snapshot saved in {time.time()-save_start:.2f}s (total: {time.time()-start:.2f}s)", file=sys.stderr, flush=True)
@@ -556,6 +581,9 @@ class DefaultInstanceManager:
 
             return fresh_reter  # Caller should replace instance
 
+        # Track changed files for RAG targeted sync (None = full scan)
+        rag_changed_files: Optional[Set[str]] = None
+
         # Use SourceStateManager for fast mtime-first diff
         if self._source_state:
             # Check if we can skip the scan (no changes detected by watcher)
@@ -565,25 +593,57 @@ class DefaultInstanceManager:
                     print(f"[default] No changes (watcher), skipping scan (total: {time.time()-start:.2f}s)", file=sys.stderr, flush=True)
                 return None
 
-            if self._progress_callback is None:
-                print(f"[default] Quick scanning with mtime-first check...", file=sys.stderr, flush=True)
+            # OPTIMIZATION: If we have pending changes from file watcher, use targeted sync
+            # instead of scanning the entire filesystem
+
+            if self._pending_changes and self._watcher_started and self._initialized:
+                pending_count = len(self._pending_changes)
+                if self._progress_callback is None:
+                    print(f"[default] Targeted sync for {pending_count} changed files...", file=sys.stderr, flush=True)
+                else:
+                    self._progress_callback.set_phase("Processing file changes...")
+                    self._progress_callback.start_scan(f"Processing {pending_count} changes")
+
+                # Save for RAG targeted sync before clearing
+                rag_changed_files = self._pending_changes.copy()
+
+                changes = self._build_changes_from_pending(self._progress_callback)
+
+                # Clear pending changes after building
+                self._pending_changes.clear()
+
+                total_changes = len(changes.to_add) + len(changes.to_modify) + len(changes.to_delete)
+                if self._progress_callback is None:
+                    print(f"[default] Targeted sync: +{len(changes.to_add)} ~{len(changes.to_modify)} -{len(changes.to_delete)} in {time.time()-start:.2f}s", file=sys.stderr, flush=True)
+                else:
+                    self._progress_callback.end_scan(total_changes)
+
             else:
-                self._progress_callback.set_phase("Scanning for changes...")
-                self._progress_callback.start_scan("Scanning files")
+                # Full scan (initial load or no pending changes tracked)
+                if self._progress_callback is None:
+                    print(f"[default] Quick scanning with mtime-first check...", file=sys.stderr, flush=True)
+                else:
+                    self._progress_callback.set_phase("Scanning for changes...")
+                    self._progress_callback.start_scan("Scanning files")
 
-            changes = self._source_state.scan_and_diff(
-                include_patterns=self._include_patterns,
-                exclude_patterns=self._exclude_patterns,
-                is_excluded_func=self._is_excluded_for_scan,
-            )
+                changes = self._source_state.scan_and_diff(
+                    include_patterns=self._include_patterns,
+                    exclude_patterns=self._exclude_patterns,
+                    is_excluded_func=self._is_excluded_for_scan,
+                )
 
-            total_changes = len(changes.to_add) + len(changes.to_modify) + len(changes.to_delete)
-            if self._progress_callback is None:
-                print(f"[default] Quick scan found +{len(changes.to_add)} ~{len(changes.to_modify)} -{len(changes.to_delete)} in {time.time()-start:.2f}s", file=sys.stderr, flush=True)
-            else:
-                self._progress_callback.end_scan(total_changes)
+                total_changes = len(changes.to_add) + len(changes.to_modify) + len(changes.to_delete)
+                if self._progress_callback is None:
+                    print(f"[default] Quick scan found +{len(changes.to_add)} ~{len(changes.to_modify)} -{len(changes.to_delete)} in {time.time()-start:.2f}s", file=sys.stderr, flush=True)
+                else:
+                    self._progress_callback.end_scan(total_changes)
 
-            # Clear dirty flag after successful scan
+                # Clear any pending changes accumulated during full scan (already handled by scan)
+                self._pending_changes.clear()
+                # Full scan means RAG should also do full scan (no targeted optimization)
+                rag_changed_files = None
+
+            # Clear dirty flag after successful scan/targeted sync
             self._dirty = False
 
             # Apply changes using the optimized method
@@ -621,7 +681,29 @@ class DefaultInstanceManager:
             else:
                 self._progress_callback.set_phase("Saving snapshot...")
             save_start = time.time()
-            reter.save_network(str(snapshot_path))
+
+            # Create progress callback for save operation
+            def save_progress(percent: int) -> None:
+                if self._progress_callback:
+                    self._progress_callback.set_phase(f"Saving snapshot... {percent}%")
+                else:
+                    if percent % 10 == 0:
+                        print(f"[default] Saving... {percent}%", file=sys.stderr, flush=True)
+
+            # CRITICAL: Use incremental save for hybrid mode, full save otherwise
+            # Using save_network() in hybrid mode would overwrite the base with only
+            # the materialized portion (which may be incomplete after sync)
+            if reter.is_hybrid_mode():
+                reter.save_incremental()
+            else:
+                reter.save_network(str(snapshot_path), save_progress)
+                # Switch to hybrid mode after full save for faster subsequent saves
+                try:
+                    reter.open_hybrid(str(snapshot_path))
+                    if self._progress_callback is None:
+                        print(f"[default] Switched to hybrid mode for incremental saves", file=sys.stderr, flush=True)
+                except Exception as e:
+                    debug_log(f"[default] Failed to switch to hybrid mode: {e}")
             reter.mark_clean()
             # Also save source state
             if self._source_state:
@@ -656,6 +738,7 @@ class DefaultInstanceManager:
                     reter=reter,
                     project_root=self._project_root,
                     progress_callback=rag_progress_callback,
+                    changed_files=rag_changed_files,
                 )
                 total_vectors = rag_stats.get('total_vectors', 0)
                 if self._progress_callback is None:
@@ -673,6 +756,65 @@ class DefaultInstanceManager:
                 debug_log(f"[default] RAG initialization error: {traceback.format_exc()}")
 
         return None  # No rebuild needed, sync completed in-place
+
+    def _build_changes_from_pending(self, progress_callback: Optional[Any] = None) -> SyncChanges:
+        """
+        Build SyncChanges from pending file events (targeted sync).
+
+        Instead of scanning the entire filesystem, this processes only the
+        files that were reported changed by the file watcher.
+
+        Args:
+            progress_callback: Optional ConsoleProgress for UI updates
+
+        Returns:
+            SyncChanges with files to add, modify, or delete
+        """
+        import time
+        start = time.time()
+        changes = SyncChanges()
+
+        if not self._source_state or not self._pending_changes:
+            return changes
+
+        total_pending = len(self._pending_changes)
+        debug_log(f"[default] Building changes from {total_pending} pending files")
+
+        for idx, rel_path in enumerate(self._pending_changes):
+            # Update progress
+            if progress_callback:
+                progress_callback.update_progress("Processing changes", idx + 1, total_pending)
+
+            abs_path = self._project_root / rel_path
+            cached = self._source_state.get_file(rel_path)
+
+            if not abs_path.exists():
+                # File doesn't exist - if we had it cached, it's deleted
+                if cached:
+                    changes.to_delete.append(cached)
+                    debug_log(f"[default]   Deleted: {rel_path}")
+                continue
+
+            # File exists - check if new or modified
+            status, new_info = self._source_state.quick_check_file(abs_path)
+
+            if status == "new":
+                changes.to_add.append(new_info)
+                debug_log(f"[default]   New: {rel_path}")
+            elif status == "modified":
+                if cached:
+                    changes.to_modify.append((new_info, cached))
+                    debug_log(f"[default]   Modified: {rel_path}")
+                else:
+                    # No cache but modified status - treat as new
+                    changes.to_add.append(new_info)
+                    debug_log(f"[default]   New (no cache): {rel_path}")
+            # else: unchanged - skip
+
+        debug_log(f"[default] Built changes in {(time.time()-start)*1000:.1f}ms: "
+                  f"+{len(changes.to_add)} ~{len(changes.to_modify)} -{len(changes.to_delete)}")
+
+        return changes
 
     def _apply_sync_changes(self, reter: ReterWrapper, changes: SyncChanges) -> bool:
         """
@@ -1079,67 +1221,8 @@ class DefaultInstanceManager:
         return False
 
     def _matches_pattern(self, path: str, pattern: str) -> bool:
-        """
-        Simple glob pattern matching.
-
-        Supports:
-        - * (any characters within a path component)
-        - ** (any characters across path components)
-        - ? (single character)
-
-        Args:
-            path: Path to check
-            pattern: Glob pattern
-
-        Returns:
-            True if path matches pattern
-        """
-        from fnmatch import fnmatch
-
-        # Convert ** to match across directories
-        if "**" in pattern:
-            # For patterns like "test/**" or "**/test/*"
-            parts = pattern.split("**")
-            if len(parts) == 2:
-                prefix, suffix = parts
-                prefix = prefix.rstrip("/")
-                suffix = suffix.lstrip("/")
-
-                if prefix and not path.startswith(prefix):
-                    return False
-                if suffix and not fnmatch(path, "*" + suffix):
-                    return False
-                return True
-            elif len(parts) >= 3:
-                # Handle patterns with multiple ** like "**/vcpkg*/**"
-                # Check if all non-empty parts match somewhere in the path
-                prefix = parts[0].rstrip("/")
-                suffix = parts[-1].lstrip("/")
-                middle_parts = [p.strip("/") for p in parts[1:-1] if p.strip("/")]
-
-                # Prefix must match start (if non-empty)
-                if prefix and not path.startswith(prefix):
-                    return False
-
-                # Suffix must match end (if non-empty)
-                if suffix and not path.endswith(suffix) and not fnmatch(path.split("/")[-1], suffix):
-                    return False
-
-                # Middle parts must appear somewhere in the path
-                for middle in middle_parts:
-                    # Check if middle pattern matches any path component
-                    matched = False
-                    for component in path.split("/"):
-                        if fnmatch(component, middle):
-                            matched = True
-                            break
-                    if not matched:
-                        return False
-
-                return True
-
-        # Regular fnmatch
-        return fnmatch(path, pattern)
+        """Simple glob pattern matching - delegates to shared utility."""
+        return matches_pattern(path, pattern)
 
     def _get_existing_sources(self, reter: ReterWrapper) -> Dict[str, Tuple[str, str]]:
         """

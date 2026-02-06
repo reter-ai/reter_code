@@ -24,7 +24,13 @@ Supported settings in reter_code.json:
     "rag_batch_size": 32,                  // -> RETER_RAG_BATCH_SIZE
     "rag_index_markdown": true,            // -> RETER_RAG_INDEX_MARKDOWN
     "rag_markdown_include": "**/*.md",     // -> RETER_RAG_MARKDOWN_INCLUDE
-    "rag_markdown_exclude": "node_modules/**"  // -> RETER_RAG_MARKDOWN_EXCLUDE
+    "rag_markdown_exclude": "node_modules/**",  // -> RETER_RAG_MARKDOWN_EXCLUDE
+
+    // Code Chunking Configuration
+    "rag_code_chunk_enabled": true,        // -> RETER_RAG_CODE_CHUNK_ENABLED
+    "rag_code_chunk_size": 30,             // -> RETER_RAG_CODE_CHUNK_SIZE (lines)
+    "rag_code_chunk_overlap": 10,          // -> RETER_RAG_CODE_CHUNK_OVERLAP (lines)
+    "rag_code_chunk_min_size": 15          // -> RETER_RAG_CODE_CHUNK_MIN_SIZE (lines)
 }
 """
 
@@ -70,6 +76,11 @@ class ConfigLoader:
         "rag_markdown_exclude": "RETER_RAG_MARKDOWN_EXCLUDE",
         "rag_markdown_max_chunk_words": "RETER_RAG_MARKDOWN_MAX_CHUNK_WORDS",
         "rag_markdown_min_chunk_words": "RETER_RAG_MARKDOWN_MIN_CHUNK_WORDS",
+        # Code chunking configuration
+        "rag_code_chunk_enabled": "RETER_RAG_CODE_CHUNK_ENABLED",
+        "rag_code_chunk_size": "RETER_RAG_CODE_CHUNK_SIZE",
+        "rag_code_chunk_overlap": "RETER_RAG_CODE_CHUNK_OVERLAP",
+        "rag_code_chunk_min_size": "RETER_RAG_CODE_CHUNK_MIN_SIZE",
     }
 
     # Default values for RAG configuration
@@ -84,6 +95,11 @@ class ConfigLoader:
         "rag_markdown_exclude": "node_modules/**",
         "rag_markdown_max_chunk_words": 500,
         "rag_markdown_min_chunk_words": 50,
+        # Code chunking defaults
+        "rag_code_chunk_enabled": True,
+        "rag_code_chunk_size": 30,
+        "rag_code_chunk_overlap": 10,
+        "rag_code_chunk_min_size": 15,
     }
 
     def __init__(self):

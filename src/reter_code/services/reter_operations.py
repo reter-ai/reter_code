@@ -810,8 +810,8 @@ class ReterOperations:
         Remove all facts from a specific source (selective forgetting).
 
         Intelligently handles both exact source IDs and file paths:
-        - If source contains "@", treats as exact source ID
-        - If source is a file path, finds and forgets all versions (any timestamp)
+        - If source contains "|", treats as exact source ID (format: {md5_hash}|{rel_path})
+        - If source is a file path, finds and forgets all versions (any content hash)
 
         Args:
             instance_name: RETER instance name
@@ -832,8 +832,9 @@ class ReterOperations:
 
             sources_to_forget = []
 
-            # Check if this is an exact source ID (contains @) or a file path
-            if "@" in source:
+            # Check if this is an exact source ID (contains |) or a file path
+            # Source ID format: {md5_hash}|{rel_path}
+            if "|" in source:
                 # Exact source ID provided
                 sources_to_forget = [source]
             else:
@@ -847,9 +848,9 @@ class ReterOperations:
                 if all_sources:
                     # Find all sources that match this file path
                     for source_id in all_sources:
-                        if "@" in source_id:
-                            # Parse file path from source ID
-                            file_part = source_id.rsplit("@", 1)[0]
+                        if "|" in source_id:
+                            # Parse file path from source ID (format: hash|path)
+                            file_part = source_id.split("|", 1)[1] if "|" in source_id else source_id
                             # Compare paths (handle both absolute and relative, forward/backward slashes)
                             try:
                                 path_matches = (
@@ -866,7 +867,7 @@ class ReterOperations:
                                 if file_part == source or file_part.replace('\\', '/') == source.replace('\\', '/'):
                                     sources_to_forget.append(source_id)
 
-                    # If no timestamped sources found, try exact match
+                    # If no hash-prefixed sources found, try exact match
                     if not sources_to_forget and source in all_sources:
                         sources_to_forget = [source]
 

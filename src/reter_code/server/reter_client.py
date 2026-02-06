@@ -54,7 +54,12 @@ logger = logging.getLogger(__name__)
 
 
 class ReterClientError(Exception):
-    """Base exception for ReterClient errors."""
+    """Base exception for ReterClient errors.
+
+    ::: This is-in-layer Core-Layer.
+    ::: This is a value-object.
+    ::: This is stateless.
+    """
 
     def __init__(self, message: str, error: Optional[ReterError] = None):
         super().__init__(message)
@@ -62,21 +67,32 @@ class ReterClientError(Exception):
 
 
 class ReterClientTimeoutError(ReterClientError):
-    """Request timed out."""
+    """Request timed out.
+
+    ::: This is-in-layer Core-Layer.
+    ::: This is a value-object.
+    ::: This is stateless.
+    """
     pass
 
 
 class ReterClientConnectionError(ReterClientError):
-    """Connection to server failed."""
+    """Connection to server failed.
+
+    ::: This is-in-layer Core-Layer.
+    ::: This is a value-object.
+    ::: This is stateless.
+    """
     pass
 
 
 class ReterClient:
     """ZeroMQ client with same interface as ReterWrapper.
 
-    ::: This is-defined-in ZeroMQ-Client.
-    ::: This mirrors-interface ReterWrapper.
-    ::: This uses-pattern REQ/REP.
+    ::: This is-in-layer Infrastructure-Layer.
+    ::: This is a client.
+    ::: This is stateful.
+    ::: This depends-on `zmq.Context`.
 
     This client provides the same interface as ReterWrapper but
     communicates with a RETER server process via ZeroMQ.
@@ -180,12 +196,18 @@ class ReterClient:
             self._connected = False
             raise ReterClientConnectionError(f"Failed to connect: {e}")
 
-    def _send_request(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _send_request(
+        self,
+        method: str,
+        params: Dict[str, Any],
+        timeout_ms: Optional[int] = None
+    ) -> Dict[str, Any]:
         """Send request and wait for response.
 
         Args:
             method: Method name
             params: Method parameters
+            timeout_ms: Optional per-request timeout override
 
         Returns:
             Response result dictionary
@@ -196,6 +218,12 @@ class ReterClient:
             ReterClientError: Server returned error
         """
         self._ensure_connected()
+
+        # Apply per-request timeout if specified
+        effective_timeout = timeout_ms if timeout_ms is not None else self.config.timeout_ms
+        if timeout_ms is not None and self._socket:
+            self._socket.setsockopt(zmq.RCVTIMEO, timeout_ms)
+            self._socket.setsockopt(zmq.SNDTIMEO, timeout_ms)
 
         request = ReterMessage.request(method, params, client_id=self._client_id)
 
@@ -220,7 +248,7 @@ class ReterClient:
             # Timeout
             self._handle_timeout()
             raise ReterClientTimeoutError(
-                f"Request timed out after {self.config.timeout_ms}ms"
+                f"Request timed out after {effective_timeout}ms"
             )
 
         except zmq.ZMQError as e:
@@ -259,7 +287,7 @@ class ReterClient:
 
         Args:
             query: REQL query string
-            timeout_ms: Optional timeout override
+            timeout_ms: Optional timeout override (also sets socket timeout)
 
         Returns:
             Query result (as dict with columns/rows)
@@ -268,7 +296,7 @@ class ReterClient:
         if timeout_ms is not None:
             params["timeout_ms"] = timeout_ms
 
-        return self._send_request(METHOD_REQL, params)
+        return self._send_request(METHOD_REQL, params, timeout_ms=timeout_ms)
 
     def dl(self, query: str) -> List[str]:
         """Execute DL query.
@@ -308,16 +336,20 @@ class ReterClient:
         Args:
             script: CADSL script or file path
             params: Script parameters
-            timeout_ms: Execution timeout
+            timeout_ms: Execution timeout (also sets socket timeout)
 
         Returns:
             Execution result
         """
-        return self._send_request(METHOD_EXECUTE_CADSL, {
-            "script": script,
-            "params": params or {},
-            "timeout_ms": timeout_ms
-        })
+        return self._send_request(
+            METHOD_EXECUTE_CADSL,
+            {
+                "script": script,
+                "params": params or {},
+                "timeout_ms": timeout_ms
+            },
+            timeout_ms=timeout_ms
+        )
 
     def generate_cadsl(
         self,
@@ -349,16 +381,20 @@ class ReterClient:
         Args:
             question: Natural language question
             max_retries: Maximum retry attempts
-            timeout_ms: Execution timeout
+            timeout_ms: Execution timeout (also sets socket timeout)
 
         Returns:
             Query result with generated CADSL
         """
-        return self._send_request(METHOD_NATURAL_LANGUAGE, {
-            "question": question,
-            "max_retries": max_retries,
-            "timeout_ms": timeout_ms
-        })
+        return self._send_request(
+            METHOD_NATURAL_LANGUAGE,
+            {
+                "question": question,
+                "max_retries": max_retries,
+                "timeout_ms": timeout_ms
+            },
+            timeout_ms=timeout_ms
+        )
 
     # =========================================================================
     # Knowledge Operations

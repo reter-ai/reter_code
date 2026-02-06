@@ -193,7 +193,7 @@ class EmbeddingService:
         if hasattr(self, '_preloaded_model') and self._preloaded_model is not None:
             log("_init_local: Using pre-loaded model")
             self._model = self._preloaded_model
-            test_emb = self._model.encode("test", convert_to_numpy=True)
+            test_emb = self._model.encode("test", convert_to_numpy=True, show_progress_bar=False)
             self.embedding_dim = len(test_emb)
             log(f"_init_local: Complete! dim={self.embedding_dim}")
             return
@@ -218,7 +218,7 @@ class EmbeddingService:
         # Get actual dimension from model
         log("_init_local: Testing embedding generation...")
         test_start = time.time()
-        test_emb = self._model.encode("test", convert_to_numpy=True)
+        test_emb = self._model.encode("test", convert_to_numpy=True, show_progress_bar=False)
         self.embedding_dim = len(test_emb)
         log(f"_init_local: Complete! dim={self.embedding_dim}, test took {time.time() - test_start:.2f}s")
 
@@ -303,7 +303,7 @@ class EmbeddingService:
 
         # Generate embedding based on provider
         if self.provider == "local":
-            embedding = self._model.encode(text, convert_to_numpy=True, normalize_embeddings=True)
+            embedding = self._model.encode(text, convert_to_numpy=True, normalize_embeddings=True, show_progress_bar=False)
         elif self.provider == "voyage":
             embedding = self._embed_voyage([text])[0]
         elif self.provider == "openai":

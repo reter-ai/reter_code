@@ -1,0 +1,126 @@
+# redundant_code_tasks - Detect redundant/duplicated code and create review tasks
+#
+# Finds semantically similar methods/functions across the codebase using RAG pairwise
+# duplicate detection. Creates tasks for human review to decide on extraction strategy.
+#
+# Uses rag { duplicates } for efficient pairwise similarity search, then:
+# - Filters out known false positive patterns (visitors, boilerplate)
+# - Joins with REQL to get method metadata (line counts, etc.)
+# - Creates review tasks for remaining candidates
+
+detector redundant_code_tasks(category="smell-review", severity="medium") {
+    """
+    Find redundant code patterns and create review tasks for extraction decisions.
+
+    Detection: Uses RAG pairwise duplicate detection to find methods with similar
+    embeddings across different files. Filters out common false positive patterns.
+
+    Parameters:
+        min_similarity: Minimum similarity threshold 0.0-1.0 (default: 0.75)
+        limit: Maximum duplicate pairs after filtering (default: 50)
+        rag_fetch_limit: Raw pairs to fetch from RAG before filtering (default: 500)
+        include_tests: Include test files in analysis (default: false)
+        include_visitors: Include ANTLR visitor methods (default: false)
+        dry_run: If true, preview without creating tasks (default: true)
+
+    Note: rag_fetch_limit should be higher than limit since boilerplate methods
+    (get_category, get_conditions, etc.) are filtered out. Use ~10x limit for
+    codebases with many boilerplate methods.
+    """
+
+    param min_similarity: float = 0.75;
+    param limit: int = 50;
+    param rag_fetch_limit: int = 500;
+    param include_tests: bool = false;
+    param include_visitors: bool = false;
+    param dry_run: bool = true;
+
+    # Use RAG pairwise duplicate detection - efficient similarity search
+    # rag_fetch_limit should be higher than limit because boilerplate methods get filtered
+    rag { duplicates, similarity: {min_similarity}, limit: {rag_fetch_limit}, exclude_same_file: true, exclude_same_class: true }
+    # Filter out known false positive patterns
+    | python {
+        # Known boilerplate methods (trivial overrides)
+        BOILERPLATE_METHODS = {
+            "get_category", "get_conditions", "get_name", "get_type",
+            "register_to", "__init__", "__str__", "__repr__", "__hash__", "__eq__",
+            "setUp", "tearDown", "setUpClass", "tearDownClass"
+        }
+        VISITOR_PATTERNS = ["visit", "Visit", "enter", "exit", "Enter", "Exit"]
+        TEST_PATTERNS = ["/test/", "_test.py", "test_", "/tests/", "conftest.py"]
+
+        include_tests = ctx.params.get("include_tests", False) if ctx else False
+        include_visitors = ctx.params.get("include_visitors", False) if ctx else False
+
+        output = []
+        for row in rows:
+            e1_name = row.get("entity1_name", "")
+            e2_name = row.get("entity2_name", "")
+            e1_file = row.get("entity1_file", "")
+            e2_file = row.get("entity2_file", "")
+
+            # Skip boilerplate methods (always filtered)
+            if e1_name in BOILERPLATE_METHODS or e2_name in BOILERPLATE_METHODS:
+                continue
+
+            # Skip visitor methods unless include_visitors=true
+            if not include_visitors:
+                is_visitor = False
+                for pattern in VISITOR_PATTERNS:
+                    if e1_name.startswith(pattern) or e2_name.startswith(pattern):
+                        is_visitor = True
+                        break
+                if is_visitor:
+                    continue
+
+            # Skip test files unless include_tests=true
+            if not include_tests:
+                is_test = False
+                for pattern in TEST_PATTERNS:
+                    if pattern in e1_file or pattern in e2_file:
+                        is_test = True
+                        break
+                if is_test:
+                    continue
+
+            output.append(row)
+
+        result = output
+    }
+    # Deduplicate and enrich with line counts
+    | python {
+        # Deduplicate by (source_file, source_method, similar_file, similar_method)
+        seen = set()
+        output = []
+        for row in rows:
+            key = (row.get("entity1_file"), row.get("entity1_name"),
+                   row.get("entity2_file"), row.get("entity2_name"))
+            if key not in seen:
+                seen.add(key)
+                output.append(row)
+        result = output
+    }
+    # Reshape for task creation (use entity classes from RAG results)
+    | select {
+        source_method: entity1_name,
+        source_class: entity1_class ?? "(module)",
+        source_file: entity1_file,
+        source_line: entity1_line,
+        similar_method: entity2_name,
+        similar_class: entity2_class ?? "(module)",
+        similar_file: entity2_file,
+        similar_line: entity2_line,
+        similarity: similarity
+    }
+    | order_by { -similarity }
+    | limit { {limit} }
+    | create_task {
+        name: "[redundant] {source_method} ~ {similar_method}",
+        category: "smell-review",
+        priority: medium,
+        description: "**Cross-File Duplicate** - Extraction opportunity\n\n**Source**: `{source_file}` → `{source_class}.{source_method}` (line {source_line})\n**Similar**: `{similar_file}` → `{similar_class}.{similar_method}` (line {similar_line})\n**Similarity**: {similarity}\n\n---\n\nThese methods in different files have similar implementations.\n\nClassification:\n- TP: Extract to shared utility/base class\n- FP-INTENTIONAL: Different domains, will diverge\n- FP-VISITOR: ANTLR visitor pattern (expected)\n- FP-TEMPLATE: Language idiom\n\nReview both implementations:\n```python\nRead(file_path=\"{source_file}\")\nRead(file_path=\"{similar_file}\")\n```",
+        affects: source_file,
+        dry_run: {dry_run}
+    }
+    | emit { tasks }
+}

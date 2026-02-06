@@ -24,10 +24,9 @@ from ..protocol import (
 class KnowledgeHandler(BaseHandler):
     """Handler for knowledge operations (add, forget, reload).
 
-    ::: This is-defined-in System-Handlers.
-    ::: This handles-method add_knowledge.
-    ::: This handles-method forget.
-    ::: This handles-method reload.
+    ::: This is-in-layer Service-Layer.
+    ::: This is a handler.
+    ::: This is stateful.
     """
 
     def _register_methods(self) -> None:

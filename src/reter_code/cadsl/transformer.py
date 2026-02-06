@@ -18,7 +18,9 @@ from .compiler import (
     ExpressionCompiler,
     ConditionCompiler,
     ObjectExprCompiler,
+    unquote,
 )
+from .utils import get_tool_name, get_tool_type
 
 # Import step classes from steps package (re-export for backward compatibility)
 from .steps import (
@@ -63,7 +65,7 @@ class ToolSpec:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     # Pipeline components
-    source_type: str = ""  # "reql", "rag_search", "rag_duplicates", "rag_clusters", "value", "merge"
+    source_type: str = ""  # "reql", "rag_search", "rag_duplicates", "rag_clusters", "rag_dbscan", "value", "merge"
     source_content: str = ""
     steps: List[Dict[str, Any]] = field(default_factory=list)
     emit_key: Optional[str] = None
@@ -121,8 +123,8 @@ class CADSLTransformer:
     def _transform_tool_def(self, node: Tree) -> Optional[ToolSpec]:
         """Transform a tool_def node into a ToolSpec."""
         # Extract tool type
-        tool_type = self._get_tool_type(node)
-        tool_name = self._get_tool_name(node)
+        tool_type = get_tool_type(node)
+        tool_name = get_tool_name(node)
 
         spec = ToolSpec(
             name=tool_name,
@@ -155,25 +157,6 @@ class CADSLTransformer:
                 self._transform_pipeline(pipeline, spec)
 
         return spec
-
-    def _get_tool_type(self, node: Tree) -> str:
-        """Extract tool type from tool_def node."""
-        for child in node.children:
-            if isinstance(child, Tree):
-                if child.data == "tool_query":
-                    return "query"
-                elif child.data == "tool_detector":
-                    return "detector"
-                elif child.data == "tool_diagram":
-                    return "diagram"
-        return "query"
-
-    def _get_tool_name(self, node: Tree) -> str:
-        """Extract tool name from tool_def node."""
-        for child in node.children:
-            if isinstance(child, Token) and child.type == "NAME":
-                return str(child)
-        return "unnamed"
 
     def _find_child(self, node: Tree, data: str) -> Optional[Tree]:
         """Find first child with matching data."""
@@ -211,7 +194,7 @@ class CADSLTransformer:
         for child in node.children:
             if isinstance(child, Token):
                 if child.type == "STRING":
-                    return self._unquote(str(child))
+                    return unquote(str(child))
                 elif child.type == "NAME":
                     return str(child)
             elif isinstance(child, Tree):
@@ -226,7 +209,7 @@ class CADSLTransformer:
             if isinstance(child, Tree) and child.data == "capability_list":
                 for item in child.children:
                     if isinstance(item, Token) and item.type == "STRING":
-                        caps.append(self._unquote(str(item)))
+                        caps.append(unquote(str(item)))
         return caps
 
     # --------------------------------------------------------
@@ -528,6 +511,9 @@ class CADSLTransformer:
                 elif child.data == "rag_clusters":
                     spec.source_type = "rag_clusters"
                     spec.rag_params = self._extract_rag_params(child)
+                elif child.data == "rag_dbscan":
+                    spec.source_type = "rag_dbscan"
+                    spec.rag_params = self._extract_rag_params(child)
 
     def _extract_rag_params(self, node: Tree) -> Dict[str, Any]:
         """Extract parameters from RAG operation node."""
@@ -669,6 +655,8 @@ class CADSLTransformer:
             return self._transform_rag_enrich_step(node)
         elif step_type == "create_task":
             return self._transform_create_task_step(node)
+        elif step_type == "fetch_content":
+            return self._transform_fetch_content_step(node)
 
         return None
 
@@ -1099,7 +1087,7 @@ class CADSLTransformer:
                         if isinstance(item, Tree) and item.data == "format_value":
                             for fmt in item.children:
                                 if isinstance(fmt, Token) and fmt.type == "STRING":
-                                    result["format"] = self._unquote(str(fmt))
+                                    result["format"] = unquote(str(fmt))
                                 elif isinstance(fmt, Tree) and fmt.data == "param_ref":
                                     result["format_param"] = str(fmt.children[0])
                         elif isinstance(item, Token) and item.type == "NAME":
@@ -1236,6 +1224,11 @@ class CADSLTransformer:
             # ER diagram
             "entities": None,
             "relationships": None,
+            # Block diagram
+            "groups": None,
+            "columns": 4,
+            "color": None,
+            "max_per_group": 20,
         }
 
         for child in node.children:
@@ -1263,6 +1256,8 @@ class CADSLTransformer:
             "mermaid_states": "states",
             "mermaid_entities": "entities",
             "mermaid_relationships": "relationships",
+            "mermaid_groups": "groups",
+            "mermaid_color": "color",
         }
 
         # Dual-value parameters: param.data -> (from_key, to_key)
@@ -1298,12 +1293,24 @@ class CADSLTransformer:
                 result["direction"] = dir_node.data.replace("dir_", "").upper()
 
         elif param_type == "mermaid_title":
-            result["title"] = self._unquote(str(param.children[0]))
+            result["title"] = unquote(str(param.children[0]))
 
         elif param_type == "mermaid_messages":
             result["messages_from"] = str(param.children[0])
             result["messages_to"] = str(param.children[1])
             result["messages_label"] = str(param.children[2])
+
+        elif param_type == "mermaid_columns":
+            result["columns"] = int(str(param.children[0]))
+
+        elif param_type == "mermaid_columns_param":
+            result["columns_param"] = str(param.children[0].children[0])
+
+        elif param_type == "mermaid_max_per_group":
+            result["max_per_group"] = int(str(param.children[0]))
+
+        elif param_type == "mermaid_max_per_group_param":
+            result["max_per_group_param"] = str(param.children[0].children[0])
 
     def _transform_pivot_step(self, node: Tree) -> Dict[str, Any]:
         """Transform pivot step: pivot { rows: x, cols: y, value: z, aggregate: sum }"""
@@ -1387,7 +1394,7 @@ class CADSLTransformer:
                         elif param.data == "nest_max_depth_param":
                             result["max_depth_param"] = str(param.children[0].children[0])
                         elif param.data == "nest_children_key":
-                            result["children_key"] = self._unquote(str(param.children[0]))
+                            result["children_key"] = unquote(str(param.children[0]))
 
         return result
 
@@ -1415,7 +1422,7 @@ class CADSLTransformer:
                         elif param.data == "table_columns":
                             result["columns"] = self._extract_column_list(param)
                         elif param.data == "table_title":
-                            result["title"] = self._unquote(str(param.children[0]))
+                            result["title"] = unquote(str(param.children[0]))
                         elif param.data == "table_title_param":
                             result["title_param"] = str(param.children[0].children[0])
                         elif param.data == "table_totals":
@@ -1445,7 +1452,7 @@ class CADSLTransformer:
                             columns.append({"name": name, "alias": name})
                         elif col.data == "col_alias":
                             name = str(col.children[0])
-                            alias = self._unquote(str(col.children[1]))
+                            alias = unquote(str(col.children[1]))
                             columns.append({"name": name, "alias": alias})
         return columns
 
@@ -1479,7 +1486,7 @@ class CADSLTransformer:
                         elif param.data == "chart_series":
                             result["series"] = str(param.children[0])
                         elif param.data == "chart_title":
-                            result["title"] = self._unquote(str(param.children[0]))
+                            result["title"] = unquote(str(param.children[0]))
                         elif param.data == "chart_title_param":
                             result["title_param"] = str(param.children[0].children[0])
                         elif param.data == "chart_format_spec":
@@ -1506,7 +1513,7 @@ class CADSLTransformer:
             if isinstance(child, Tree) and child.data == "color_list":
                 for item in child.children:
                     if isinstance(item, Token) and item.type == "STRING":
-                        colors.append(self._unquote(str(item)))
+                        colors.append(unquote(str(item)))
         return colors
 
     def _transform_cross_join_step(self, node: Tree) -> Dict[str, Any]:
@@ -1532,9 +1539,9 @@ class CADSLTransformer:
                             if isinstance(val_node, Tree):
                                 result["exclude_self"] = val_node.data == "bool_true"
                         elif param.data == "cj_left_prefix":
-                            result["left_prefix"] = self._unquote(str(param.children[0]))
+                            result["left_prefix"] = unquote(str(param.children[0]))
                         elif param.data == "cj_right_prefix":
-                            result["right_prefix"] = self._unquote(str(param.children[0]))
+                            result["right_prefix"] = unquote(str(param.children[0]))
 
         return result
 
@@ -1628,7 +1635,7 @@ class CADSLTransformer:
                 for param in child.children:
                     if isinstance(param, Tree):
                         if param.data == "re_query":
-                            result["query_template"] = self._unquote(str(param.children[0]))
+                            result["query_template"] = unquote(str(param.children[0]))
                         elif param.data == "re_query_param":
                             result["query_template_param"] = str(param.children[0].children[0])
                         elif param.data == "re_top_k":
@@ -1659,7 +1666,7 @@ class CADSLTransformer:
                             entity_list = param.children[0]
                             if isinstance(entity_list, Tree) and entity_list.data == "rag_entity_list":
                                 result["entity_types"] = [
-                                    self._unquote(str(t))
+                                    unquote(str(t))
                                     for t in entity_list.children
                                     if isinstance(t, Token) and t.type == "STRING"
                                 ]
@@ -1674,9 +1681,14 @@ class CADSLTransformer:
             "category": "annotation",
             "priority": "medium",
             "description_template": None,
+            "prompt_template": None,
             "affects_field": None,
             "batch_size": 50,
             "dry_run": False,
+            "filter_predicates": [],
+            "metadata_template": {},
+            "group_id": None,
+            "source_tool": None,
         }
 
         for child in node.children:
@@ -1684,11 +1696,11 @@ class CADSLTransformer:
                 for param in child.children:
                     if isinstance(param, Tree):
                         if param.data == "ct_name":
-                            result["name_template"] = self._unquote(str(param.children[0]))
+                            result["name_template"] = unquote(str(param.children[0]))
                         elif param.data == "ct_name_param":
                             result["name_template_param"] = str(param.children[0].children[0])
                         elif param.data == "ct_category":
-                            result["category"] = self._unquote(str(param.children[0]))
+                            result["category"] = unquote(str(param.children[0]))
                         elif param.data == "ct_category_param":
                             result["category_param"] = str(param.children[0].children[0])
                         elif param.data == "ct_priority":
@@ -1705,9 +1717,13 @@ class CADSLTransformer:
                         elif param.data == "ct_priority_param":
                             result["priority_param"] = str(param.children[0].children[0])
                         elif param.data == "ct_description":
-                            result["description_template"] = self._unquote(str(param.children[0]))
+                            result["description_template"] = unquote(str(param.children[0]))
                         elif param.data == "ct_description_param":
                             result["description_template_param"] = str(param.children[0].children[0])
+                        elif param.data == "ct_prompt":
+                            result["prompt_template"] = unquote(str(param.children[0]))
+                        elif param.data == "ct_prompt_param":
+                            result["prompt_template_param"] = str(param.children[0].children[0])
                         elif param.data == "ct_affects":
                             result["affects_field"] = str(param.children[0])
                         elif param.data == "ct_batch_size":
@@ -1720,6 +1736,104 @@ class CADSLTransformer:
                                 result["dry_run"] = dry_run_node.data == "bool_true"
                         elif param.data == "ct_dry_run_param":
                             result["dry_run_param"] = str(param.children[0].children[0])
+                        elif param.data == "ct_filter_predicates":
+                            result["filter_predicates"] = self._extract_ct_predicates(param)
+                        elif param.data == "ct_metadata":
+                            result["metadata_template"] = self._extract_ct_metadata(param)
+                        elif param.data == "ct_group_id":
+                            result["group_id"] = unquote(str(param.children[0]))
+                        elif param.data == "ct_group_id_param":
+                            result["group_id_param"] = str(param.children[0].children[0])
+                        elif param.data == "ct_source_tool":
+                            result["source_tool"] = unquote(str(param.children[0]))
+                        elif param.data == "ct_source_tool_param":
+                            result["source_tool_param"] = str(param.children[0].children[0])
+
+        return result
+
+    def _extract_ct_predicates(self, node: Tree) -> List[str]:
+        """Extract filter predicates list from ct_filter_predicates node."""
+        predicates = []
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "ct_predicate_list":
+                for pred in child.children:
+                    if isinstance(pred, Tree) and pred.data == "ct_predicate":
+                        for token in pred.children:
+                            if isinstance(token, Token) and token.type == "STRING":
+                                predicates.append(unquote(str(token)))
+        return predicates
+
+    def _extract_ct_metadata(self, node: Tree) -> Dict[str, Any]:
+        """Extract metadata template from ct_metadata node."""
+        metadata = {}
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "ct_metadata_block":
+                for pairs_node in child.children:
+                    if isinstance(pairs_node, Tree) and pairs_node.data == "ct_metadata_pairs":
+                        for pair in pairs_node.children:
+                            if isinstance(pair, Tree) and pair.data == "ct_metadata_pair":
+                                key = None
+                                value = None
+                                for item in pair.children:
+                                    if isinstance(item, Token) and item.type == "NAME":
+                                        key = str(item)
+                                    elif isinstance(item, Tree):
+                                        value = self._extract_ct_metadata_value(item)
+                                if key is not None:
+                                    metadata[key] = value
+        return metadata
+
+    def _extract_ct_metadata_value(self, node: Tree) -> Any:
+        """Extract value from ct_metadata_value node."""
+        if node.data == "ct_meta_string":
+            return unquote(str(node.children[0]))
+        elif node.data == "ct_meta_int":
+            return int(str(node.children[0]))
+        elif node.data == "ct_meta_float":
+            return float(str(node.children[0]))
+        elif node.data == "ct_meta_true":
+            return True
+        elif node.data == "ct_meta_false":
+            return False
+        elif node.data == "ct_meta_param":
+            # Parameter reference like {score} - return as template string
+            for child in node.children:
+                if isinstance(child, Tree) and child.data == "param_ref":
+                    for item in child.children:
+                        if isinstance(item, Token) and item.type == "NAME":
+                            return "{" + str(item) + "}"
+        elif node.data == "ct_meta_field":
+            # Field reference like score - return as template string
+            return "{" + str(node.children[0]) + "}"
+        return None
+
+    def _transform_fetch_content_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform fetch_content step: fetch_content { file: file_field, start_line: line, end_line: end, output: body }"""
+        result = {
+            "type": "fetch_content",
+            "file_field": "file",
+            "start_line_field": "line",
+            "end_line_field": None,
+            "output_field": "body",
+            "max_lines": 50,
+        }
+
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "fetch_content_spec":
+                for param in child.children:
+                    if isinstance(param, Tree):
+                        if param.data == "fc_file":
+                            result["file_field"] = str(param.children[0])
+                        elif param.data == "fc_start_line":
+                            result["start_line_field"] = str(param.children[0])
+                        elif param.data == "fc_end_line":
+                            result["end_line_field"] = str(param.children[0])
+                        elif param.data == "fc_output":
+                            result["output_field"] = str(param.children[0])
+                        elif param.data == "fc_max_lines":
+                            result["max_lines"] = int(str(param.children[0]))
+                        elif param.data == "fc_max_lines_param":
+                            result["max_lines_param"] = str(param.children[0].children[0])
 
         return result
 
@@ -1747,7 +1861,7 @@ class CADSLTransformer:
                 return self._token_to_value(child)
             elif isinstance(child, Tree):
                 if child.data == "val_string":
-                    return self._unquote(str(child.children[0]))
+                    return unquote(str(child.children[0]))
                 elif child.data == "val_int":
                     return int(str(child.children[0]))
                 elif child.data == "val_float":
@@ -1766,7 +1880,7 @@ class CADSLTransformer:
     def _token_to_value(self, token: Token) -> Any:
         """Convert token to Python value."""
         if token.type == "STRING":
-            return self._unquote(str(token))
+            return unquote(str(token))
         elif token.type in ("SIGNED_INT", "INT"):
             return int(str(token))
         elif token.type in ("SIGNED_FLOAT", "FLOAT"):
@@ -1777,19 +1891,11 @@ class CADSLTransformer:
         """Extract expression as string representation."""
         if isinstance(node, Token):
             if node.type == "STRING":
-                return self._unquote(str(node))
+                return unquote(str(node))
             return str(node)
 
         # For complex expressions, return a placeholder
         return "{expr}"
-
-    def _unquote(self, s: str) -> str:
-        """Remove quotes from a string."""
-        if len(s) >= 2:
-            if (s.startswith('"') and s.endswith('"')) or \
-               (s.startswith("'") and s.endswith("'")):
-                return s[1:-1]
-        return s
 
 
 # ============================================================
@@ -1823,7 +1929,7 @@ class PipelineBuilder:
         # Import here to avoid circular imports
         from reter_code.dsl.core import (
             Pipeline, REQLSource, ValueSource,
-            RAGSearchSource, RAGDuplicatesSource, RAGClustersSource,
+            RAGSearchSource, RAGDuplicatesSource, RAGClustersSource, RAGDBScanSource,
             FilterStep, SelectStep, MapStep, FlatMapStep,
             OrderByStep, LimitStep, OffsetStep,
             GroupByStep, AggregateStep, FlattenStep, UniqueStep,
@@ -1854,6 +1960,16 @@ class PipelineBuilder:
                 params = spec.rag_params
                 pipeline = Pipeline(_source=RAGClustersSource(
                     n_clusters=params.get("n_clusters", 50),
+                    min_size=params.get("min_size", 2),
+                    exclude_same_file=params.get("exclude_same_file", True),
+                    exclude_same_class=params.get("exclude_same_class", True),
+                    entity_types=params.get("entity_types"),
+                ))
+            elif spec.source_type == "rag_dbscan":
+                params = spec.rag_params
+                pipeline = Pipeline(_source=RAGDBScanSource(
+                    eps=params.get("eps", 0.5),
+                    min_samples=params.get("min_samples", 3),
                     min_size=params.get("min_size", 2),
                     exclude_same_file=params.get("exclude_same_file", True),
                     exclude_same_class=params.get("exclude_same_class", True),
@@ -2516,6 +2632,20 @@ class ERDiagramConfig:
 
 
 @dataclass
+class BlockBetaConfig:
+    """Configuration for block-beta diagrams.
+
+    ::: This is-in-layer Domain-Specific-Language-Layer.
+    ::: This is a value-object.
+    """
+    groups: Optional[str] = None
+    nodes: Optional[str] = None
+    columns: int = 4
+    color: Optional[str] = None
+    max_per_group: int = 20
+
+
+@dataclass
 class MermaidConfig:
     """Unified configuration for all Mermaid diagram types.
 
@@ -2533,6 +2663,7 @@ class MermaidConfig:
     pie_chart: PieChartConfig = field(default_factory=PieChartConfig)
     state_diagram: StateDiagramConfig = field(default_factory=StateDiagramConfig)
     er_diagram: ERDiagramConfig = field(default_factory=ERDiagramConfig)
+    block_beta: BlockBetaConfig = field(default_factory=BlockBetaConfig)
 
     @classmethod
     def from_spec(cls, spec: Dict[str, Any]) -> "MermaidConfig":
@@ -2585,6 +2716,13 @@ class MermaidConfig:
             er_diagram=ERDiagramConfig(
                 entities=spec.get("entities"),
                 relationships=spec.get("relationships"),
+            ),
+            block_beta=BlockBetaConfig(
+                groups=spec.get("groups"),
+                nodes=spec.get("nodes"),
+                columns=spec.get("columns", 4),
+                color=spec.get("color"),
+                max_per_group=spec.get("max_per_group", 20),
             ),
         )
 
@@ -2651,6 +2789,8 @@ class RenderMermaidStep:
                 diagram = self._render_state(data)
             elif self.mermaid_type == "er":
                 diagram = self._render_er(data)
+            elif self.mermaid_type == "block_beta":
+                diagram = self._render_block_beta(data)
             else:
                 diagram = self._render_flowchart(data)
 
@@ -2920,6 +3060,130 @@ class RenderMermaidStep:
 
         return "\n".join(lines)
 
+    def _render_block_beta(self, data):
+        """Render a block-beta diagram with grouped grid layout."""
+        from collections import OrderedDict
+
+        bb = self.config.block_beta
+        lines = ["block-beta", "    columns 1"]
+
+        # Default color palette for groups without explicit colors
+        PALETTE = [
+            "#4CAF50", "#2196F3", "#9C27B0", "#FF9800",
+            "#795548", "#607D8B", "#9E9E9E", "#E91E63",
+        ]
+
+        def _safe_id(name):
+            return str(name).replace(".", "_").replace("-", "_").replace(
+                "::", "_").replace(" ", "_")
+
+        def _get_field(row, field_name):
+            """Get field value, handling ?-prefixed REQL columns."""
+            if not field_name:
+                return None
+            v = row.get(field_name)
+            if v is None:
+                v = row.get("?" + field_name)
+            return v
+
+        # Auto-detect field names
+        groups_field = bb.groups
+        nodes_field = bb.nodes or (self.config.flowchart.nodes if self.config.flowchart.nodes else None)
+        color_field = bb.color
+
+        if data and not groups_field:
+            first = data[0]
+            for c in ["layer", "group", "category", "?layer", "?group", "?category"]:
+                if c in first:
+                    groups_field = c
+                    break
+
+        if data and not nodes_field:
+            first = data[0]
+            for c in ["name", "class_name", "node", "?name", "?class_name", "?node"]:
+                if c in first:
+                    nodes_field = c
+                    break
+
+        # Group rows
+        groups = OrderedDict()
+        group_totals = OrderedDict()
+        for row in data:
+            g = _get_field(row, groups_field)
+            n = _get_field(row, nodes_field)
+            if not g or not n:
+                continue
+            if g not in groups:
+                groups[g] = []
+                group_totals[g] = 0
+            group_totals[g] += 1
+            if len(groups[g]) < bb.max_per_group:
+                groups[g].append(n)
+            # Capture color from first row of each group
+            if color_field and g not in {k: v for k, v in groups.items() if hasattr(v, '_color')}:
+                c = _get_field(row, color_field)
+                if c and not hasattr(groups[g], '_color'):
+                    groups[g] = type('ColorList', (list,), {'_color': c})(groups[g])
+
+        # Simpler color tracking
+        group_colors = {}
+        for row in data:
+            if color_field:
+                g = _get_field(row, groups_field)
+                c = _get_field(row, color_field)
+                if g and c and g not in group_colors:
+                    group_colors[g] = c
+
+        # Render each group as a block
+        styled = []
+        header_styles = []
+        for gi, (group_name, nodes) in enumerate(groups.items()):
+            if isinstance(nodes, list):
+                node_list = nodes
+            else:
+                node_list = list(nodes)
+
+            safe_gid = _safe_id(group_name)
+            total = group_totals.get(group_name, len(node_list))
+            overflow = total - len(node_list)
+            color = group_colors.get(group_name, PALETTE[gi % len(PALETTE)])
+
+            lines.append(f'    block:{safe_gid}')
+            lines.append(f"        columns {bb.columns}")
+
+            # Header row spanning all columns
+            header_id = safe_gid + "_hdr"
+            lines.append(f'        {header_id}["{group_name} ({total})"]:{bb.columns}')
+            raw_color = color.split("fill:")[1].split(",")[0] if "fill:" in color else color
+            header_styles.append((header_id, raw_color))
+
+            seen = set()
+            for node in node_list:
+                safe_nid = _safe_id(node)
+                if safe_nid in seen:
+                    continue
+                seen.add(safe_nid)
+                lines.append(f'        {safe_nid}["{node}"]')
+
+            if overflow > 0:
+                lines.append(f'        {safe_gid}_more["... +{overflow} more"]')
+
+            lines.append("    end")
+            styled.append((safe_gid, color))
+
+        # Apply styles
+        for safe_gid, color in styled:
+            if color.startswith("fill:"):
+                lines.append(f"    style {safe_gid} {color}")
+            else:
+                lines.append(f"    style {safe_gid} fill:{color},color:#fff")
+
+        # Style header rows to match block color
+        for hdr_id, hdr_color in header_styles:
+            lines.append(f"    style {hdr_id} fill:{hdr_color},color:#fff,font-weight:bold")
+
+        return "\n".join(lines)
+
 
 class PivotStep:
     """
@@ -3148,7 +3412,7 @@ class JoinStep:
         """Execute the right source and return data."""
         from reter_code.dsl.core import (
             REQLSource, ValueSource,
-            RAGSearchSource, RAGDuplicatesSource, RAGClustersSource
+            RAGSearchSource, RAGDuplicatesSource, RAGClustersSource, RAGDBScanSource
         )
 
         spec = self.right_source_spec
@@ -3193,6 +3457,16 @@ class JoinStep:
                 exclude_same_class=resolve_param(params.get("exclude_same_class"), True),
                 entity_types=resolve_param(params.get("entity_types")),
             )
+        elif source_type == "rag_dbscan":
+            params = spec.get("params", {})
+            source = RAGDBScanSource(
+                eps=resolve_param(params.get("eps"), 0.5),
+                min_samples=resolve_param(params.get("min_samples"), 3),
+                min_size=resolve_param(params.get("min_size"), 2),
+                exclude_same_file=resolve_param(params.get("exclude_same_file"), True),
+                exclude_same_class=resolve_param(params.get("exclude_same_class"), True),
+                entity_types=resolve_param(params.get("entity_types")),
+            )
         elif source_type == "value":
             source = ValueSource(spec.get("content", []))
         else:
@@ -3227,7 +3501,7 @@ class MergeSource:
         from reter_code.dsl.core import (
             pipeline_ok, pipeline_err,
             REQLSource, ValueSource,
-            RAGSearchSource, RAGDuplicatesSource, RAGClustersSource,
+            RAGSearchSource, RAGDuplicatesSource, RAGClustersSource, RAGDBScanSource,
             Pipeline, SelectStep, MapStep, FilterStep
         )
 
@@ -3260,6 +3534,16 @@ class MergeSource:
                     params = spec.get("params", {})
                     source = RAGClustersSource(
                         n_clusters=params.get("n_clusters", 50),
+                        min_size=params.get("min_size", 2),
+                        exclude_same_file=params.get("exclude_same_file", True),
+                        exclude_same_class=params.get("exclude_same_class", True),
+                        entity_types=params.get("entity_types"),
+                    )
+                elif source_type == "rag_dbscan":
+                    params = spec.get("params", {})
+                    source = RAGDBScanSource(
+                        eps=params.get("eps", 0.5),
+                        min_samples=params.get("min_samples", 3),
                         min_size=params.get("min_size", 2),
                         exclude_same_file=params.get("exclude_same_file", True),
                         exclude_same_class=params.get("exclude_same_class", True),
@@ -3848,6 +4132,14 @@ class CreateTaskStep:
     - affects: Field name containing file path to mark as affected
     - batch_size: Number of tasks to create per batch
     - dry_run: If true, returns task data without creating tasks
+    - filter_predicates: List of predicate names to filter out obvious FPs
+      - skip_same_names: Skip if all methods have same name (interface pattern)
+      - skip_trivial: Skip clusters with <3 lines per method
+      - skip_boilerplate: Skip __init__, __str__, __repr__, etc.
+      - skip_single_file: Skip if all in same file
+    - metadata_template: Dict of metadata to store with task (supports {field} templates)
+    - group_id: ID to group related tasks into a batch
+    - source_tool: Tool name that created this task (for filtering/tracking)
 
     ::: This is-in-layer Domain-Specific-Language-Layer.
     ::: This is a step.
@@ -3855,15 +4147,40 @@ class CreateTaskStep:
     ::: This is stateless.
     """
 
+    # Built-in filter predicates
+    FILTER_PREDICATES = {
+        "skip_same_names",
+        "skip_trivial",
+        "skip_boilerplate",
+        "skip_single_file",
+    }
+
+    # Boilerplate method names to skip
+    BOILERPLATE_METHODS = {
+        "__init__", "__str__", "__repr__", "__eq__", "__hash__",
+        "__lt__", "__le__", "__gt__", "__ge__", "__ne__",
+        "__len__", "__iter__", "__next__", "__getitem__", "__setitem__",
+        "__delitem__", "__contains__", "__call__", "__enter__", "__exit__",
+        "toString", "equals", "hashCode", "compareTo", "clone",
+        "GetHashCode", "Equals", "ToString", "CompareTo",
+    }
+
     def __init__(self, name_template, category="annotation", priority="medium",
-                 description_template=None, affects_field=None, batch_size=50, dry_run=False):
+                 description_template=None, prompt_template=None, affects_field=None,
+                 batch_size=50, dry_run=False, filter_predicates=None, metadata_template=None,
+                 group_id=None, source_tool=None):
         self.name_template = name_template
         self.category = category
         self.priority = priority
         self.description_template = description_template
+        self.prompt_template = prompt_template
         self.affects_field = affects_field
         self.batch_size = batch_size
         self.dry_run = dry_run
+        self.filter_predicates = filter_predicates or []
+        self.metadata_template = metadata_template or {}
+        self.group_id = group_id
+        self.source_tool = source_tool
 
     def execute(self, data, ctx=None):
         """Execute task creation."""
@@ -3879,7 +4196,7 @@ class CreateTaskStep:
                 data = data.to_pylist()
 
             if not data:
-                return pipeline_ok({"tasks_created": 0, "tasks": []})
+                return pipeline_ok({"tasks_created": 0, "tasks": [], "filtered_out": 0})
 
             # Validate template fields against first row
             template_fields = re.findall(r'\{(\w+)\}', self.name_template)
@@ -3916,22 +4233,49 @@ class CreateTaskStep:
                     logger.debug(f"Could not get unified store: {e}")
 
             if session_id is None:
-                # Try to get active session by instance name
+                # Get or create session by instance name
                 if store:
                     try:
-                        session = store.get_session_by_instance("default")
-                        if session:
-                            session_id = session.get("session_id")
+                        session_id = store.get_or_create_session("default")
                     except Exception as e:
                         logger.debug(f"Could not get session: {e}")
 
+            # Create batch item if group_id specified
+            batch_item_id = None
+            if self.group_id and store and session_id and not self.dry_run:
+                try:
+                    batch_item_id = f"BATCH-{self.group_id}"
+                    existing = store.get_item(batch_item_id)
+                    if not existing:
+                        store.add_item(
+                            session_id=session_id,
+                            item_type="milestone",
+                            item_id=batch_item_id,
+                            content=f"Task batch: {self.group_id}",
+                            description=f"Batch of tasks created with group_id={self.group_id}",
+                            status="pending",
+                            source_tool=self.source_tool or "create_task",
+                        )
+                except Exception as e:
+                    logger.debug(f"Could not create batch item: {e}")
+
             # Create tasks
             tasks_created = []
+            filtered_out = 0
+            filter_reasons = {}
+
             for batch_start in range(0, len(data), self.batch_size):
                 batch_end = min(batch_start + self.batch_size, len(data))
                 batch = data[batch_start:batch_end]
 
                 for row in batch:
+                    # Apply filter predicates
+                    filter_result = self._apply_filter_predicates(row)
+                    if filter_result:
+                        filtered_out += 1
+                        filter_reasons[filter_result] = filter_reasons.get(filter_result, 0) + 1
+                        continue
+
                     task_data = self._create_task_data(row)
 
                     if self.dry_run:
@@ -3940,6 +4284,12 @@ class CreateTaskStep:
                         # Actually create the task
                         if store and session_id:
                             try:
+                                # Build metadata
+                                metadata = task_data.get("metadata", {})
+                                metadata["source_row"] = task_data.get("source_row", {})
+                                if task_data.get("prompt"):
+                                    metadata["prompt"] = task_data["prompt"]
+
                                 # Use add_item with content as the task name
                                 # and additional fields as kwargs
                                 task_id = store.add_item(
@@ -3950,6 +4300,8 @@ class CreateTaskStep:
                                     category=task_data["category"],
                                     priority=task_data["priority"],
                                     status="pending",
+                                    source_tool=self.source_tool,
+                                    metadata=metadata,
                                 )
                                 task_data["id"] = task_id
                                 task_data["created"] = True
@@ -3961,6 +4313,15 @@ class CreateTaskStep:
                                         target_id=task_data["affects"],
                                         target_type="file",
                                         relation_type="affects"
+                                    )
+
+                                # Add group relation if batch exists
+                                if batch_item_id:
+                                    store.add_relation(
+                                        source_id=task_id,
+                                        target_id=batch_item_id,
+                                        target_type="item",
+                                        relation_type="traces"
                                     )
                             except Exception as e:
                                 logger.warning(f"Failed to create task: {e}")
@@ -3975,15 +4336,87 @@ class CreateTaskStep:
             result = {
                 "tasks_created": sum(1 for t in tasks_created if t.get("created", False) or self.dry_run),
                 "tasks_failed": sum(1 for t in tasks_created if t.get("error")),
+                "filtered_out": filtered_out,
+                "filter_reasons": filter_reasons,
                 "dry_run": self.dry_run,
                 "tasks": tasks_created,
             }
+
+            if batch_item_id:
+                result["batch_id"] = batch_item_id
 
             return pipeline_ok(result)
 
         except Exception as e:
             logger.error(f"Create task step failed: {e}", exc_info=True)
             return pipeline_err("create_task", str(e))
+
+    def _apply_filter_predicates(self, row):
+        """Apply filter predicates to a row. Returns reason string if filtered, None if passed."""
+        for predicate in self.filter_predicates:
+            if predicate == "skip_same_names":
+                # Skip if all methods in cluster have same name (interface pattern)
+                # Looks for 'members' or 'method_names' field with list of method info
+                members = row.get("members", row.get("?members", []))
+                if members and isinstance(members, list) and len(members) > 1:
+                    names = set()
+                    for m in members:
+                        if isinstance(m, dict):
+                            name = m.get("name", m.get("method_name", ""))
+                        else:
+                            name = str(m).split(".")[-1] if "." in str(m) else str(m)
+                        if name:
+                            names.add(name)
+                    if len(names) == 1:
+                        return "skip_same_names"
+
+            elif predicate == "skip_trivial":
+                # Skip if methods are too small (< 3 lines average)
+                members = row.get("members", row.get("?members", []))
+                if members and isinstance(members, list):
+                    total_lines = 0
+                    count = 0
+                    for m in members:
+                        if isinstance(m, dict):
+                            lines = m.get("line_count", m.get("lines", 0))
+                            if lines:
+                                total_lines += lines
+                                count += 1
+                    if count > 0 and total_lines / count < 3:
+                        return "skip_trivial"
+
+            elif predicate == "skip_boilerplate":
+                # Skip if all methods are boilerplate (__init__, toString, etc.)
+                members = row.get("members", row.get("?members", []))
+                if members and isinstance(members, list):
+                    all_boilerplate = True
+                    for m in members:
+                        if isinstance(m, dict):
+                            name = m.get("name", m.get("method_name", ""))
+                        else:
+                            name = str(m).split(".")[-1] if "." in str(m) else str(m)
+                        if name and name not in self.BOILERPLATE_METHODS:
+                            all_boilerplate = False
+                            break
+                    if all_boilerplate and members:
+                        return "skip_boilerplate"
+
+            elif predicate == "skip_single_file":
+                # Skip if all members are in the same file
+                members = row.get("members", row.get("?members", []))
+                if members and isinstance(members, list) and len(members) > 1:
+                    files = set()
+                    for m in members:
+                        if isinstance(m, dict):
+                            f = m.get("file", m.get("source_file", ""))
+                        else:
+                            f = ""
+                        if f:
+                            files.add(f)
+                    if len(files) == 1:
+                        return "skip_single_file"
+
+        return None
 
     def _create_task_data(self, row):
         """Create task data from a row using templates."""
@@ -4002,6 +4435,12 @@ class CreateTaskStep:
                 result = result.replace(match.group(0), str(value) if value else "")
             return result
 
+        def expand_metadata_value(value, row):
+            """Expand metadata value - can be a template string or direct value."""
+            if isinstance(value, str) and "{" in value:
+                return expand_template(value, row)
+            return value
+
         task_data = {
             "name": expand_template(self.name_template, row),
             "category": self.category,
@@ -4011,15 +4450,191 @@ class CreateTaskStep:
         if self.description_template:
             task_data["description"] = expand_template(self.description_template, row)
 
+        if self.prompt_template:
+            task_data["prompt"] = expand_template(self.prompt_template, row)
+
         if self.affects_field:
             affects_value = row.get(self.affects_field, row.get(f"?{self.affects_field}"))
             if affects_value:
                 task_data["affects"] = str(affects_value)
 
+        # Build metadata from template
+        if self.metadata_template:
+            metadata = {}
+            for key, value in self.metadata_template.items():
+                expanded = expand_metadata_value(value, row)
+                # Try to convert numeric strings back to numbers
+                if isinstance(expanded, str):
+                    try:
+                        if "." in expanded:
+                            expanded = float(expanded)
+                        else:
+                            expanded = int(expanded)
+                    except (ValueError, TypeError):
+                        pass
+                metadata[key] = expanded
+            task_data["metadata"] = metadata
+
         # Include original row data for reference
         task_data["source_row"] = dict(row)
 
         return task_data
+
+
+# ============================================================
+# FETCH CONTENT STEP
+# ============================================================
+
+class FetchContentStep:
+    """
+    Fetches source code content from files using line numbers.
+
+    Reads the actual source code between start_line and end_line from the file
+    and adds it as a new field to each row. This is useful for RAG-based
+    code analysis where you need the actual code body, not just metadata.
+
+    Syntax: fetch_content { file: file_field, start_line: line, end_line: end_line, output: body }
+
+    Parameters:
+    - file: Field name containing the file path (default: "file")
+    - start_line: Field name containing the start line number (default: "line")
+    - end_line: Field name containing the end line number (optional)
+    - output: Field name for the extracted content (default: "body")
+    - max_lines: Maximum lines to extract (default: 50)
+
+    ::: This is-in-layer Domain-Specific-Language-Layer.
+    ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
+    """
+
+    def __init__(
+        self,
+        file_field: str = "file",
+        start_line_field: str = "line",
+        end_line_field: str = None,
+        output_field: str = "body",
+        max_lines: int = 50
+    ):
+        self.file_field = file_field
+        self.start_line_field = start_line_field
+        self.end_line_field = end_line_field
+        self.output_field = output_field
+        self.max_lines = max_lines
+
+    def execute(self, data, ctx=None):
+        """Execute content fetching for each row."""
+        from reter_code.dsl.core import pipeline_ok, pipeline_err
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            # Convert to list if Arrow table
+            if hasattr(data, 'to_pylist'):
+                data = data.to_pylist()
+
+            if not data:
+                return pipeline_ok([])
+
+            # Get content extractor
+            content_extractor = None
+            project_root = None
+
+            if ctx and hasattr(ctx, 'get'):
+                content_extractor = ctx.get("content_extractor")
+                project_root = ctx.get("project_root")
+
+            # Also check params for project_root (passed from query handler)
+            if project_root is None and ctx and hasattr(ctx, 'params'):
+                project_root = ctx.params.get("project_root")
+
+            # Priority order for finding project root:
+            # 1. RETER_PROJECT_ROOT environment variable (set by MCP server)
+            # 2. Context-provided content_extractor or project_root
+            # 3. DefaultInstanceManager (if available)
+            # 4. CWD as fallback
+            import os
+            from pathlib import Path
+
+            if content_extractor is None:
+                # First try environment variable - this is set by the MCP server
+                env_root = os.environ.get("RETER_PROJECT_ROOT")
+                if env_root:
+                    project_root = Path(env_root)
+                    logger.debug(f"FetchContentStep using RETER_PROJECT_ROOT: {project_root}")
+
+            if content_extractor is None and project_root is None:
+                # Try DefaultInstanceManager (may not be available in MCP mode)
+                try:
+                    from reter_code.services.default_instance_manager import DefaultInstanceManager
+                    default_mgr = DefaultInstanceManager.get_instance()
+                    if default_mgr:
+                        rag_manager = default_mgr.get_rag_manager()
+                        if rag_manager and hasattr(rag_manager, '_content_extractor') and rag_manager._content_extractor:
+                            content_extractor = rag_manager._content_extractor
+                            logger.debug(f"FetchContentStep using RAG manager's content extractor")
+                        if content_extractor is None and default_mgr.project_root:
+                            project_root = default_mgr.project_root
+                except Exception as e:
+                    logger.debug(f"DefaultInstanceManager not available: {e}")
+
+            if content_extractor is None:
+                # Create a new content extractor
+                from reter_code.services.content_extractor import ContentExtractor
+
+                # Use project_root we found, or CWD as fallback
+                final_root = Path(project_root) if project_root else Path.cwd()
+                logger.debug(f"FetchContentStep creating content extractor with root: {final_root}")
+                content_extractor = ContentExtractor(
+                    project_root=final_root,
+                    max_body_lines=self.max_lines
+                )
+
+            result = []
+            for row in data:
+                new_row = dict(row)
+
+                # Get field values (try with and without ? prefix)
+                file_path = row.get(self.file_field) or row.get(f"?{self.file_field}")
+                start_line = row.get(self.start_line_field) or row.get(f"?{self.start_line_field}")
+
+                end_line = None
+                if self.end_line_field:
+                    end_line = row.get(self.end_line_field) or row.get(f"?{self.end_line_field}")
+
+                # Extract content
+                body = ""
+                if file_path and start_line:
+                    try:
+                        start_line = int(start_line)
+                        if end_line:
+                            end_line = int(end_line)
+                            # Limit end_line based on max_lines
+                            if end_line - start_line + 1 > self.max_lines:
+                                end_line = start_line + self.max_lines - 1
+
+                        body = content_extractor.extract_entity_content(
+                            file_path=str(file_path),
+                            start_line=start_line,
+                            end_line=end_line,
+                            entity_type="code"
+                        )
+                        if body is None:
+                            body = ""
+                    except Exception as e:
+                        logger.debug(f"Failed to extract content from {file_path}:{start_line}: {e}")
+                        body = ""
+
+                new_row[self.output_field] = body
+                result.append(new_row)
+
+            return pipeline_ok(result)
+
+        except Exception as e:
+            import traceback
+            logger.error(f"Fetch content failed: {e}\n{traceback.format_exc()}")
+            return pipeline_err("fetch_content", f"Fetch content failed: {e}", e)
 
 
 # ============================================================

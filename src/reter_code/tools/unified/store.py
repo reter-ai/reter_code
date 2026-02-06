@@ -288,7 +288,8 @@ class UnifiedStore:
 
     def _now(self) -> str:
         """Get current timestamp as ISO string."""
-        return datetime.utcnow().isoformat()
+        from datetime import timezone
+        return datetime.now(timezone.utc).isoformat()
 
     # =========================================================================
     # Session Management
@@ -572,6 +573,7 @@ class UnifiedStore:
         category: Optional[str] = None,
         phase: Optional[str] = None,
         source_tool: Optional[str] = None,
+        classification: Optional[str] = None,
         limit: int = 100,
         offset: int = 0
     ) -> List[Dict[str, Any]]:
@@ -581,6 +583,9 @@ class UnifiedStore:
         Args:
             source_tool: Filter by source tool (e.g., 'refactoring_improving:find_large_classes').
                          Supports LIKE patterns with '%' wildcards.
+            classification: Filter by classification stored in metadata JSON
+                          (e.g., 'TP-PARAMETERIZE', 'FP-INTERFACE').
+                          Supports prefix matching: 'TP' matches all TP-* classifications.
         """
         query = "SELECT * FROM items WHERE session_id = ?"
         params = [session_id]
@@ -612,13 +617,25 @@ class UnifiedStore:
                 query += " AND source_tool LIKE ?"
                 params.append(source_tool)
             elif ":" not in source_tool:
-                # No colon = prefix match (e.g., "recommender" -> "recommender:%")
-                query += " AND source_tool LIKE ?"
+                # No colon = exact match OR prefix match
+                # (e.g., "recommender" matches both "recommender" and "recommender:refactoring")
+                query += " AND (source_tool = ? OR source_tool LIKE ?)"
+                params.append(source_tool)
                 params.append(f"{source_tool}:%")
             else:
                 # Exact match for full source_tool paths
                 query += " AND source_tool = ?"
                 params.append(source_tool)
+
+        if classification:
+            # Filter by classification in metadata JSON
+            # Support prefix matching: "TP" matches "TP-EXTRACT", "TP-PARAMETERIZE", etc.
+            if classification in ("TP", "FP", "PARTIAL"):
+                query += " AND json_extract(metadata, '$.classification') LIKE ?"
+                params.append(f"{classification}%")
+            else:
+                query += " AND json_extract(metadata, '$.classification') = ?"
+                params.append(classification)
 
         # Sort by severity_score DESC (highest severity first), then by created_at DESC
         query += " ORDER BY severity_score DESC, created_at DESC LIMIT ? OFFSET ?"

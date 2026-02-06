@@ -66,22 +66,14 @@ class QueryGenerationResult:
 # RESOURCE LOADING
 # ============================================================
 
-_RESOURCES_DIR = Path(__file__).parent.parent / "resources"
+from .resource_loader import load_resource
+
 _CADSL_TOOLS_DIR = Path(__file__).parent.parent / "cadsl" / "tools"
-
-
-def _load_resource(filename: str) -> str:
-    """Load a resource file from the resources directory."""
-    resource_path = _RESOURCES_DIR / filename
-    if resource_path.exists():
-        with open(resource_path, 'r', encoding='utf-8') as f:
-            return f.read()
-    return f"# Resource file not found: {filename}"
 
 
 def get_reql_grammar() -> str:
     """Get the REQL grammar."""
-    grammar = _load_resource("REQL_GRAMMAR.lark")
+    grammar = load_resource("REQL_GRAMMAR.lark")
     return f"""# REQL Grammar (Lark format)
 
 {grammar}
@@ -98,7 +90,7 @@ def get_reql_grammar() -> str:
 
 def get_cadsl_grammar() -> str:
     """Get the CADSL grammar."""
-    grammar = _load_resource("CADSL_GRAMMAR.lark")
+    grammar = load_resource("CADSL_GRAMMAR.lark")
     return f"""# CADSL Grammar (Lark format)
 
 {grammar}
@@ -316,10 +308,54 @@ query generate_tasks() {{
 }}
 ```
 
+**Advanced create_task features for extraction/refactoring tasks:**
+
+```cadsl
+query extraction_opportunities() {{
+    rag {{ dbscan, eps: 0.3, min_samples: 2, entity_types: ["method", "function"] }}
+    | filter {{ avg_similarity > 0.8 and member_count >= 2 }}
+    | create_task {{
+        name: "Extract common code from cluster {{cluster_id}}",
+        category: "refactor",
+        priority: high,
+        description: "{{member_count}} similar methods with {{avg_similarity}} similarity",
+
+        // Prompt template for Claude Code to execute the refactoring
+        prompt: "## Extract Common Code\\n\\nCluster {{cluster_id}} contains {{member_count}} similar methods.\\nSimilarity: {{avg_similarity}}\\n\\n**Instructions:**\\n1. Read the similar code in each location\\n2. Extract the common pattern into a shared utility\\n3. Update all callers\\n4. Run tests",
+
+        // Filter out obvious false positives before creating tasks
+        filter_predicates: ["skip_same_names", "skip_trivial", "skip_boilerplate", "skip_single_file"],
+
+        // Store analysis data in task metadata
+        metadata: {{
+            avg_similarity: {{avg_similarity}},
+            cluster_id: {{cluster_id}},
+            member_count: {{member_count}}
+        }},
+
+        // Group related tasks for batch processing
+        group_id: "extraction_batch_001",
+
+        // Track which tool created this task
+        source_tool: "extraction_opportunities"
+    }}
+}}
+```
+
+**Filter predicates** (reduce false positives):
+- `skip_same_names` - Skip if all methods have same name (interface implementations)
+- `skip_trivial` - Skip methods with < 3 lines average
+- `skip_boilerplate` - Skip __init__, __str__, toString, etc.
+- `skip_single_file` - Skip if all members are in same file
+
+**Prompt template**: Stored in task metadata for Claude Code to execute later.
+Use `{{field}}` placeholders to include analysis data in the prompt.
+
 Use create_task when user asks to:
 - Generate tasks for code issues
 - Create annotation/documentation tasks
 - Batch create work items from query results
+- Find extraction/refactoring opportunities
 
 ## PYTHON STEP (Complex Transformations)
 Use `python` step for complex logic that can't be expressed in map/filter:

@@ -16,7 +16,13 @@ import time
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Set, Callable
 
-from .reter_utils import check_initialization, generate_source_id, safe_cpp_call
+from .reter_utils import (
+    check_initialization,
+    generate_source_id,
+    safe_cpp_call,
+    extract_in_file_path,
+    format_parse_errors,
+)
 
 
 class ReterPythonLoaderMixin:
@@ -96,7 +102,7 @@ class ReterPythonLoaderMixin:
         # Without: falls back to simple path-to-dots conversion
         module_name = self._path_to_module_name(in_file, package_roots)
 
-        # Load Python code with in_file, module_name, and source_id - wrap with safe call for C++ protection
+        # Load Python code - unified ReteNetwork handles hybrid mode internally
         wme_count, errors = safe_cpp_call(self.reasoner.load_python_code, code, in_file, module_name, source_id)
 
         self._session_stats["total_wmes"] += wme_count
@@ -137,27 +143,15 @@ class ReterPythonLoaderMixin:
         check_initialization()
         start_time = time.time()
 
-        # Extract file path from source (strip timestamp, MD5)
-        # Source formats: "module", "path/file.py", "path/file.py@timestamp", "md5|path/file.py"
-        in_file = source
-
-        # Strip MD5 prefix if present (format: "md5hash|path")
-        if '|' in in_file:
-            in_file = in_file.split('|', 1)[1]
-
-        # Strip timestamp suffix if present (format: "path@timestamp")
-        if '@' in in_file:
-            in_file = in_file.split('@', 1)[0]
-
-        # Normalize path separators to forward slashes (C++ visitor expects this)
-        in_file = in_file.replace('\\', '/')
+        # Extract normalized file path from source
+        in_file = extract_in_file_path(source)
 
         # Calculate Python module name from file path
         # With package_roots: respects __init__.py to calculate proper import paths
         # Without: falls back to simple path-to-dots conversion
         module_name = self._path_to_module_name(in_file, package_roots)
 
-        # load_python_code signature: (code, in_file, module_name, source_id)
+        # Load Python code - unified ReteNetwork handles hybrid mode internally
         wme_count, errors = safe_cpp_call(self.reasoner.load_python_code, code, in_file, module_name, source)
 
         self._session_stats["total_wmes"] += wme_count
@@ -276,27 +270,17 @@ class ReterJavaScriptLoaderMixin:
         facts, errors, _registered_methods, _unresolved_calls = owl_rete_cpp.parse_javascript_code(code, in_file)
 
         # Add facts to the network with source tracking
+        # Unified ReteNetwork handles hybrid mode internally
         wme_count = 0
         for fact in facts:
-            self.reasoner.network.add_fact_with_source(
-                owl_rete_cpp.Fact(fact),
-                source_id
-            )
+            fact_obj = owl_rete_cpp.Fact(fact)
+            self.reasoner.network.add_fact_with_source(fact_obj, source_id)
             wme_count += 1
 
         time_ms = (time.time() - start_time) * 1000
         self._dirty = True  # Mark instance as modified
 
-        # Convert errors to list of dicts for consistency
-        error_list = []
-        for err in errors:
-            error_list.append({
-                "line": err.get("line", 0),
-                "column": err.get("column", 0),
-                "message": err.get("message", "Unknown error")
-            })
-
-        return wme_count, source_id, time_ms, error_list
+        return wme_count, source_id, time_ms, format_parse_errors(errors)
 
     def load_javascript_code(
         self,
@@ -326,19 +310,8 @@ class ReterJavaScriptLoaderMixin:
         check_initialization()
         start_time = time.time()
 
-        # Extract file path from source (strip timestamp, MD5)
-        in_file = source
-
-        # Strip MD5 prefix if present (format: "md5hash|path")
-        if '|' in in_file:
-            in_file = in_file.split('|', 1)[1]
-
-        # Strip timestamp suffix if present (format: "path@timestamp")
-        if '@' in in_file:
-            in_file = in_file.split('@', 1)[0]
-
-        # Normalize path separators to forward slashes
-        in_file = in_file.replace('\\', '/')
+        # Extract normalized file path from source
+        in_file = extract_in_file_path(source)
 
         # Load JavaScript code - use the C++ bindings (C++ derives module name from in_file)
         # Returns (facts, errors, registered_methods, unresolved_calls)
@@ -346,27 +319,17 @@ class ReterJavaScriptLoaderMixin:
         facts, errors, _registered_methods, _unresolved_calls = owl_rete_cpp.parse_javascript_code(code, in_file)
 
         # Add facts to the network with source tracking
+        # Unified ReteNetwork handles hybrid mode internally
         wme_count = 0
         for fact in facts:
-            self.reasoner.network.add_fact_with_source(
-                owl_rete_cpp.Fact(fact),
-                source
-            )
+            fact_obj = owl_rete_cpp.Fact(fact)
+            self.reasoner.network.add_fact_with_source(fact_obj, source)
             wme_count += 1
 
         time_ms = (time.time() - start_time) * 1000
         self._dirty = True  # Mark instance as modified
 
-        # Convert errors to list of dicts for consistency
-        error_list = []
-        for err in errors:
-            error_list.append({
-                "line": err.get("line", 0),
-                "column": err.get("column", 0),
-                "message": err.get("message", "Unknown error")
-            })
-
-        return wme_count, source, time_ms, error_list
+        return wme_count, source, time_ms, format_parse_errors(errors)
 
     def load_javascript_directory(
         self,
@@ -477,22 +440,13 @@ class ReterHTMLLoaderMixin:
         # First parse to get errors
         _, errors = owl_rete_cpp.parse_html_code(code, in_file)
 
-        # Then load directly into network with source tracking
+        # Load directly into network - unified ReteNetwork handles hybrid mode internally
         wme_count = owl_rete_cpp.load_html_from_string(self.reasoner.network, code, in_file, source_id)
 
         time_ms = (time.time() - start_time) * 1000
         self._dirty = True  # Mark instance as modified
 
-        # Convert errors to list of dicts for consistency
-        error_list = []
-        for err in errors:
-            error_list.append({
-                "line": err.get("line", 0),
-                "column": err.get("column", 0),
-                "message": err.get("message", "Unknown error")
-            })
-
-        return wme_count, source_id, time_ms, error_list
+        return wme_count, source_id, time_ms, format_parse_errors(errors)
 
     def load_html_code(
         self,
@@ -522,19 +476,8 @@ class ReterHTMLLoaderMixin:
         check_initialization()
         start_time = time.time()
 
-        # Extract file path from source (strip timestamp, MD5)
-        in_file = source
-
-        # Strip MD5 prefix if present (format: "md5hash|path")
-        if '|' in in_file:
-            in_file = in_file.split('|', 1)[1]
-
-        # Strip timestamp suffix if present (format: "path@timestamp")
-        if '@' in in_file:
-            in_file = in_file.split('@', 1)[0]
-
-        # Normalize path separators to forward slashes
-        in_file = in_file.replace('\\', '/')
+        # Extract normalized file path from source
+        in_file = extract_in_file_path(source)
 
         # Load HTML code - use load_html_from_string directly (C++ derives module name from in_file)
         from reter import owl_rete_cpp
@@ -542,22 +485,13 @@ class ReterHTMLLoaderMixin:
         # First parse to get errors
         _, errors = owl_rete_cpp.parse_html_code(code, in_file)
 
-        # Then load directly into network with source tracking
+        # Load directly into network - unified ReteNetwork handles hybrid mode internally
         wme_count = owl_rete_cpp.load_html_from_string(self.reasoner.network, code, in_file, source)
 
         time_ms = (time.time() - start_time) * 1000
         self._dirty = True  # Mark instance as modified
 
-        # Convert errors to list of dicts for consistency
-        error_list = []
-        for err in errors:
-            error_list.append({
-                "line": err.get("line", 0),
-                "column": err.get("column", 0),
-                "message": err.get("message", "Unknown error")
-            })
-
-        return wme_count, source, time_ms, error_list
+        return wme_count, source, time_ms, format_parse_errors(errors)
 
     def load_html_directory(
         self,
@@ -665,10 +599,8 @@ class ReterCSharpLoaderMixin:
         # Use relative path with forward slashes for inFile (e.g., "path/to/file.cs")
         in_file = str(rel_path).replace('\\', '/')
 
-        # Load C# code - use the C++ bindings
+        # Load C# code - unified ReteNetwork handles hybrid mode internally
         from reter import owl_rete_cpp
-
-        # Use load_csharp_from_string with in_file and source_id
         wme_count = owl_rete_cpp.load_csharp_from_string(
             self.reasoner.network,
             code,
@@ -713,24 +645,11 @@ class ReterCSharpLoaderMixin:
         check_initialization()
         start_time = time.time()
 
-        # Extract file path from source (strip timestamp, MD5)
-        in_file = source
+        # Extract normalized file path from source
+        in_file = extract_in_file_path(source)
 
-        # Strip MD5 prefix if present (format: "md5hash|path")
-        if '|' in in_file:
-            in_file = in_file.split('|', 1)[1]
-
-        # Strip timestamp suffix if present (format: "path@timestamp")
-        if '@' in in_file:
-            in_file = in_file.split('@', 1)[0]
-
-        # Normalize path separators to forward slashes
-        in_file = in_file.replace('\\', '/')
-
-        # Load C# code - use the C++ bindings (C++ derives namespace name from in_file)
+        # Load C# code - unified ReteNetwork handles hybrid mode internally
         from reter import owl_rete_cpp
-
-        # Use load_csharp_from_string which now supports source_id
         wme_count = owl_rete_cpp.load_csharp_from_string(
             self.reasoner.network,
             code,
@@ -742,10 +661,7 @@ class ReterCSharpLoaderMixin:
         self._dirty = True  # Mark instance as modified
 
         # C# parser doesn't return errors in the same format as Python/JS
-        # Return empty list for now
-        error_list: List[str] = []
-
-        return wme_count, source, time_ms, error_list
+        return wme_count, source, time_ms, []
 
     def load_csharp_directory(
         self,
@@ -854,10 +770,8 @@ class ReterCPPLoaderMixin:
         # Use relative path with forward slashes for inFile (e.g., "path/to/file.cpp")
         in_file = str(rel_path).replace('\\', '/')
 
-        # Load C++ code - use the C++ bindings
+        # Load C++ code - unified ReteNetwork handles hybrid mode internally
         from reter import owl_rete_cpp
-
-        # Use load_cpp_from_string with in_file and source_id
         wme_count = owl_rete_cpp.load_cpp_from_string(
             self.reasoner.network,
             code,
@@ -902,24 +816,11 @@ class ReterCPPLoaderMixin:
         check_initialization()
         start_time = time.time()
 
-        # Extract file path from source (strip timestamp, MD5)
-        in_file = source
+        # Extract normalized file path from source
+        in_file = extract_in_file_path(source)
 
-        # Strip MD5 prefix if present (format: "md5hash|path")
-        if '|' in in_file:
-            in_file = in_file.split('|', 1)[1]
-
-        # Strip timestamp suffix if present (format: "path@timestamp")
-        if '@' in in_file:
-            in_file = in_file.split('@', 1)[0]
-
-        # Normalize path separators (use forward slashes)
-        in_file = in_file.replace('\\', '/')
-
-        # Load C++ code - use the C++ bindings
+        # Load C++ code - unified ReteNetwork handles hybrid mode internally
         from reter import owl_rete_cpp
-
-        # Use load_cpp_from_string which supports source_id
         wme_count = owl_rete_cpp.load_cpp_from_string(
             self.reasoner.network,
             code,
@@ -931,10 +832,7 @@ class ReterCPPLoaderMixin:
         self._dirty = True  # Mark instance as modified
 
         # C++ parser doesn't return errors in the same format as Python/JS
-        # Return empty list for now
-        error_list: List[str] = []
-
-        return wme_count, source, time_ms, error_list
+        return wme_count, source, time_ms, []
 
     def load_cpp_directory(
         self,

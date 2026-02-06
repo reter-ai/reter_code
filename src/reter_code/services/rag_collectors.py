@@ -7,6 +7,7 @@ for batched RAG indexing without generating embeddings.
 Extracted from RAGIndexManager to reduce file size.
 """
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
@@ -14,6 +15,20 @@ from ..reter_utils import debug_log
 
 if TYPE_CHECKING:
     from ..reter_wrapper import ReterWrapper
+
+
+@dataclass
+class ChunkConfig:
+    """
+    Configuration for code entity chunking.
+
+    ::: This is-in-layer Utility-Layer.
+    ::: This is a value-object.
+    """
+    enabled: bool = True
+    chunk_size: int = 30  # lines
+    chunk_overlap: int = 10  # lines
+    min_chunk_size: int = 15  # lines
 
 
 class RAGCollectorMixin:
@@ -29,14 +44,23 @@ class RAGCollectorMixin:
     ::: This is stateless.
     """
 
-    def _collect_python_entities(
+    def _collect_entities(
         self,
         entities: List[Dict[str, Any]],
         source_id: str,
-        project_root: Path
+        project_root: Path,
+        source_type: str,
+        chunk_config: Optional[ChunkConfig] = None
     ) -> Tuple[List[str], List[Dict[str, Any]]]:
         """
-        Collect Python entities for batched indexing (without generating embeddings).
+        Collect code entities for batched indexing (without generating embeddings).
+
+        Args:
+            entities: List of entity dictionaries from RETER
+            source_id: Source identifier (format: "md5|rel_path")
+            project_root: Project root path
+            source_type: Language type (e.g., "python", "javascript", "csharp", "cpp")
+            chunk_config: Optional chunking configuration for long methods
 
         Returns:
             Tuple of (texts, entity_metadata)
@@ -72,7 +96,51 @@ class RAGCollectorMixin:
             except Exception:
                 continue
 
-            if code_entity:
+            if not code_entity:
+                continue
+
+            # Check if chunking is enabled and entity should be chunked
+            should_chunk = (
+                chunk_config is not None
+                and chunk_config.enabled
+                and code_entity.body
+                and entity["entity_type"] in ("method", "function")
+                and len(code_entity.body.split('\n')) > chunk_config.chunk_size
+            )
+
+            if should_chunk:
+                # Chunk the entity body
+                chunks = self._content_extractor.chunk_entity_body(
+                    code_entity,
+                    chunk_size=chunk_config.chunk_size,
+                    chunk_overlap=chunk_config.chunk_overlap,
+                    min_chunk_size=chunk_config.min_chunk_size
+                )
+
+                for chunk in chunks:
+                    text = self._content_extractor.build_chunk_indexable_text(chunk)
+                    texts.append(text)
+                    entity_metadata.append({
+                        "entity_type": entity["entity_type"],
+                        "name": entity["name"],
+                        "qualified_name": f"{entity['qualified_name']}:chunk:{chunk.chunk_index}",
+                        "file": rel_path,
+                        "line": entity["line"],
+                        "end_line": entity.get("end_line"),
+                        "docstring_preview": (entity.get("docstring") or "")[:100],
+                        "source_type": source_type,
+                        "class_name": entity.get("class_name"),
+                        "source_id": source_id,
+                        # Chunk-specific metadata
+                        "is_chunked": True,
+                        "chunk_index": chunk.chunk_index,
+                        "total_chunks": chunk.total_chunks,
+                        "chunk_line_start": chunk.line_start,
+                        "chunk_line_end": chunk.line_end,
+                        "parent_qualified_name": entity["qualified_name"],
+                    })
+            else:
+                # Standard non-chunked indexing
                 text = self._content_extractor.build_indexable_text(code_entity)
                 texts.append(text)
                 entity_metadata.append({
@@ -83,12 +151,22 @@ class RAGCollectorMixin:
                     "line": entity["line"],
                     "end_line": entity.get("end_line"),
                     "docstring_preview": (entity.get("docstring") or "")[:100],
-                    "source_type": "python",
+                    "source_type": source_type,
                     "class_name": entity.get("class_name"),
                     "source_id": source_id,
                 })
 
         return texts, entity_metadata
+
+    def _collect_python_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect Python entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "python", chunk_config)
 
     def _collect_all_python_literals_bulk(
         self,
@@ -194,61 +272,11 @@ class RAGCollectorMixin:
         self,
         entities: List[Dict[str, Any]],
         source_id: str,
-        project_root: Path
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
     ) -> Tuple[List[str], List[Dict[str, Any]]]:
-        """
-        Collect JavaScript entities for batched indexing (without generating embeddings).
-
-        Returns:
-            Tuple of (texts, entity_metadata)
-        """
-        if not entities:
-            return [], []
-
-        if "|" in source_id:
-            _, rel_path = source_id.split("|", 1)
-        else:
-            rel_path = source_id
-
-        # Normalize path separators to forward slashes (consistent with RETER)
-        rel_path = rel_path.replace("\\", "/")
-        abs_path = project_root / rel_path
-
-        texts = []
-        entity_metadata = []
-
-        for entity in entities:
-            try:
-                code_entity = self._content_extractor.extract_and_build(
-                    file_path=str(abs_path),
-                    entity_type=entity["entity_type"],
-                    name=entity["name"],
-                    qualified_name=entity["qualified_name"],
-                    start_line=entity["line"],
-                    end_line=entity.get("end_line"),
-                    docstring=entity.get("docstring"),
-                    class_name=entity.get("class_name")
-                )
-            except Exception:
-                continue
-
-            if code_entity:
-                text = self._content_extractor.build_indexable_text(code_entity)
-                texts.append(text)
-                entity_metadata.append({
-                    "entity_type": entity["entity_type"],
-                    "name": entity["name"],
-                    "qualified_name": entity["qualified_name"],
-                    "file": rel_path,
-                    "line": entity["line"],
-                    "end_line": entity.get("end_line"),
-                    "docstring_preview": (entity.get("docstring") or "")[:100],
-                    "source_type": "javascript",
-                    "class_name": entity.get("class_name"),
-                    "source_id": source_id,
-                })
-
-        return texts, entity_metadata
+        """Collect JavaScript entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "javascript", chunk_config)
 
     def _collect_all_javascript_literals_bulk(
         self,
@@ -403,123 +431,21 @@ class RAGCollectorMixin:
         self,
         entities: List[Dict[str, Any]],
         source_id: str,
-        project_root: Path
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
     ) -> Tuple[List[str], List[Dict[str, Any]]]:
-        """
-        Collect C# entities for batched indexing (without generating embeddings).
-
-        Returns:
-            Tuple of (texts, entity_metadata)
-        """
-        if not entities:
-            return [], []
-
-        # Extract file path from source_id (format: "md5|rel_path")
-        if "|" in source_id:
-            _, rel_path = source_id.split("|", 1)
-        else:
-            rel_path = source_id
-
-        # Normalize path separators to forward slashes (consistent with RETER)
-        rel_path = rel_path.replace("\\", "/")
-        abs_path = project_root / rel_path
-
-        texts = []
-        entity_metadata = []
-
-        for entity in entities:
-            try:
-                code_entity = self._content_extractor.extract_and_build(
-                    file_path=str(abs_path),
-                    entity_type=entity["entity_type"],
-                    name=entity["name"],
-                    qualified_name=entity["qualified_name"],
-                    start_line=entity["line"],
-                    end_line=entity.get("end_line"),
-                    docstring=entity.get("docstring"),
-                    class_name=entity.get("class_name")
-                )
-            except Exception:
-                continue
-
-            if code_entity:
-                text = self._content_extractor.build_indexable_text(code_entity)
-                texts.append(text)
-                entity_metadata.append({
-                    "entity_type": entity["entity_type"],
-                    "name": entity["name"],
-                    "qualified_name": entity["qualified_name"],
-                    "file": rel_path,
-                    "line": entity["line"],
-                    "end_line": entity.get("end_line"),
-                    "docstring_preview": (entity.get("docstring") or "")[:100],
-                    "source_type": "csharp",
-                    "class_name": entity.get("class_name"),
-                    "source_id": source_id,
-                })
-
-        return texts, entity_metadata
+        """Collect C# entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "csharp", chunk_config)
 
     def _collect_cpp_entities(
         self,
         entities: List[Dict[str, Any]],
         source_id: str,
-        project_root: Path
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
     ) -> Tuple[List[str], List[Dict[str, Any]]]:
-        """
-        Collect C++ entities for batched indexing (without generating embeddings).
-
-        Returns:
-            Tuple of (texts, entity_metadata)
-        """
-        if not entities:
-            return [], []
-
-        # Extract file path from source_id (format: "md5|rel_path")
-        if "|" in source_id:
-            _, rel_path = source_id.split("|", 1)
-        else:
-            rel_path = source_id
-
-        # Normalize path separators to forward slashes (consistent with RETER)
-        rel_path = rel_path.replace("\\", "/")
-        abs_path = project_root / rel_path
-
-        texts = []
-        entity_metadata = []
-
-        for entity in entities:
-            try:
-                code_entity = self._content_extractor.extract_and_build(
-                    file_path=str(abs_path),
-                    entity_type=entity["entity_type"],
-                    name=entity["name"],
-                    qualified_name=entity["qualified_name"],
-                    start_line=entity["line"],
-                    end_line=entity.get("end_line"),
-                    docstring=entity.get("docstring"),
-                    class_name=entity.get("class_name")
-                )
-            except Exception:
-                continue
-
-            if code_entity:
-                text = self._content_extractor.build_indexable_text(code_entity)
-                texts.append(text)
-                entity_metadata.append({
-                    "entity_type": entity["entity_type"],
-                    "name": entity["name"],
-                    "qualified_name": entity["qualified_name"],
-                    "file": rel_path,
-                    "line": entity["line"],
-                    "end_line": entity.get("end_line"),
-                    "docstring_preview": (entity.get("docstring") or "")[:100],
-                    "source_type": "cpp",
-                    "class_name": entity.get("class_name"),
-                    "source_id": source_id,
-                })
-
-        return texts, entity_metadata
+        """Collect C++ entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "cpp", chunk_config)
 
     def _collect_markdown_chunks(
         self,
@@ -558,4 +484,4 @@ class RAGCollectorMixin:
         return texts, chunk_metadata
 
 
-__all__ = ["RAGCollectorMixin"]
+__all__ = ["RAGCollectorMixin", "ChunkConfig"]

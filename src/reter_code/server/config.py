@@ -59,8 +59,10 @@ def get_discovery_file_path(project_root: Path) -> Path:
 class ServerDiscovery:
     """Discovery information written by server, read by client.
 
-    ::: This is-defined-in Message-Protocol.
-    ::: This enables-multi-project-support.
+    ::: This is-in-layer Infrastructure-Layer.
+    ::: This is a value-object.
+    ::: This is stateless.
+    ::: This is serializable.
     """
     project_root: str
     query_endpoint: str
@@ -147,9 +149,10 @@ class ServerDiscovery:
 class ServerConfig:
     """Configuration for RETER ZeroMQ server.
 
-    ::: This is-defined-in Message-Protocol.
-    ::: This is-used-by ZeroMQ-Server.
-    ::: This is-used-by ZeroMQ-Client.
+    ::: This is-in-layer Infrastructure-Layer.
+    ::: This is a value-object.
+    ::: This is stateless.
+    ::: This is serializable.
 
     Supports environment variables:
     - RETER_HOST: Server host (default: 127.0.0.1)
@@ -189,33 +192,41 @@ class ServerConfig:
     max_workers: int = field(default_factory=lambda: int(os.environ.get("RETER_MAX_WORKERS", "4")))
     heartbeat_interval_ms: int = field(default_factory=lambda: int(os.environ.get("RETER_HEARTBEAT_MS", "5000")))
 
+    def _build_endpoint(self, name: str, port: int, bind: bool = False) -> str:
+        """Build socket endpoint URL.
+
+        Args:
+            name: Socket name suffix (e.g., "query", "events")
+            port: TCP port number
+            bind: If True, use wildcard host for binding
+
+        Returns:
+            Endpoint URL (ipc:// or tcp://)
+        """
+        if self.use_ipc and sys.platform != "win32":
+            return f"ipc://{self.ipc_path}-{name}"
+        host = "*" if bind else self.host
+        return f"tcp://{host}:{port}"
+
     @property
     def query_endpoint(self) -> str:
         """Get the query socket endpoint."""
-        if self.use_ipc and sys.platform != "win32":
-            return f"ipc://{self.ipc_path}-query"
-        return f"tcp://{self.host}:{self.query_port}"
+        return self._build_endpoint("query", self.query_port)
 
     @property
     def event_endpoint(self) -> str:
         """Get the event socket endpoint."""
-        if self.use_ipc and sys.platform != "win32":
-            return f"ipc://{self.ipc_path}-events"
-        return f"tcp://{self.host}:{self.event_port}"
+        return self._build_endpoint("events", self.event_port)
 
     @property
     def query_bind_endpoint(self) -> str:
         """Get the query socket bind endpoint (for server)."""
-        if self.use_ipc and sys.platform != "win32":
-            return f"ipc://{self.ipc_path}-query"
-        return f"tcp://*:{self.query_port}"
+        return self._build_endpoint("query", self.query_port, bind=True)
 
     @property
     def event_bind_endpoint(self) -> str:
         """Get the event socket bind endpoint (for server)."""
-        if self.use_ipc and sys.platform != "win32":
-            return f"ipc://{self.ipc_path}-events"
-        return f"tcp://*:{self.event_port}"
+        return self._build_endpoint("events", self.event_port, bind=True)
 
     def validate(self) -> list[str]:
         """Validate configuration and return list of warnings."""
@@ -320,8 +331,10 @@ class ServerConfig:
 class ClientConfig:
     """Configuration for RETER ZeroMQ client.
 
-    ::: This is-defined-in Message-Protocol.
-    ::: This is-used-by ZeroMQ-Client.
+    ::: This is-in-layer Infrastructure-Layer.
+    ::: This is a value-object.
+    ::: This is stateless.
+    ::: This is serializable.
 
     Supports environment variables:
     - RETER_SERVER_HOST: Server host to connect to

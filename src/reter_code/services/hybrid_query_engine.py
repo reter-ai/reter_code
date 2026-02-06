@@ -344,22 +344,14 @@ def get_cadsl_tool_index() -> CADSLToolIndex:
 # RESOURCE LOADING
 # ============================================================
 
-_RESOURCES_DIR = Path(__file__).parent.parent / "resources"
+from .resource_loader import load_resource
+
 _CADSL_TOOLS_DIR = Path(__file__).parent.parent / "cadsl" / "tools"
-
-
-def _load_resource(filename: str) -> str:
-    """Load a resource file from the resources directory."""
-    resource_path = _RESOURCES_DIR / filename
-    if resource_path.exists():
-        with open(resource_path, 'r', encoding='utf-8') as f:
-            return f.read()
-    return f"# Resource file not found: {filename}"
 
 
 def _load_classification_prompt() -> str:
     """Load the classification prompt."""
-    return _load_resource("HYBRID_CLASSIFICATION.prompt")
+    return load_resource("HYBRID_CLASSIFICATION.prompt")
 
 
 # Load classification prompt at module import
@@ -441,7 +433,7 @@ QUERY_TOOLS = [
 
 def handle_get_reql_grammar() -> str:
     """Return the REQL grammar."""
-    grammar = _load_resource("REQL_GRAMMAR.lark")
+    grammar = load_resource("REQL_GRAMMAR.lark")
     return f"""# REQL Grammar (Lark format)
 
 {grammar}
@@ -464,7 +456,7 @@ def handle_get_reql_grammar() -> str:
 
 def handle_get_cadsl_grammar() -> str:
     """Return the CADSL grammar."""
-    grammar = _load_resource("CADSL_GRAMMAR.lark")
+    grammar = load_resource("CADSL_GRAMMAR.lark")
     return f"""# CADSL Grammar (Lark format)
 
 {grammar}

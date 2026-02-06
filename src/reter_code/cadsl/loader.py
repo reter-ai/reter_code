@@ -207,7 +207,7 @@ def build_pipeline_factory(spec: CADSLToolSpec,
     """
     from reter_code.dsl.core import (
         Pipeline, REQLSource, ValueSource,
-        RAGSearchSource, RAGDuplicatesSource, RAGClustersSource,
+        RAGSearchSource, RAGDuplicatesSource, RAGClustersSource, RAGDBScanSource,
         FileScanSource,
         FilterStep, SelectStep, MapStep, FlatMapStep,
         OrderByStep, LimitStep, OffsetStep,
@@ -246,6 +246,16 @@ def build_pipeline_factory(spec: CADSLToolSpec,
                 exclude_same_class=params.get("exclude_same_class", True),
                 entity_types=params.get("entity_types"),
             )
+        elif spec.source_type == "rag_dbscan":
+            params = _resolve_rag_params(spec.rag_params, ctx)
+            source = RAGDBScanSource(
+                eps=params.get("eps", 0.5),
+                min_samples=params.get("min_samples", 3),
+                min_size=params.get("min_size", 2),
+                exclude_same_file=params.get("exclude_same_file", True),
+                exclude_same_class=params.get("exclude_same_class", True),
+                entity_types=params.get("entity_types"),
+            )
         elif spec.source_type == "value":
             source = ValueSource(spec.source_content)
         elif spec.source_type == "merge":
@@ -265,9 +275,19 @@ def build_pipeline_factory(spec: CADSLToolSpec,
                 include_stats=params.get("include_stats", True),
             )
         else:
-            source = ValueSource([])
+            raise ValueError(f"Unknown source type: {spec.source_type}")
 
         pipeline = Pipeline(_source=source)
+
+        # Helper to wrap functions that may take (r, ctx) or just (r)
+        def wrap_with_ctx(fn):
+            """Wrap a function to handle both (r, ctx) and (r) signatures."""
+            def wrapped(r):
+                try:
+                    return fn(r, ctx)
+                except TypeError:
+                    return fn(r)
+            return wrapped
 
         # Process each step
         emit_key = None
@@ -276,15 +296,7 @@ def build_pipeline_factory(spec: CADSLToolSpec,
 
             if step_type == "filter":
                 predicate = step_spec.get("predicate", lambda r, ctx=None: True)
-                # Wrap predicate to handle context
-                def make_filter_pred(pred):
-                    def wrapped(r):
-                        try:
-                            return pred(r, ctx)
-                        except TypeError:
-                            return pred(r)
-                    return wrapped
-                pipeline = pipeline.filter(make_filter_pred(predicate))
+                pipeline = pipeline.filter(wrap_with_ctx(predicate))
 
             elif step_type == "select":
                 fields = step_spec.get("fields", {})
@@ -292,25 +304,11 @@ def build_pipeline_factory(spec: CADSLToolSpec,
 
             elif step_type == "map":
                 transform = step_spec.get("transform", lambda r, ctx=None: r)
-                def make_map_fn(t):
-                    def wrapped(r):
-                        try:
-                            return t(r, ctx)
-                        except TypeError:
-                            return t(r)
-                    return wrapped
-                pipeline = pipeline.map(make_map_fn(transform))
+                pipeline = pipeline.map(wrap_with_ctx(transform))
 
             elif step_type == "flat_map":
                 transform = step_spec.get("transform", lambda r, ctx=None: [r])
-                def make_flatmap_fn(t):
-                    def wrapped(r):
-                        try:
-                            return t(r, ctx)
-                        except TypeError:
-                            return t(r)
-                    return wrapped
-                pipeline = pipeline.flat_map(make_flatmap_fn(transform))
+                pipeline = pipeline.flat_map(wrap_with_ctx(transform))
 
             elif step_type == "order_by":
                 orders = step_spec.get("orders", [])
@@ -469,6 +467,11 @@ def build_pipeline_factory(spec: CADSLToolSpec,
             elif step_type == "render_mermaid":
                 # Render to Mermaid diagram
                 from .transformer import RenderMermaidStep
+                # Resolve param refs for block_beta int params
+                if "columns_param" in step_spec:
+                    step_spec["columns"] = int(ctx.params.get(step_spec.pop("columns_param"), 4))
+                if "max_per_group_param" in step_spec:
+                    step_spec["max_per_group"] = int(ctx.params.get(step_spec.pop("max_per_group_param"), 20))
                 pipeline = pipeline >> RenderMermaidStep.from_spec(step_spec)
 
             elif step_type == "rag_enrich":
@@ -527,6 +530,10 @@ def build_pipeline_factory(spec: CADSLToolSpec,
                 if "description_template_param" in step_spec:
                     description_template = ctx.params.get(step_spec["description_template_param"], description_template)
 
+                prompt_template = step_spec.get("prompt_template")
+                if "prompt_template_param" in step_spec:
+                    prompt_template = ctx.params.get(step_spec["prompt_template_param"], prompt_template)
+
                 batch_size = step_spec.get("batch_size", 50)
                 if "batch_size_param" in step_spec:
                     batch_size = ctx.params.get(step_spec["batch_size_param"], batch_size)
@@ -535,14 +542,44 @@ def build_pipeline_factory(spec: CADSLToolSpec,
                 if "dry_run_param" in step_spec:
                     dry_run = ctx.params.get(step_spec["dry_run_param"], dry_run)
 
+                # New parameters for task system enhancements
+                group_id = step_spec.get("group_id")
+                if "group_id_param" in step_spec:
+                    group_id = ctx.params.get(step_spec["group_id_param"], group_id)
+
+                source_tool = step_spec.get("source_tool")
+                if "source_tool_param" in step_spec:
+                    source_tool = ctx.params.get(step_spec["source_tool_param"], source_tool)
+
                 pipeline = pipeline >> CreateTaskStep(
                     name_template=name_template,
                     category=category,
                     priority=priority,
                     description_template=description_template,
+                    prompt_template=prompt_template,
                     affects_field=step_spec.get("affects_field"),
                     batch_size=batch_size,
                     dry_run=dry_run,
+                    filter_predicates=step_spec.get("filter_predicates", []),
+                    metadata_template=step_spec.get("metadata_template", {}),
+                    group_id=group_id,
+                    source_tool=source_tool,
+                )
+
+            elif step_type == "fetch_content":
+                # Fetch source code content from files
+                from .transformer import FetchContentStep
+
+                max_lines = step_spec.get("max_lines", 50)
+                if "max_lines_param" in step_spec:
+                    max_lines = ctx.params.get(step_spec["max_lines_param"], max_lines)
+
+                pipeline = pipeline >> FetchContentStep(
+                    file_field=step_spec.get("file_field", "file"),
+                    start_line_field=step_spec.get("start_line_field", "line"),
+                    end_line_field=step_spec.get("end_line_field"),
+                    output_field=step_spec.get("output_field", "body"),
+                    max_lines=max_lines,
                 )
 
         if emit_key:

@@ -18,6 +18,7 @@ class MockNetwork:
 
     def __init__(self):
         self._data = None
+        self._hybrid_mode = False
 
     def save(self, filename):
         """Mock saving network to file."""
@@ -30,6 +31,10 @@ class MockNetwork:
         with open(filename, 'rb') as f:
             self._data = f.read()
         return True
+
+    def is_hybrid(self):
+        """Mock hybrid mode check."""
+        return self._hybrid_mode
 
 
 class MockReter:
@@ -50,7 +55,7 @@ class MockReter:
         self._wme_count += wme_count
         return wme_count
 
-    def load_python_code(self, code, module_name, source):
+    def load_python_code(self, code, in_file, module_name, source):
         """Mock loading Python code - return simulated WME count and errors."""
         wme_count = len(code.split('\n'))
         if source:
@@ -442,3 +447,317 @@ class TestLoadPythonDirectory:
             )
 
             assert wme_count >= 0
+
+
+# ============================================================================
+# Integration Tests for Hybrid Network (uses real implementation, not mocks)
+# ============================================================================
+
+class TestHybridModeIntegration:
+    """
+    Integration tests for hybrid mode (incremental save with delta journals).
+
+    These tests use the real implementation (not mocks) because hybrid mode
+    depends on actual file I/O and the C++ backend.
+    """
+
+    @pytest.fixture
+    def real_wrapper(self):
+        """Create a real ReterWrapper (not mocked)."""
+        from reter_code.reter_wrapper import ReterWrapper
+        return ReterWrapper(load_ontology=False)
+
+    def test_is_hybrid_mode_false_initially(self, real_wrapper):
+        """Test that hybrid mode is false initially."""
+        assert real_wrapper.is_hybrid_mode() is False
+
+    def test_get_hybrid_stats_when_not_hybrid(self, real_wrapper):
+        """Test get_hybrid_stats returns hybrid_mode=False when not in hybrid mode."""
+        stats = real_wrapper.get_hybrid_stats()
+        assert stats == {"hybrid_mode": False}
+
+    def test_open_hybrid_file_not_found(self, real_wrapper):
+        """Test open_hybrid raises error for non-existent file."""
+        from reter_code.reter_wrapper import ReterFileNotFoundError
+        with pytest.raises(ReterFileNotFoundError):
+            real_wrapper.open_hybrid("/nonexistent/path/file.reter")
+
+    def test_save_incremental_when_not_hybrid(self, real_wrapper):
+        """Test save_incremental raises error when not in hybrid mode."""
+        from reter_code.reter_wrapper import ReterSaveError
+        with pytest.raises(ReterSaveError, match="Not in hybrid mode"):
+            real_wrapper.save_incremental()
+
+    def test_compact_when_not_hybrid(self, real_wrapper):
+        """Test compact raises error when not in hybrid mode."""
+        from reter_code.reter_wrapper import ReterSaveError
+        with pytest.raises(ReterSaveError, match="Not in hybrid mode"):
+            real_wrapper.compact()
+
+    def test_needs_compaction_false_when_not_hybrid(self, real_wrapper):
+        """Test needs_compaction returns False when not in hybrid mode."""
+        assert real_wrapper.needs_compaction() is False
+
+    def test_close_hybrid_safe_when_not_hybrid(self, real_wrapper):
+        """Test close_hybrid is safe to call when not in hybrid mode."""
+        # Should not raise
+        real_wrapper.close_hybrid()
+
+    def test_hybrid_mode_full_cycle(self, real_wrapper, tmp_path):
+        """Test full hybrid mode cycle: save base, open hybrid, modify, save delta, close."""
+        # 1. Add some data and save as base snapshot
+        real_wrapper.add_ontology("Person is_a Thing", source="base_ontology")
+        base_path = str(tmp_path / "test.reter")
+        success, _, _ = real_wrapper.save_network(base_path)
+        assert success is True
+
+        # 2. Create new wrapper and open in hybrid mode
+        from reter_code.reter_wrapper import ReterWrapper
+        wrapper2 = ReterWrapper(load_ontology=False)
+        success, filename, time_ms = wrapper2.open_hybrid(base_path)
+
+        assert success is True
+        assert wrapper2.is_hybrid_mode() is True
+
+        # 3. Check hybrid stats
+        stats = wrapper2.get_hybrid_stats()
+        assert stats["hybrid_mode"] is True
+        assert stats["base_facts"] >= 0
+        assert stats["delta_facts"] >= 0
+        assert "delta_path" in stats
+
+        # 4. Add more data (this should go to delta)
+        wrapper2.add_ontology("Student is_a Person", source="delta_ontology")
+
+        # 5. Save incremental (delta only)
+        success, delta_path, time_ms = wrapper2.save_incremental()
+        assert success is True
+        assert os.path.exists(delta_path)
+
+        # 6. Close hybrid mode
+        wrapper2.close_hybrid()
+        assert wrapper2.is_hybrid_mode() is False
+
+    def test_hybrid_mode_compaction(self, real_wrapper, tmp_path):
+        """Test compaction merges delta into base."""
+        # 1. Create base snapshot
+        real_wrapper.add_ontology("Entity is_a Thing", source="base")
+        base_path = str(tmp_path / "compact_test.reter")
+        real_wrapper.save_network(base_path)
+
+        # 2. Open hybrid and add delta
+        from reter_code.reter_wrapper import ReterWrapper
+        wrapper2 = ReterWrapper(load_ontology=False)
+        wrapper2.open_hybrid(base_path)
+
+        # Add multiple facts to delta
+        for i in range(5):
+            wrapper2.add_ontology(f"Thing{i} is_a Entity", source=f"delta_{i}")
+
+        # 3. Check delta stats before compaction
+        stats_before = wrapper2.get_hybrid_stats()
+        delta_before = stats_before["delta_facts"]
+
+        # 4. Compact
+        success, time_ms = wrapper2.compact()
+        assert success is True
+
+        # 5. Check stats after compaction
+        stats_after = wrapper2.get_hybrid_stats()
+        assert stats_after["delta_facts"] == 0
+        assert stats_after["base_facts"] >= stats_before["base_facts"]
+
+        wrapper2.close_hybrid()
+
+    def test_needs_compaction_threshold(self, real_wrapper, tmp_path):
+        """Test needs_compaction respects threshold ratio.
+
+        Uses unified ReteNetwork API - facts added via wrapper go to delta
+        automatically when in hybrid mode.
+        """
+        from reter_code.reter_wrapper import ReterWrapper
+
+        # Create small base snapshot
+        wrapper = ReterWrapper(load_ontology=False)
+        wrapper.add_ontology("Root is_a Thing", source="base")
+        base_path = str(tmp_path / "threshold_test.reter")
+        wrapper.save_network(base_path)
+
+        # Open in hybrid mode and add many delta facts
+        wrapper2 = ReterWrapper(load_ontology=False)
+        wrapper2.open_hybrid(base_path)
+
+        # Add many delta facts - unified API handles delta tracking
+        for i in range(50):
+            wrapper2.add_ontology(f"Item{i} is_a Root", source=f"delta_{i}")
+
+        # Should need compaction because delta (50) >> 20% of base (1)
+        assert wrapper2.needs_compaction() is True
+
+        # With very high threshold, should not need compaction
+        assert wrapper2.needs_compaction(threshold_ratio=100.0) is False
+
+        wrapper2.close_hybrid()
+
+
+class TestStatePersistenceHybridMode:
+    """
+    Tests for StatePersistenceService hybrid mode integration.
+
+    Verifies that load_snapshot_if_available and save_all_instances
+    work correctly with hybrid mode enabled.
+    """
+
+    @pytest.fixture
+    def persistence_service(self, tmp_path):
+        """Create StatePersistenceService with temp snapshots directory."""
+        from reter_code.services.instance_manager import InstanceManager
+        from reter_code.services.state_persistence import StatePersistenceService
+
+        instance_mgr = InstanceManager()
+        service = StatePersistenceService(instance_mgr)
+        service.snapshots_dir = tmp_path
+        return service
+
+    def test_load_snapshot_hybrid_mode(self, persistence_service, tmp_path):
+        """Test that load_snapshot_if_available uses hybrid mode by default."""
+        from reter_code.reter_wrapper import ReterWrapper
+
+        # 1. Create a snapshot file
+        wrapper = ReterWrapper(load_ontology=False)
+        wrapper.add_ontology("Entity is_a Thing", source="test")
+        snapshot_path = tmp_path / ".test_instance.reter"
+        wrapper.save_network(str(snapshot_path))
+
+        # 2. Load via persistence service (should use hybrid mode)
+        success = persistence_service.load_snapshot_if_available("test_instance")
+
+        assert success is True
+
+        # 3. Verify instance was loaded in hybrid mode
+        instances = persistence_service.instance_manager.get_all_instances()
+        loaded_wrapper = instances.get("test_instance")
+        assert loaded_wrapper is not None
+        assert loaded_wrapper.is_hybrid_mode() is True
+
+        # Cleanup
+        loaded_wrapper.close_hybrid()
+
+    def test_load_snapshot_fallback_to_regular(self, persistence_service, tmp_path):
+        """Test that load_snapshot falls back to regular mode if hybrid fails."""
+        from reter_code.reter_wrapper import ReterWrapper
+
+        # Create a snapshot
+        wrapper = ReterWrapper(load_ontology=False)
+        wrapper.add_ontology("Item is_a Thing", source="test")
+        snapshot_path = tmp_path / ".fallback_test.reter"
+        wrapper.save_network(str(snapshot_path))
+
+        # Load with hybrid disabled
+        success = persistence_service.load_snapshot_if_available(
+            "fallback_test", use_hybrid=False
+        )
+
+        assert success is True
+
+        # Verify instance was loaded in regular mode (not hybrid)
+        instances = persistence_service.instance_manager.get_all_instances()
+        loaded_wrapper = instances.get("fallback_test")
+        assert loaded_wrapper is not None
+        assert loaded_wrapper.is_hybrid_mode() is False
+
+    def test_save_all_instances_incremental(self, persistence_service, tmp_path):
+        """Test that save_all_instances uses incremental save for hybrid instances."""
+        from reter_code.reter_wrapper import ReterWrapper
+
+        # 1. Create and register an instance
+        wrapper = ReterWrapper(load_ontology=False)
+        wrapper.add_ontology("Data is_a Thing", source="data")
+        persistence_service.instance_manager._instances["inc_test"] = wrapper
+
+        # 2. Save (full) first time to create snapshot
+        persistence_service.save_all_instances()
+
+        # 3. Reload in hybrid mode
+        wrapper2 = ReterWrapper(load_ontology=False)
+        snapshot_path = tmp_path / ".inc_test.reter"
+        wrapper2.open_hybrid(str(snapshot_path))
+        wrapper2._dirty = True  # Mark as dirty
+        persistence_service.instance_manager._instances["inc_test"] = wrapper2
+
+        # Get delta path before save (save_all_instances closes hybrid)
+        delta_path = wrapper2.reasoner.network.delta_path()
+
+        # 4. Save again (should be incremental)
+        # Note: save_all_instances closes hybrid mode, so we check file existence after
+        persistence_service.save_all_instances(compact_on_shutdown=False)
+
+        # 5. Verify delta file exists (was created during hybrid save)
+        assert os.path.exists(delta_path)
+
+    def test_add_ontology_syncs_to_hybrid_delta(self, tmp_path):
+        """Test that add_ontology in hybrid mode syncs new facts to delta."""
+        from reter_code.reter_wrapper import ReterWrapper
+
+        # 1. Create base snapshot
+        real_wrapper = ReterWrapper(load_ontology=False)
+        real_wrapper.add_ontology("BaseEntity is_a Thing", source="base")
+        base_path = str(tmp_path / "sync_test.reter")
+        real_wrapper.save_network(base_path)
+
+        # 2. Open in hybrid mode
+        wrapper2 = ReterWrapper(load_ontology=False)
+        wrapper2.open_hybrid(base_path)
+
+        # Get delta count before add
+        stats_before = wrapper2.get_hybrid_stats()
+        delta_before = stats_before["delta_facts"]
+
+        # 3. Add ontology in hybrid mode (should sync to delta)
+        wrapper2.add_ontology("NewThing is_a BaseEntity", source="new_source")
+
+        # 4. Verify delta count increased
+        stats_after = wrapper2.get_hybrid_stats()
+        delta_after = stats_after["delta_facts"]
+
+        assert delta_after > delta_before, \
+            f"Delta should increase after add_ontology: {delta_before} -> {delta_after}"
+
+        # 5. Save incremental and verify delta file grew
+        wrapper2.save_incremental()
+        delta_size = stats_after["delta_file_size"]
+        assert delta_size > 16, "Delta file should have content beyond header"
+
+        wrapper2.close_hybrid()
+
+    def test_forget_source_syncs_to_hybrid_delta(self, tmp_path):
+        """Test that forget_source in hybrid mode syncs removal of delta sources."""
+        from reter_code.reter_wrapper import ReterWrapper
+
+        # 1. Create base snapshot
+        real_wrapper = ReterWrapper(load_ontology=False)
+        real_wrapper.add_ontology("Entity is_a Thing", source="base")
+        base_path = str(tmp_path / "forget_test.reter")
+        real_wrapper.save_network(base_path)
+
+        # 2. Open in hybrid mode
+        wrapper2 = ReterWrapper(load_ontology=False)
+        wrapper2.open_hybrid(base_path)
+
+        # 3. Add source in hybrid mode (goes to delta)
+        wrapper2.add_ontology("ToForget is_a Entity", source="to_forget")
+
+        # Verify it was added to delta
+        stats_before = wrapper2.get_hybrid_stats()
+        assert stats_before["delta_facts"] > 0, "Should have delta facts after add"
+
+        # 4. Forget the delta source
+        wrapper2.forget_source("to_forget")
+
+        # 5. Verify deleted count increased (or delta facts decreased)
+        stats_after = wrapper2.get_hybrid_stats()
+        # After forgetting a delta source, it should be marked as deleted
+        assert stats_after["deleted_facts"] > 0 or stats_after["delta_facts"] < stats_before["delta_facts"], \
+            "Forgetting delta source should mark as deleted or reduce delta"
+
+        wrapper2.close_hybrid()

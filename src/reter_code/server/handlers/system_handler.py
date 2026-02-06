@@ -17,10 +17,9 @@ from ..protocol import METHOD_SYSTEM, METHOD_STATUS, METHOD_INFO
 class SystemHandler(BaseHandler):
     """Handler for system operations (status, info, health).
 
-    ::: This is-defined-in System-Handlers.
-    ::: This handles-method system.
-    ::: This handles-method status.
-    ::: This handles-method info.
+    ::: This is-in-layer Service-Layer.
+    ::: This is a handler.
+    ::: This is stateful.
     """
 
     def _register_methods(self) -> None:

@@ -66,7 +66,10 @@ MessageType = Literal["request", "response", "event"]
 class ReterError:
     """Error information for failed requests.
 
-    ::: This is-defined-in Message-Protocol.
+    ::: This is-in-layer Core-Layer.
+    ::: This is a value-object.
+    ::: This is stateless.
+    ::: This is serializable.
     """
 
     code: int
@@ -113,8 +116,10 @@ class ReterError:
 class ReterMessage:
     """Message format for RETER ZeroMQ protocol.
 
-    ::: This is-defined-in Message-Protocol.
-    ::: This is-core-to ZeroMQ-Protocol.
+    ::: This is-in-layer Core-Layer.
+    ::: This is a value-object.
+    ::: This is stateless.
+    ::: This is serializable.
     """
 
     id: str = field(default_factory=lambda: str(uuid.uuid4()))

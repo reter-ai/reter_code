@@ -213,7 +213,18 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
             end_before: Optional[str] = None,
             include_relations: bool = False,
             limit: int = 100,
-            offset: int = 0
+            offset: int = 0,
+            classification: Optional[str] = None,
+            notes: Optional[str] = None,
+            verified_by: Optional[str] = None,
+            update_status: bool = False,
+            create_followup: bool = False,
+            followup_name: Optional[str] = None,
+            followup_description: Optional[str] = None,
+            followup_prompt: Optional[str] = None,
+            followup_category: Optional[str] = None,
+            followup_priority: Optional[str] = None,
+            complete_original: bool = False
         ) -> Dict[str, Any]:
             """
             Query and manage items (thoughts, tasks, milestones).
@@ -224,10 +235,12 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
             - delete: Delete item and relations
             - update: Update item fields
             - clear: Delete multiple items matching filters
+            - classify: Classify task as TP or FP (requires item_id and classification)
+            - verify: Mark task as verified (requires item_id)
 
             Args:
-                action: list, get, delete, update, clear
-                item_id: Item ID (required for get/delete/update)
+                action: list, get, delete, update, clear, classify, verify
+                item_id: Item ID (required for get/delete/update/classify/verify)
                 updates: Fields to update (for update action)
                 item_type: Filter by type (thought, requirement, task, etc.)
                 status: Filter by status (pending, in_progress, completed, etc.)
@@ -245,6 +258,20 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
                 include_relations: Include related items in response
                 limit: Maximum items to return
                 offset: Pagination offset
+                classification: Classification for classify action or list filter. Valid values:
+                    TP-EXTRACT, TP-PARAMETERIZE, PARTIAL-TP,
+                    FP-INTERFACE, FP-LAYERS, FP-STRUCTURAL, FP-TRIVIAL
+                    For list: use "TP" or "FP" prefix to match all TP-* or FP-* classifications
+                notes: Optional notes for classification
+                verified_by: Who verified (for verify action, default: "user")
+                update_status: Update status to "verified" (for verify action)
+                create_followup: For TP classifications, create a follow-up implementation task
+                followup_name: Custom name for follow-up task (auto-generated if not provided)
+                followup_description: Description for follow-up task
+                followup_prompt: Custom prompt for Claude Code (auto-generated based on classification)
+                followup_category: Category for follow-up task (default: "refactor")
+                followup_priority: Priority for follow-up task (default: same as original)
+                complete_original: Mark original task as completed when creating follow-up
 
             Returns:
                 For list: {items: [...], count, has_more}
@@ -252,6 +279,8 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
                 For delete: {success, deleted_relations}
                 For update: {item: {...}}
                 For clear: {success, items_deleted, relations_deleted}
+                For classify: {success, item: {...}, followup_task?: {...}}
+                For verify: {success, item: {...}}
             """
             if registrar.reter_client is None:
                 return {
@@ -280,6 +309,17 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
                     "include_relations": include_relations,
                     "limit": limit,
                     "offset": offset,
+                    "classification": classification,
+                    "notes": notes,
+                    "verified_by": verified_by,
+                    "update_status": update_status,
+                    "create_followup": create_followup,
+                    "followup_name": followup_name,
+                    "followup_description": followup_description,
+                    "followup_prompt": followup_prompt,
+                    "followup_category": followup_category,
+                    "followup_priority": followup_priority,
+                    "complete_original": complete_original,
                 }
                 # Remove None values
                 kwargs = {k: v for k, v in kwargs.items() if v is not None}

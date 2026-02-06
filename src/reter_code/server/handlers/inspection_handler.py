@@ -17,10 +17,9 @@ from ..protocol import METHOD_CODE_INSPECTION, METHOD_DIAGRAM, METHOD_RECOMMENDE
 class InspectionHandler(BaseHandler):
     """Handler for code inspection operations.
 
-    ::: This is-defined-in Query-Handlers.
-    ::: This handles-method code_inspection.
-    ::: This handles-method diagram.
-    ::: This handles-method recommender.
+    ::: This is-in-layer Service-Layer.
+    ::: This is a handler.
+    ::: This is stateful.
     """
 
     def _register_methods(self) -> None:

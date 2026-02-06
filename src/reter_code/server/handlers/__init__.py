@@ -29,9 +29,9 @@ if TYPE_CHECKING:
 class HandlerContext:
     """Context object providing access to RETER components.
 
-    ::: This is-defined-in Query-Handlers.
-    ::: This provides-access-to ReterWrapper.
-    ::: This provides-access-to RAGIndexManager.
+    ::: This is-in-layer Service-Layer.
+    ::: This is a value-object.
+    ::: This is stateful.
     """
 
     def __init__(
@@ -55,8 +55,9 @@ class HandlerContext:
 class BaseHandler(ABC):
     """Abstract base class for request handlers.
 
-    ::: This is-defined-in Query-Handlers.
-    ::: This is-abstract-class.
+    ::: This is-in-layer Service-Layer.
+    ::: This is a handler.
+    ::: This is stateful.
 
     Each handler:
     1. Receives a ReterMessage request
@@ -174,8 +175,9 @@ class BaseHandler(ABC):
 class HandlerRegistry:
     """Registry for request handlers.
 
-    ::: This is-defined-in Query-Handlers.
-    ::: This routes-requests-to BaseHandler.
+    ::: This is-in-layer Service-Layer.
+    ::: This is a registry.
+    ::: This is stateful.
     """
 
     def __init__(self):

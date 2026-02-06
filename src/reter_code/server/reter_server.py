@@ -9,6 +9,11 @@ Standalone RETER server process with ZeroMQ interface and rich console output.
 ::: This depends-on rich.
 """
 
+# Disable tqdm progress bars from sentence_transformers and other libraries
+# We use our own console UI for progress display
+import os
+os.environ["TQDM_DISABLE"] = "1"
+
 import logging
 import signal
 import sys
@@ -29,16 +34,20 @@ from .protocol import (
 from .config import ServerConfig, ServerDiscovery
 from .handlers import HandlerContext, HandlerRegistry, create_handler_registry
 
-logger = logging.getLogger(__name__)
+# Configure logger to write to debug_trace.log
+from ..logging_config import configure_logger_for_debug_trace
+logger = configure_logger_for_debug_trace(__name__)
 
 
 class ReterServer:
     """Standalone RETER server with ZeroMQ interface.
 
-    ::: This is-defined-in ZeroMQ-Server.
-    ::: This owns ReterWrapper.
-    ::: This owns RAGIndexManager.
-    ::: This owns DefaultInstanceManager.
+    ::: This is-in-layer Presentation-Layer.
+    ::: This is a service.
+    ::: This is stateful.
+    ::: This holds-expensive-resource "rete-network".
+    ::: This holds-expensive-resource "embedding-model".
+    ::: This has-singleton-scope.
 
     The server:
     1. Binds to ZeroMQ REQ/REP socket for queries
@@ -136,7 +145,9 @@ class ReterServer:
             debug_log(f"[RAG-INIT] RAG manager is_enabled: {self._rag_manager.is_enabled}")
             if self._rag_manager.is_enabled:
                 # Load embedding model first (required before sync_sources)
-                model_name = self._rag_manager._config.get(
+                from ..services.config_loader import get_config_loader
+                rag_config = get_config_loader().get_rag_config()
+                model_name = rag_config.get(
                     "rag_embedding_model",
                     "sentence-transformers/all-MiniLM-L6-v2"
                 )
@@ -161,10 +172,21 @@ class ReterServer:
 
                     # Now sync sources (model is loaded)
                     debug_log("[RAG-INIT] Starting RAG sync_sources...")
+
+                    def rag_progress_callback(current: int, total: int, phase: str):
+                        if self._console:
+                            # Show phase in operation text
+                            phase_text = {
+                                "generating_embeddings": "Generating embeddings",
+                                "embeddings_complete": "Embeddings complete",
+                                "indexing": "Indexing vectors",
+                            }.get(phase, phase.replace("_", " ").title())
+                            self._console.update_progress(phase_text, current, total)
+
                     rag_stats = self._rag_manager.sync_sources(
                         reter=self._reter,
                         project_root=self._default_manager.project_root,
-                        progress_callback=lambda c, t, p: self._console.update_rag_progress(c, t) if self._console else None,
+                        progress_callback=rag_progress_callback,
                     )
                     debug_log(f"[RAG-INIT] RAG sync complete: {rag_stats}")
 
@@ -346,6 +368,116 @@ class ReterServer:
             )
             return serialize(response)
 
+    def _update_console_stats(self) -> None:
+        """Update console with current RETER stats."""
+        if not self._console or not self._reter:
+            return
+
+        try:
+            # Get sources count
+            sources, _ = self._reter.get_all_sources()
+            total_sources = len(sources) if sources else 0
+
+            # Get facts/WMEs count - use hybrid stats if available
+            total_wmes = 0
+            if self._reter.is_hybrid_mode():
+                stats = self._reter.get_hybrid_stats()
+                total_wmes = stats.get("base_facts", 0) + stats.get("delta_facts", 0)
+            else:
+                # Fallback to network stats
+                total_wmes = self._reter.reasoner.network.fact_count()
+
+            # Get RAG vectors count
+            total_vectors = 0
+            if self._rag_manager and self._rag_manager.is_initialized:
+                rag_stats = self._rag_manager.get_status()
+                total_vectors = rag_stats.get("total_vectors", 0)
+
+            # Update console
+            self._console.update_status(
+                total_sources=total_sources,
+                total_wmes=total_wmes,
+                total_vectors=total_vectors
+            )
+        except Exception as e:
+            logger.debug(f"Error updating console stats: {e}")
+
+    def _handle_keyboard(self) -> None:
+        """Handle keyboard input for manual actions."""
+        try:
+            import msvcrt  # Windows-specific
+            if msvcrt.kbhit():
+                key = msvcrt.getch()
+                logger.debug(f"[Keyboard] Key pressed: {key}")
+                if key in (b'k', b'K'):
+                    # Manual compaction
+                    logger.info("[Keyboard] K pressed - triggering compaction")
+                    self._trigger_compaction()
+                elif key in (b'r', b'R'):
+                    # Refresh stats
+                    logger.info("[Keyboard] R pressed - refreshing stats")
+                    self._update_console_stats()
+        except ImportError:
+            # Not on Windows, keyboard handling not available
+            pass
+        except Exception as e:
+            logger.debug(f"[Keyboard] Error: {e}")
+
+    def _trigger_compaction(self) -> None:
+        """Trigger manual compaction in background with progress."""
+        import threading
+
+        logger.info("[Compaction] _trigger_compaction called")
+        if not self._reter:
+            logger.info("[Compaction] No reter instance")
+            return
+        if not self._reter.is_hybrid_mode():
+            logger.info("[Compaction] Not in hybrid mode")
+            if self._console:
+                self._console.set_phase("Not in hybrid mode")
+            return
+
+        # Check if already compacting
+        if hasattr(self, '_compacting') and self._compacting:
+            logger.info("[Compaction] Already compacting")
+            return
+
+        self._compacting = True
+        logger.info("[Compaction] Starting compaction...")
+
+        if self._console:
+            self._console.update_progress("Compacting", 0, 100)
+
+        def progress_callback(percent: int) -> None:
+            """Called by C++ at 1% intervals."""
+            if self._console:
+                self._console.update_progress("Compacting", percent, 100)
+
+        def do_compact():
+            try:
+                success, time_ms = self._reter.compact(progress_callback)
+                logger.info(f"[Compaction] Completed: success={success}, time={time_ms:.0f}ms")
+                if self._console:
+                    self._console.update_progress(None)  # Clear progress
+                    self._console.set_phase(f"Compacted in {time_ms:.0f}ms")
+                    self._update_console_stats()
+                    # Clear phase after a moment
+                    def clear_phase():
+                        import time
+                        time.sleep(2)
+                        if self._console:
+                            self._console.mark_initialized()
+                    threading.Thread(target=clear_phase, daemon=True).start()
+            except Exception as e:
+                logger.error(f"[Compaction] Failed: {e}")
+                if self._console:
+                    self._console.update_progress(None)  # Clear progress
+                    self._console.set_phase(f"Compact failed: {e}")
+            finally:
+                self._compacting = False
+
+        threading.Thread(target=do_compact, daemon=True).start()
+
     def _run_event_loop(self) -> None:
         """Main event loop processing requests."""
         logger.info("Starting event loop...")
@@ -362,6 +494,10 @@ class ReterServer:
                     raw_message = self._query_socket.recv()
                     response = self._handle_request(raw_message)
                     self._query_socket.send(response)
+
+                # Handle keyboard input (Windows only)
+                if self._console:
+                    self._handle_keyboard()
 
             except zmq.ZMQError as e:
                 if e.errno == zmq.ETERM:
@@ -398,11 +534,13 @@ class ReterServer:
 
             self._running = True
 
-            # Mark initialization complete
+            # Mark initialization complete and update stats
             if self._console:
                 self._console.mark_initialized()
+                # Update stats from loaded RETER instance
+                self._update_console_stats()
 
-            # Run event loop
+            # Run event loop with keyboard handling
             self._run_event_loop()
 
         except Exception as e:

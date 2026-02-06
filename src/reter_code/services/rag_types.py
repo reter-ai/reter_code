@@ -119,7 +119,13 @@ class RAGSearchResult:
         content: Optional[str] = None,
         heading: Optional[str] = None,
         language: Optional[str] = None,
-        class_name: Optional[str] = None
+        class_name: Optional[str] = None,
+        # Chunk metadata (optional, for chunked method bodies)
+        chunk_index: Optional[int] = None,
+        total_chunks: Optional[int] = None,
+        chunk_line_start: Optional[int] = None,
+        chunk_line_end: Optional[int] = None,
+        parent_qualified_name: Optional[str] = None
     ):
         self.entity_type = entity_type
         self.name = name
@@ -135,6 +141,12 @@ class RAGSearchResult:
         self.heading = heading
         self.language = language
         self.class_name = class_name
+        # Chunk fields
+        self.chunk_index = chunk_index
+        self.total_chunks = total_chunks
+        self.chunk_line_start = chunk_line_start
+        self.chunk_line_end = chunk_line_end
+        self.parent_qualified_name = parent_qualified_name
 
     def to_dict(self, include_content: bool = False) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -161,5 +173,16 @@ class RAGSearchResult:
             result["class_name"] = self.class_name
         if include_content and self.content:
             result["content"] = self.content
+        # Chunk metadata
+        if self.chunk_index is not None:
+            result["chunk_index"] = self.chunk_index
+        if self.total_chunks is not None:
+            result["total_chunks"] = self.total_chunks
+        if self.chunk_line_start is not None:
+            result["chunk_line_start"] = self.chunk_line_start
+        if self.chunk_line_end is not None:
+            result["chunk_line_end"] = self.chunk_line_end
+        if self.parent_qualified_name:
+            result["parent_qualified_name"] = self.parent_qualified_name
 
         return result

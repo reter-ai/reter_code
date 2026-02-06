@@ -38,6 +38,7 @@ from typing import Dict, List, Optional, Tuple, Any, Set, NamedTuple
 from dataclasses import dataclass, field
 
 from ..reter_wrapper import debug_log
+from .utils import matches_pattern
 
 
 @dataclass
@@ -166,9 +167,6 @@ class SourceStateManager:
         if self._loaded:
             return True
 
-        debug_log(f"[SourceState] Loading state from: {self._state_path}")
-        debug_log(f"[SourceState] State file exists: {self._state_path.exists()}")
-
         if self._state_path.exists():
             try:
                 with open(self._state_path, 'r', encoding='utf-8') as f:
@@ -176,22 +174,13 @@ class SourceStateManager:
 
                 # Check version compatibility
                 if data.get("version", "1.0") != self.VERSION:
-                    debug_log(f"[SourceState] Version mismatch, starting fresh")
                     self._state = self._empty_state()
                 else:
                     self._state = data
-                    files = self._state.get('files', {})
-                    debug_log(f"[SourceState] Loaded {len(files)} files from state")
-                    # Log JS/TS files specifically to debug reload issue
-                    js_ts_files = [f for f in files.keys() if any(f.endswith(ext) for ext in ('.js', '.ts', '.jsx', '.tsx', '.mjs'))]
-                    debug_log(f"[SourceState] JS/TS files in state: {len(js_ts_files)}")
-                    for f in js_ts_files[:5]:
-                        debug_log(f"[SourceState]   - {f}")
 
                 self._loaded = True
                 return True
-            except Exception as e:
-                debug_log(f"[SourceState] Error loading state: {e}")
+            except Exception:
                 self._state = self._empty_state()
 
         self._loaded = True
@@ -209,12 +198,6 @@ class SourceStateManager:
         with open(self._state_path, 'w', encoding='utf-8') as f:
             json.dump(self._state, f, indent=2)
 
-        files = self._state.get('files', {})
-        debug_log(f"[SourceState] Saved {len(files)} files to state at {self._state_path}")
-        # Log JS/TS files specifically
-        js_ts_files = [f for f in files.keys() if any(f.endswith(ext) for ext in ('.js', '.ts', '.jsx', '.tsx', '.mjs'))]
-        debug_log(f"[SourceState] JS/TS files saved: {len(js_ts_files)}")
-
     def get_file(self, rel_path: str) -> Optional[FileInfo]:
         """Get cached file info by relative path."""
         data = self._state.get("files", {}).get(rel_path)
@@ -229,10 +212,6 @@ class SourceStateManager:
         if "files" not in self._state:
             self._state["files"] = {}
         self._state["files"][file_info.rel_path] = file_info.to_dict()
-        # Debug logging for JS/TS files
-        is_js_ts = any(file_info.rel_path.endswith(ext) for ext in ('.js', '.ts', '.jsx', '.tsx', '.mjs'))
-        if is_js_ts:
-            debug_log(f"[SourceState] set_file: {file_info.rel_path} (in_reter={file_info.in_reter})")
 
     def remove_file(self, rel_path: str) -> None:
         """Remove file from state."""
@@ -292,15 +271,6 @@ class SourceStateManager:
 
         cached = self.get_file(rel_path)
 
-        # Debug logging for JS/TS files to diagnose reload issue
-        is_js_ts = any(rel_path.endswith(ext) for ext in ('.js', '.ts', '.jsx', '.tsx', '.mjs'))
-        if is_js_ts:
-            debug_log(f"[SourceState] quick_check_file: {rel_path}")
-            debug_log(f"[SourceState]   cached={cached is not None}, files_in_state={len(self._state.get('files', {}))}")
-            if cached:
-                debug_log(f"[SourceState]   cached: mtime={cached.mtime}, size={cached.size}, md5={cached.md5[:8]}...")
-                debug_log(f"[SourceState]   current: mtime={current_mtime}, size={current_size}")
-
         # If not in cache, it's new
         if cached is None:
             md5 = self._compute_md5(file_path)
@@ -311,14 +281,10 @@ class SourceStateManager:
                 mtime=current_mtime,
                 size=current_size,
             )
-            if is_js_ts:
-                debug_log(f"[SourceState]   -> NEW (not in cache)")
             return "new", new_info
 
         # If mtime and size unchanged, assume unchanged (skip MD5)
         if cached.mtime == current_mtime and cached.size == current_size:
-            if is_js_ts:
-                debug_log(f"[SourceState]   -> UNCHANGED (mtime/size match)")
             return "unchanged", None
 
         # mtime or size changed - compute MD5 to confirm
@@ -329,8 +295,6 @@ class SourceStateManager:
             cached.mtime = current_mtime
             cached.size = current_size
             self.set_file(cached)
-            if is_js_ts:
-                debug_log(f"[SourceState]   -> UNCHANGED (md5 same, mtime updated)")
             return "unchanged", None
 
         # Content actually changed
@@ -341,8 +305,6 @@ class SourceStateManager:
             mtime=current_mtime,
             size=current_size,
         )
-        if is_js_ts:
-            debug_log(f"[SourceState]   -> MODIFIED (md5 changed: cached={cached.md5[:8]}... new={md5[:8]}...)")
         return "modified", new_info
 
     def _compute_md5(self, file_path: Path) -> str:
@@ -394,21 +356,18 @@ class SourceStateManager:
                             break
                     if not matches_include:
                         if is_js_ts:
-                            debug_log(f"[SourceState] JS/TS EXCLUDED (include pattern): {rel_path}")
                             js_ts_excluded_count += 1
                         continue
 
                 # Skip excluded files
                 if is_excluded_func(file_path.relative_to(self._project_root)):
                     if is_js_ts:
-                        debug_log(f"[SourceState] JS/TS EXCLUDED (is_excluded_func): {rel_path}")
                         js_ts_excluded_count += 1
                     continue
 
                 # Skip common excluded directories
                 if self._is_common_excluded(rel_path):
                     if is_js_ts:
-                        debug_log(f"[SourceState] JS/TS EXCLUDED (common excluded): {rel_path}")
                         js_ts_excluded_count += 1
                     continue
 
@@ -455,67 +414,8 @@ class SourceStateManager:
         return False
 
     def _matches_pattern(self, path: str, pattern: str) -> bool:
-        """
-        Simple glob pattern matching.
-
-        Supports:
-        - * (any characters within a path component)
-        - ** (any characters across path components)
-        - ? (single character)
-
-        Args:
-            path: Path to check
-            pattern: Glob pattern
-
-        Returns:
-            True if path matches pattern
-        """
-        from fnmatch import fnmatch
-
-        # Convert ** to match across directories
-        if "**" in pattern:
-            # For patterns like "test/**" or "**/test/*"
-            parts = pattern.split("**")
-            if len(parts) == 2:
-                prefix, suffix = parts
-                prefix = prefix.rstrip("/")
-                suffix = suffix.lstrip("/")
-
-                if prefix and not path.startswith(prefix):
-                    return False
-                if suffix and not fnmatch(path, "*" + suffix):
-                    return False
-                return True
-            elif len(parts) >= 3:
-                # Handle patterns with multiple ** like "**/vcpkg*/**"
-                # Check if all non-empty parts match somewhere in the path
-                prefix = parts[0].rstrip("/")
-                suffix = parts[-1].lstrip("/")
-                middle_parts = [p.strip("/") for p in parts[1:-1] if p.strip("/")]
-
-                # Prefix must match start (if non-empty)
-                if prefix and not path.startswith(prefix):
-                    return False
-
-                # Suffix must match end (if non-empty)
-                if suffix and not path.endswith(suffix) and not fnmatch(path.split("/")[-1], suffix):
-                    return False
-
-                # Middle parts must appear somewhere in the path
-                for middle in middle_parts:
-                    # Check if middle pattern matches any path component
-                    matched = False
-                    for component in path.split("/"):
-                        if fnmatch(component, middle):
-                            matched = True
-                            break
-                    if not matched:
-                        return False
-
-                return True
-
-        # Regular fnmatch
-        return fnmatch(path, pattern)
+        """Simple glob pattern matching - delegates to shared utility."""
+        return matches_pattern(path, pattern)
 
     def mark_in_reter(self, rel_path: str, source_id: str) -> None:
         """Mark a file as loaded in RETER."""

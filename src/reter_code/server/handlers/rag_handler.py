@@ -21,9 +21,9 @@ from ..protocol import (
 class RAGHandler(BaseHandler):
     """Handler for RAG operations (search, reindex).
 
-    ::: This is-defined-in RAG-Handlers.
-    ::: This handles-method semantic_search.
-    ::: This handles-method rag_reindex.
+    ::: This is-in-layer Service-Layer.
+    ::: This is a handler.
+    ::: This is stateful.
     """
 
     def _register_methods(self) -> None:

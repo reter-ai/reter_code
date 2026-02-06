@@ -69,12 +69,18 @@ class StatePersistenceService:
         # Track available snapshots (discovered but not yet loaded)
         self._available_snapshots: Dict[str, Path] = {}
 
-    def save_all_instances(self) -> None:
+    def save_all_instances(self, compact_on_shutdown: bool = True) -> None:
         """
         Save all RETER instances to .reter_code/ directory as snapshots.
         Called automatically on server shutdown.
         Only saves instances that have unsaved changes (dirty flag).
         Also shuts down instance resources (executors, queues).
+
+        Uses incremental save (delta journal) when hybrid mode is enabled,
+        falling back to full save otherwise.
+
+        Args:
+            compact_on_shutdown: If True, compact hybrid instances before shutdown
         """
         try:
             # Create snapshots directory if it doesn't exist
@@ -90,6 +96,7 @@ class StatePersistenceService:
             # Uses .{instance_name}.reter format (with leading dot)
             saved_count = 0
             skipped_count = 0
+            incremental_count = 0
             for instance_name, reter in instances.items():
                 snapshot_path = self.snapshots_dir / f".{instance_name}.reter"
                 temp_path = self.snapshots_dir / f".{instance_name}.reter.tmp"
@@ -99,24 +106,47 @@ class StatePersistenceService:
                     if not reter.is_dirty():
                         skipped_count += 1
                     else:
-                        # Write to temporary file first
-                        success, filename, time_ms = reter.save_network(str(temp_path))
+                        # Use incremental save if in hybrid mode
+                        if reter.is_hybrid_mode():
+                            # Compact on shutdown to ensure clean state for next load
+                            if compact_on_shutdown and reter.needs_compaction():
+                                try:
+                                    reter.compact()
+                                except Exception as compact_err:
+                                    if not is_stderr_suppressed():
+                                        print(f"  ⚠️  Compact failed for '{instance_name}': {compact_err}", file=sys.stderr)
 
-                        if success:
-                            # Atomic rename: .tmp → .reter
-                            temp_path.replace(snapshot_path)
-                            if not is_stderr_suppressed():
-                                print(f"  ✅ Saved '{instance_name}' → {snapshot_path} ({time_ms:.2f}ms)", file=sys.stderr)
-                            saved_count += 1
+                            success, delta_path, time_ms = reter.save_incremental()
+                            if success:
+                                stats = reter.get_hybrid_stats()
+                                if not is_stderr_suppressed():
+                                    print(f"  ✅ Saved '{instance_name}' (incremental) delta={stats['delta_facts']} facts ({time_ms:.2f}ms)", file=sys.stderr)
+                                saved_count += 1
+                                incremental_count += 1
+                            else:
+                                if not is_stderr_suppressed():
+                                    print(f"  ⚠️  Incremental save failed for '{instance_name}'", file=sys.stderr)
                         else:
-                            if not is_stderr_suppressed():
-                                print(f"  ⚠️  Failed to save '{instance_name}': Unknown error", file=sys.stderr)
-                            # Clean up temp file on failure
-                            if temp_path.exists():
-                                temp_path.unlink()
+                            # Fall back to full save
+                            success, filename, time_ms = reter.save_network(str(temp_path))
 
-                    # Shutdown instance resources (executor, queue)
+                            if success:
+                                # Atomic rename: .tmp → .reter
+                                temp_path.replace(snapshot_path)
+                                if not is_stderr_suppressed():
+                                    print(f"  ✅ Saved '{instance_name}' → {snapshot_path} ({time_ms:.2f}ms)", file=sys.stderr)
+                                saved_count += 1
+                            else:
+                                if not is_stderr_suppressed():
+                                    print(f"  ⚠️  Failed to save '{instance_name}': Unknown error", file=sys.stderr)
+                                # Clean up temp file on failure
+                                if temp_path.exists():
+                                    temp_path.unlink()
+
+                    # Shutdown instance resources (executor, queue, hybrid network)
                     try:
+                        if reter.is_hybrid_mode():
+                            reter.close_hybrid()
                         reter.shutdown()
                     except Exception as shutdown_err:
                         if not is_stderr_suppressed():
@@ -130,10 +160,13 @@ class StatePersistenceService:
                         temp_path.unlink()
 
             if not is_stderr_suppressed():
+                details = []
                 if skipped_count > 0:
-                    print(f"  📊 Saved {saved_count}/{len(instances)} instances ({skipped_count} unchanged, skipped)", file=sys.stderr)
-                else:
-                    print(f"  📊 Saved {saved_count}/{len(instances)} instances", file=sys.stderr)
+                    details.append(f"{skipped_count} unchanged")
+                if incremental_count > 0:
+                    details.append(f"{incremental_count} incremental")
+                detail_str = f" ({', '.join(details)})" if details else ""
+                print(f"  📊 Saved {saved_count}/{len(instances)} instances{detail_str}", file=sys.stderr)
 
         except Exception as e:
             if not is_stderr_suppressed():
@@ -179,18 +212,25 @@ class StatePersistenceService:
         if not self.snapshots_dir.exists():
             return
 
-        # Find all .reter snapshot files (with leading dot: .{instance_name}.reter)
+        # Find all .reter snapshot files (with leading dot: .{instance_name}.reter or .reter.v1)
         snapshot_files = list(self.snapshots_dir.glob(".*.reter"))
+        snapshot_files.extend(self.snapshots_dir.glob(".*.reter.v1"))
 
         # Register available snapshots
         for snapshot_path in snapshot_files:
-            # Filename is .{instance_name}.reter, stem gives .{instance_name}
-            # We need to strip the leading dot to get instance_name
-            stem = snapshot_path.stem  # e.g., ".current" from ".current.reter"
-            if stem.startswith("."):
-                instance_name = stem[1:]  # Strip leading dot
+            # Filename is .{instance_name}.reter or .{instance_name}.reter.v1
+            # Extract instance name by removing extensions
+            name = snapshot_path.name  # e.g., ".default.reter.v1"
+            # Remove known extensions
+            for ext in ['.reter.v1', '.reter']:
+                if name.endswith(ext):
+                    name = name[:-len(ext)]
+                    break
+            # Strip leading dot to get instance_name
+            if name.startswith("."):
+                instance_name = name[1:]
             else:
-                instance_name = stem
+                instance_name = name
             self._available_snapshots[instance_name] = snapshot_path
 
     def get_all_instance_names(self) -> Dict[str, str]:
@@ -234,14 +274,16 @@ class StatePersistenceService:
         self._scan_snapshot_directory()
         return list(self._available_snapshots.keys())
 
-    def load_snapshot_if_available(self, instance_name: str) -> bool:
+    def load_snapshot_if_available(self, instance_name: str, use_hybrid: bool = True) -> bool:
         """
         Load a snapshot for the given instance if available (lazy loading).
 
         Rescans the snapshots directory before attempting to load.
+        When use_hybrid=True, loads in hybrid mode for incremental saves.
 
         Args:
             instance_name: Name of the instance to load
+            use_hybrid: If True, use hybrid mode for incremental saves (default True)
 
         Returns:
             True if snapshot was loaded, False otherwise
@@ -280,10 +322,31 @@ class StatePersistenceService:
                     print(f"  Traceback:\n{traceback.format_exc()}", file=sys.stderr, flush=True)
                 return False
 
-            # Load the snapshot
+            # Load the snapshot - try hybrid mode first for incremental saves
             try:
-                debug_log(f"[persistence] Loading snapshot from {snapshot_path}...")
-                success, filename, time_ms = reter.load_network(str(snapshot_path))
+                debug_log(f"[persistence] Loading snapshot from {snapshot_path} (hybrid={use_hybrid})...")
+
+                if use_hybrid:
+                    try:
+                        # Strip version suffix (.v1, .v2, etc.) - C++ expects base path
+                        # and will find versioned files itself
+                        hybrid_path = str(snapshot_path)
+                        import re
+                        hybrid_path = re.sub(r'\.v\d+$', '', hybrid_path)
+                        debug_log(f"[persistence] Hybrid base path: {hybrid_path}")
+
+                        success, filename, time_ms = reter.open_hybrid(hybrid_path)
+                        load_mode = "hybrid"
+                        stats = reter.get_hybrid_stats()
+                        debug_log(f"[persistence] Hybrid load: base={stats['base_facts']}, delta={stats['delta_facts']}")
+                    except Exception as hybrid_err:
+                        # Fall back to regular load if hybrid fails
+                        debug_log(f"[persistence] Hybrid load failed ({hybrid_err}), falling back to regular load")
+                        success, filename, time_ms = reter.load_network(str(snapshot_path))
+                        load_mode = "regular"
+                else:
+                    success, filename, time_ms = reter.load_network(str(snapshot_path))
+                    load_mode = "regular"
 
                 if success:
                     # Check what sources are in the loaded snapshot
@@ -292,14 +355,15 @@ class StatePersistenceService:
                     if sources:
                         debug_log(f"[persistence] First 3 sources: {sources[:3]}")
 
+                    mode_indicator = " (hybrid)" if load_mode == "hybrid" else ""
                     if not is_stderr_suppressed():
-                        print(f"  ✅ Lazy-loaded '{instance_name}' ← {snapshot_path} ({time_ms:.2f}ms)", file=sys.stderr, flush=True)
+                        print(f"  ✅ Lazy-loaded '{instance_name}'{mode_indicator} ← {snapshot_path} ({time_ms:.2f}ms)", file=sys.stderr, flush=True)
                     # Remove from available snapshots (now loaded)
                     del self._available_snapshots[instance_name]
                     return True
                 else:
                     if not is_stderr_suppressed():
-                        print(f"  ⚠️  Failed to lazy-load '{instance_name}': load_network returned False", file=sys.stderr, flush=True)
+                        print(f"  ⚠️  Failed to lazy-load '{instance_name}': load returned False", file=sys.stderr, flush=True)
                     return False
 
             except Exception as load_error:
@@ -328,8 +392,9 @@ class StatePersistenceService:
                     print(f"  ℹ️  No snapshots directory found (will be created on first save)", file=sys.stderr)
                 return
 
-            # Find all .reter snapshot files (with leading dot: .{instance_name}.reter)
+            # Find all .reter snapshot files (with leading dot: .{instance_name}.reter or .reter.v1)
             snapshot_files = list(self.snapshots_dir.glob(".*.reter"))
+            snapshot_files.extend(self.snapshots_dir.glob(".*.reter.v1"))
 
             if not snapshot_files:
                 if not is_stderr_suppressed():
@@ -339,9 +404,13 @@ class StatePersistenceService:
             # Load each snapshot
             loaded_count = 0
             for snapshot_path in snapshot_files:
-                # Filename is .{instance_name}.reter, stem gives .{instance_name}
-                stem = snapshot_path.stem
-                instance_name = stem[1:] if stem.startswith(".") else stem
+                # Filename is .{instance_name}.reter or .{instance_name}.reter.v1
+                name = snapshot_path.name
+                for ext in ['.reter.v1', '.reter']:
+                    if name.endswith(ext):
+                        name = name[:-len(ext)]
+                        break
+                instance_name = name[1:] if name.startswith(".") else name
 
                 try:
                     # Create instance

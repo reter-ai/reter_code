@@ -19,10 +19,9 @@ from ..protocol import METHOD_SESSION, METHOD_THINKING, METHOD_ITEMS
 class SessionHandler(BaseHandler):
     """Handler for session and thinking operations.
 
-    ::: This is-defined-in System-Handlers.
-    ::: This handles-method session.
-    ::: This handles-method thinking.
-    ::: This handles-method items.
+    ::: This is-in-layer Service-Layer.
+    ::: This is a handler.
+    ::: This is stateful.
     """
 
     def __init__(self, context):
@@ -165,7 +164,7 @@ class SessionHandler(BaseHandler):
         if action == "list":
             # Build query params
             query_params = {}
-            for key in ["item_type", "status", "priority", "phase", "category", "source_tool"]:
+            for key in ["item_type", "status", "priority", "phase", "category", "source_tool", "classification"]:
                 if params.get(key):
                     query_params[key] = params[key]
             query_params["limit"] = params.get("limit", 100)
@@ -192,7 +191,7 @@ class SessionHandler(BaseHandler):
             result = {"success": True, "item": item}
 
             if params.get("include_relations", True):
-                relations = store.get_item_relations(item_id)
+                relations = store.get_relations(item_id)
                 result["relations"] = relations
 
             return result
@@ -245,6 +244,149 @@ class SessionHandler(BaseHandler):
                 "items_deleted": result.get("items_deleted", 0),
                 "relations_deleted": result.get("relations_deleted", 0)
             }
+
+        elif action == "classify":
+            # Classify a task as TP or FP
+            # For TP classifications, optionally create a follow-up implementation task
+            item_id = params.get("item_id")
+            if not item_id:
+                raise ValueError("item_id is required for classify action")
+
+            classification = params.get("classification")
+            if not classification:
+                raise ValueError("classification is required for classify action")
+
+            valid_classifications = [
+                "TP-EXTRACT", "TP-PARAMETERIZE", "PARTIAL-TP",
+                "FP-INTERFACE", "FP-LAYERS", "FP-STRUCTURAL", "FP-TRIVIAL"
+            ]
+            if classification not in valid_classifications:
+                raise ValueError(f"Invalid classification: {classification}. "
+                               f"Valid values: {valid_classifications}")
+
+            # Get existing item
+            item = store.get_item(item_id)
+            if not item:
+                return {"success": False, "error": f"Item {item_id} not found"}
+
+            # Update metadata with classification
+            from datetime import datetime, timezone
+            metadata = item.get("metadata", {}) or {}
+            metadata["classification"] = classification
+            metadata["classification_notes"] = params.get("notes", "")
+            metadata["classified_at"] = datetime.now(timezone.utc).isoformat()
+
+            success = store.update_item(item_id, metadata=metadata)
+            if not success:
+                return {"success": False, "error": f"Failed to classify item {item_id}"}
+
+            item = store.get_item(item_id)
+            result = {"success": True, "item": item}
+
+            # For TP classifications, optionally create follow-up task
+            if classification.startswith("TP") or classification == "PARTIAL-TP":
+                if params.get("create_followup", False):
+                    # Generate default follow-up name based on classification
+                    default_names = {
+                        "TP-EXTRACT": f"Implement extraction: {item.get('content', '')}",
+                        "TP-PARAMETERIZE": f"Implement parameterization: {item.get('content', '')}",
+                        "PARTIAL-TP": f"Review and implement: {item.get('content', '')}",
+                    }
+                    followup_name = params.get("followup_name", default_names.get(classification, f"Implement: {item.get('content', '')}"))
+
+                    # Get prompt from original task metadata or use custom prompt
+                    source_metadata = item.get("metadata", {}) or {}
+                    prompt = params.get("followup_prompt") or source_metadata.get("prompt", "")
+
+                    # Build follow-up metadata
+                    followup_metadata = {
+                        "derived_from": item_id,
+                        "original_classification": classification,
+                    }
+                    if prompt:
+                        followup_metadata["prompt"] = prompt
+
+                    # Copy relevant source metadata
+                    for key in ["avg_similarity", "cluster_id", "member_count", "members", "affected_files"]:
+                        if key in source_metadata:
+                            followup_metadata[key] = source_metadata[key]
+
+                    # Create follow-up task
+                    followup_id = store.add_item(
+                        session_id=session_id,
+                        item_type="task",
+                        content=followup_name,
+                        description=params.get("followup_description") or prompt or f"Follow-up from {item_id}",
+                        category=params.get("followup_category", "refactor"),
+                        priority=params.get("followup_priority", item.get("priority", "medium")),
+                        status="pending",
+                        source_tool=item.get("source_tool"),
+                        metadata=followup_metadata
+                    )
+
+                    # Link follow-up to original via derives relation
+                    store.add_relation(
+                        source_id=followup_id,
+                        target_id=item_id,
+                        target_type="item",
+                        relation_type="derives"
+                    )
+
+                    # Add affects relations for files from source metadata
+                    members = source_metadata.get("members", [])
+                    affected_files = set()
+                    for m in members:
+                        if isinstance(m, dict):
+                            f = m.get("file") or m.get("source_file")
+                            if f:
+                                affected_files.add(f)
+                    for f in affected_files:
+                        store.add_relation(
+                            source_id=followup_id,
+                            target_id=f,
+                            target_type="file",
+                            relation_type="affects"
+                        )
+
+                    # Optionally mark original as completed
+                    if params.get("complete_original", False):
+                        store.update_item(item_id, status="completed")
+                        item = store.get_item(item_id)
+                        result["item"] = item
+
+                    result["followup_task"] = store.get_item(followup_id)
+
+            return result
+
+        elif action == "verify":
+            # Mark a task as verified
+            item_id = params.get("item_id")
+            if not item_id:
+                raise ValueError("item_id is required for verify action")
+
+            # Get existing item
+            item = store.get_item(item_id)
+            if not item:
+                return {"success": False, "error": f"Item {item_id} not found"}
+
+            # Update metadata with verification status
+            from datetime import datetime, timezone
+            metadata = item.get("metadata", {}) or {}
+            metadata["verified"] = True
+            metadata["verified_at"] = datetime.now(timezone.utc).isoformat()
+            metadata["verified_by"] = params.get("verified_by", "user")
+
+            # Optionally update status to verified
+            updates = {"metadata": metadata}
+            if params.get("update_status", False):
+                updates["status"] = "verified"
+
+            success = store.update_item(item_id, **updates)
+            if success:
+                item = store.get_item(item_id)
+                return {"success": True, "item": item}
+            else:
+                return {"success": False, "error": f"Failed to verify item {item_id}"}
 
         else:
             raise ValueError(f"Unknown items action: {action}")

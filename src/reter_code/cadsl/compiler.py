@@ -5,11 +5,14 @@ This module compiles CADSL expressions, conditions, and object expressions
 into Python callables that can be used in Pipeline steps.
 """
 
+import operator
 import re
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
 
 from lark import Tree, Token
+
+from .utils import unquote, extract_value, token_to_value  # noqa: F401 - re-exported
 
 
 # ============================================================
@@ -114,7 +117,7 @@ class ExpressionCompiler:
             return lambda r, ctx=None, f=field: r.get(f) if isinstance(r, dict) else None
 
         elif token.type == "STRING":
-            value = self._unquote(str(token))
+            value = unquote(str(token))
             return lambda r, ctx=None, v=value: v
 
         elif token.type in ("SIGNED_INT", "INT"):
@@ -134,7 +137,7 @@ class ExpressionCompiler:
     # --------------------------------------------------------
 
     def _compile_val_string(self, node: Tree) -> Callable:
-        value = self._unquote(str(node.children[0]))
+        value = unquote(str(node.children[0]))
         # Check if string contains parameter placeholders like {param}
         if '{' in value and '}' in value:
             import re
@@ -307,40 +310,19 @@ class ExpressionCompiler:
                     pass
             return a, b
 
-        # Comparison operators with type coercion
-        def safe_gt(a, b):
+        def safe_compare(a, b, compare_op):
+            """Safely compare two values with type coercion."""
             a, b = coerce_for_comparison(a, b)
             try:
-                return a > b if a is not None and b is not None else False
-            except TypeError:
-                return False
-
-        def safe_lt(a, b):
-            a, b = coerce_for_comparison(a, b)
-            try:
-                return a < b if a is not None and b is not None else False
-            except TypeError:
-                return False
-
-        def safe_gte(a, b):
-            a, b = coerce_for_comparison(a, b)
-            try:
-                return a >= b if a is not None and b is not None else False
-            except TypeError:
-                return False
-
-        def safe_lte(a, b):
-            a, b = coerce_for_comparison(a, b)
-            try:
-                return a <= b if a is not None and b is not None else False
+                return compare_op(a, b) if a is not None and b is not None else False
             except TypeError:
                 return False
 
         ops = {
-            "op_gt": safe_gt,
-            "op_lt": safe_lt,
-            "op_gte": safe_gte,
-            "op_lte": safe_lte,
+            "op_gt": lambda a, b: safe_compare(a, b, operator.gt),
+            "op_lt": lambda a, b: safe_compare(a, b, operator.lt),
+            "op_gte": lambda a, b: safe_compare(a, b, operator.ge),
+            "op_lte": lambda a, b: safe_compare(a, b, operator.le),
             "op_eq": lambda a, b: a == b,
             "op_ne": lambda a, b: a != b,
         }
@@ -396,18 +378,6 @@ class ExpressionCompiler:
 
         # Unknown function - return None
         return lambda r, ctx=None: None
-
-    # --------------------------------------------------------
-    # Helpers
-    # --------------------------------------------------------
-
-    def _unquote(self, s: str) -> str:
-        """Remove quotes from a string."""
-        if len(s) >= 2:
-            if (s.startswith('"') and s.endswith('"')) or \
-               (s.startswith("'") and s.endswith("'")):
-                return s[1:-1]
-        return s
 
 
 # ============================================================
@@ -514,7 +484,7 @@ class ConditionCompiler:
     def _compile_regex_match(self, node: Tree) -> Callable:
         """Compile 'matches' regex pattern."""
         left = self.expr_compiler.compile(node.children[0])
-        pattern = self._unquote(str(node.children[1]))
+        pattern = unquote(str(node.children[1]))
         compiled = re.compile(pattern)
 
         def match(r, ctx=None, l=left, p=compiled):
@@ -528,7 +498,7 @@ class ConditionCompiler:
     def _compile_starts_with(self, node: Tree) -> Callable:
         """Compile 'starts_with' check."""
         left = self.expr_compiler.compile(node.children[0])
-        prefix = self._unquote(str(node.children[1]))
+        prefix = unquote(str(node.children[1]))
 
         def check(r, ctx=None, l=left, p=prefix):
             value = l(r, ctx)
@@ -541,7 +511,7 @@ class ConditionCompiler:
     def _compile_ends_with(self, node: Tree) -> Callable:
         """Compile 'ends_with' check."""
         left = self.expr_compiler.compile(node.children[0])
-        suffix = self._unquote(str(node.children[1]))
+        suffix = unquote(str(node.children[1]))
 
         def check(r, ctx=None, l=left, s=suffix):
             value = l(r, ctx)
@@ -554,7 +524,7 @@ class ConditionCompiler:
     def _compile_contains_str(self, node: Tree) -> Callable:
         """Compile 'contains' check."""
         left = self.expr_compiler.compile(node.children[0])
-        substring = self._unquote(str(node.children[1]))
+        substring = unquote(str(node.children[1]))
 
         def check(r, ctx=None, l=left, s=substring):
             value = l(r, ctx)
@@ -618,40 +588,7 @@ class ConditionCompiler:
 
     def _extract_value(self, node: Tree) -> Any:
         """Extract a literal value from a node."""
-        if isinstance(node, Token):
-            if node.type == "STRING":
-                return self._unquote(str(node))
-            elif node.type in ("SIGNED_INT", "INT"):
-                return int(str(node))
-            elif node.type in ("SIGNED_FLOAT", "FLOAT"):
-                return float(str(node))
-            return str(node)
-
-        if isinstance(node, Tree):
-            if node.data == "val_string":
-                return self._unquote(str(node.children[0]))
-            elif node.data == "val_int":
-                return int(str(node.children[0]))
-            elif node.data == "val_float":
-                return float(str(node.children[0]))
-            elif node.data == "val_true":
-                return True
-            elif node.data == "val_false":
-                return False
-            elif node.data == "val_null":
-                return None
-            elif node.children:
-                return self._extract_value(node.children[0])
-
-        return None
-
-    def _unquote(self, s: str) -> str:
-        """Remove quotes from a string."""
-        if len(s) >= 2:
-            if (s.startswith('"') and s.endswith('"')) or \
-               (s.startswith("'") and s.endswith("'")):
-                return s[1:-1]
-        return s
+        return extract_value(node)
 
 
 # ============================================================

@@ -82,9 +82,11 @@ rag_source: "rag" "{" rag_args "}"
 // - search: rag { search, query: "...", top_k: 10 }
 // - duplicates: rag { duplicates, similarity: 0.85, limit: 50 }
 // - clusters: rag { clusters, n_clusters: 50, min_size: 2 }
+// - dbscan: rag { dbscan, eps: 0.5, min_samples: 3, min_size: 2 }
 rag_args: rag_search_args
         | rag_duplicates_args
         | rag_clusters_args
+        | rag_dbscan_args
 
 // Search: rag { search, query: "...", top_k: 10 }
 rag_search_args: "search" ("," rag_param)*  -> rag_search
@@ -94,6 +96,9 @@ rag_duplicates_args: "duplicates" ("," rag_param)*  -> rag_duplicates
 
 // Clusters: rag { clusters, n_clusters: 50, min_size: 2 }
 rag_clusters_args: "clusters" ("," rag_param)*  -> rag_clusters
+
+// DBSCAN: rag { dbscan, eps: 0.5, min_samples: 3, min_size: 2 }
+rag_dbscan_args: "dbscan" ("," rag_param)*  -> rag_dbscan
 
 // Common RAG parameters (parsed dynamically)
 rag_param: NAME ":" rag_param_value
@@ -171,6 +176,7 @@ step: filter_step
     | string_match_step
     | rag_enrich_step
     | create_task_step
+    | fetch_content_step
 
 filter_step: "filter" "{" condition "}"
 
@@ -320,6 +326,13 @@ mermaid_param: "type" ":" mermaid_type      -> mermaid_type_spec
              // ER diagram specific
              | "entities" ":" NAME          -> mermaid_entities
              | "relationships" ":" NAME     -> mermaid_relationships
+             // Block diagram specific
+             | "groups" ":" NAME              -> mermaid_groups
+             | "columns" ":" INT              -> mermaid_columns
+             | "columns" ":" param_ref        -> mermaid_columns_param
+             | "color" ":" NAME               -> mermaid_color
+             | "max_per_group" ":" INT         -> mermaid_max_per_group
+             | "max_per_group" ":" param_ref   -> mermaid_max_per_group_param
 
 mermaid_type: "flowchart"   -> mermaid_flowchart
             | "sequence"    -> mermaid_sequence
@@ -331,6 +344,7 @@ mermaid_type: "flowchart"   -> mermaid_flowchart
             | "mindmap"     -> mermaid_mindmap
             | "timeline"    -> mermaid_timeline
             | "quadrant"    -> mermaid_quadrant
+            | "block_beta"  -> mermaid_block_beta
 
 mermaid_dir: "TB" -> dir_tb
            | "TD" -> dir_tb
@@ -566,6 +580,11 @@ rag_entity_list: "[" STRING ("," STRING)* "]"
 
 // Create tasks in RETER session from pipeline data
 // create_task { name: "template {field}", category: "annotation", priority: "medium" }
+// Enhanced with:
+// - filter_predicates: ["skip_same_names", "skip_trivial"] - Pre-filter obvious FPs
+// - metadata: { avg_similarity: {score}, cluster_id: {id} } - Store additional data
+// - group_id: "extraction_run_1" - Group related tasks into a batch
+// - source_tool: "extraction_opportunities" - Tool that created this task
 create_task_step: "create_task" "{" create_task_spec "}"
 
 create_task_spec: create_task_param ("," create_task_param)*
@@ -578,16 +597,59 @@ create_task_param: "name" ":" STRING                    -> ct_name
                  | "priority" ":" param_ref             -> ct_priority_param
                  | "description" ":" STRING             -> ct_description
                  | "description" ":" param_ref          -> ct_description_param
+                 | "prompt" ":" STRING                  -> ct_prompt
+                 | "prompt" ":" param_ref               -> ct_prompt_param
                  | "affects" ":" NAME                   -> ct_affects
                  | "batch_size" ":" INT                 -> ct_batch_size
                  | "batch_size" ":" param_ref           -> ct_batch_size_param
                  | "dry_run" ":" bool_val               -> ct_dry_run
                  | "dry_run" ":" param_ref              -> ct_dry_run_param
+                 | "filter_predicates" ":" ct_predicate_list -> ct_filter_predicates
+                 | "metadata" ":" ct_metadata_block     -> ct_metadata
+                 | "group_id" ":" STRING                -> ct_group_id
+                 | "group_id" ":" param_ref             -> ct_group_id_param
+                 | "source_tool" ":" STRING             -> ct_source_tool
+                 | "source_tool" ":" param_ref          -> ct_source_tool_param
 
 ct_priority_val: "critical" -> ct_prio_critical
                | "high"     -> ct_prio_high
                | "medium"   -> ct_prio_medium
                | "low"      -> ct_prio_low
+
+// Filter predicates for FP reduction
+// Built-in predicates: skip_same_names, skip_trivial, skip_boilerplate, skip_single_file
+ct_predicate_list: "[" ct_predicate ("," ct_predicate)* "]"
+ct_predicate: STRING
+
+// Metadata block for storing additional task data (similarity scores, cluster info, etc.)
+// Supports template placeholders: { avg_similarity: {score}, cluster_id: {id} }
+ct_metadata_block: "{" ct_metadata_pairs "}"
+ct_metadata_pairs: ct_metadata_pair ("," ct_metadata_pair)*
+ct_metadata_pair: NAME ":" ct_metadata_value
+ct_metadata_value: STRING           -> ct_meta_string
+                 | SIGNED_INT       -> ct_meta_int
+                 | SIGNED_FLOAT     -> ct_meta_float
+                 | "true"           -> ct_meta_true
+                 | "false"          -> ct_meta_false
+                 | param_ref        -> ct_meta_param
+                 | NAME             -> ct_meta_field
+
+// ============================================================
+// FETCH CONTENT
+// ============================================================
+
+// Fetch source code content from files using line numbers
+// fetch_content { file: file_field, start_line: line_field, end_line: end_line_field, output: body }
+fetch_content_step: "fetch_content" "{" fetch_content_spec "}"
+
+fetch_content_spec: fetch_content_param ("," fetch_content_param)*
+
+fetch_content_param: "file" ":" NAME                   -> fc_file
+                   | "start_line" ":" NAME             -> fc_start_line
+                   | "end_line" ":" NAME               -> fc_end_line
+                   | "output" ":" NAME                 -> fc_output
+                   | "max_lines" ":" INT               -> fc_max_lines
+                   | "max_lines" ":" param_ref         -> fc_max_lines_param
 
 // ============================================================
 // GROUP BY

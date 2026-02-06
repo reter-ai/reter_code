@@ -14,6 +14,8 @@ from enum import Enum
 
 from lark import Tree, Token
 
+from .utils import get_tool_name, get_tool_type, unquote, extract_value, token_to_value
+
 
 # ============================================================
 # VALIDATION RESULT TYPES
@@ -194,8 +196,8 @@ class CADSLValidator:
         self.defined_params = set()
 
         # Extract tool info
-        tool_type = self._get_tool_type(node)
-        tool_name = self._get_tool_name(node)
+        tool_type = get_tool_type(node, default="unknown")
+        tool_name = get_tool_name(node)
         self.current_tool = tool_name
 
         tool_entry = {
@@ -235,25 +237,6 @@ class CADSLValidator:
 
         self.tool_info["tools"].append(tool_entry)
         self.current_tool = None
-
-    def _get_tool_type(self, node: Tree) -> str:
-        """Extract tool type from tool_def node."""
-        for child in node.children:
-            if isinstance(child, Tree):
-                if child.data == "tool_query":
-                    return "query"
-                elif child.data == "tool_detector":
-                    return "detector"
-                elif child.data == "tool_diagram":
-                    return "diagram"
-        return "unknown"
-
-    def _get_tool_name(self, node: Tree) -> str:
-        """Extract tool name from tool_def node."""
-        for child in node.children:
-            if isinstance(child, Token) and child.type == "NAME":
-                return str(child)
-        return "unnamed"
 
     # ============================================================
     # METADATA VALIDATION
@@ -320,7 +303,7 @@ class CADSLValidator:
             elif isinstance(child, Tree) and child.data == "meta_value":
                 value = self._extract_value(child)
             elif isinstance(child, Token) and child.type == "STRING":
-                value = self._unquote(str(child))
+                value = unquote(str(child))
 
         return key, value
 
@@ -630,33 +613,7 @@ class CADSLValidator:
 
     def _extract_value(self, node: Tree) -> Any:
         """Extract a value from a value node."""
-        if isinstance(node, Token):
-            return self._token_to_value(node)
-
-        for child in node.children:
-            if isinstance(child, Token):
-                return self._token_to_value(child)
-            elif isinstance(child, Tree):
-                if child.data == "val_string":
-                    return self._unquote(str(child.children[0]))
-                elif child.data == "val_int":
-                    return int(str(child.children[0]))
-                elif child.data == "val_float":
-                    return float(str(child.children[0]))
-                elif child.data == "val_true":
-                    return True
-                elif child.data == "val_false":
-                    return False
-                elif child.data == "val_null":
-                    return None
-                elif child.data == "val_list":
-                    return self._extract_list(child)
-                elif child.data == "capability_array":
-                    return self._extract_list(child)
-                else:
-                    return self._extract_value(child)
-
-        return None
+        return extract_value(node, extract_list_fn=self._extract_list)
 
     def _extract_list(self, node: Tree) -> List[Any]:
         """Extract a list value."""
@@ -669,39 +626,12 @@ class CADSLValidator:
                 elif child.data == "capability_list":
                     for item in child.children:
                         if isinstance(item, Token) and item.type == "STRING":
-                            items.append(self._unquote(str(item)))
+                            items.append(unquote(str(item)))
                 else:
                     items.append(self._extract_value(child))
             elif isinstance(child, Token) and child.type == "STRING":
-                items.append(self._unquote(str(child)))
+                items.append(unquote(str(child)))
         return items
-
-    def _token_to_value(self, token: Token) -> Any:
-        """Convert a token to a Python value."""
-        if token.type == "STRING":
-            return self._unquote(str(token))
-        elif token.type == "SIGNED_INT" or token.type == "INT":
-            return int(str(token))
-        elif token.type == "SIGNED_FLOAT":
-            return float(str(token))
-        elif token.type == "NAME":
-            name = str(token)
-            if name == "true":
-                return True
-            elif name == "false":
-                return False
-            elif name == "null":
-                return None
-            return name
-        return str(token)
-
-    def _unquote(self, s: str) -> str:
-        """Remove quotes from a string."""
-        if len(s) >= 2:
-            if (s.startswith('"') and s.endswith('"')) or \
-               (s.startswith("'") and s.endswith("'")):
-                return s[1:-1]
-        return s
 
     def _add_issue(
         self,

@@ -1,0 +1,220 @@
+# extraction_opportunities_dbscan - Find code clusters using DBSCAN algorithm
+#
+# PURPOSE: Same as extraction_opportunities but uses DBSCAN clustering instead of K-means.
+# DBSCAN finds natural groupings without needing to specify cluster count upfront.
+#
+# KEY DIFFERENCES FROM K-MEANS VERSION:
+# - No need to specify n_clusters - DBSCAN discovers clusters automatically
+# - Uses eps (max distance) and min_samples (density threshold) instead
+# - Produces tighter, more natural clusters
+# - Identifies outliers (noise points) that don't belong to any cluster
+#
+# RECOMMENDED USAGE:
+# - eps=0.4-0.6 for normalized embeddings (lower = tighter clusters)
+# - min_samples=2-3 (minimum points to form a cluster)
+# - Compare results with K-means version to find best approach
+
+detector extraction_opportunities_dbscan(category="extraction-review", severity="medium") {
+    """
+    Find clusters of similar code using DBSCAN density-based clustering.
+
+    This variant uses DBSCAN instead of K-means, which:
+    - Discovers natural cluster shapes without specifying count
+    - Finds tighter, more meaningful clusters
+    - Identifies noise/outliers (not forced into clusters)
+
+    Parameters:
+        eps: Maximum distance between neighbors (default: 0.5, range: 0.3-0.8)
+        min_samples: Minimum points to form dense region (default: 2)
+        min_cluster_size: Minimum members to report a cluster (default: 3)
+        min_unique_files: Minimum unique files in cluster (default: 2)
+        include_tests: Include test files (default: false)
+        include_visitors: Include ANTLR visitor methods (default: false)
+        file_filter: Filter by file extension, e.g. ".py" for Python only
+        limit: Maximum clusters to report (default: 30)
+        dry_run: Preview without creating tasks (default: true)
+
+    Recommended usage:
+        eps=0.5, min_samples=2, file_filter=".py", limit=30
+    """
+
+    param eps: float = 0.5;
+    param min_samples: int = 2;
+    param min_cluster_size: int = 3;
+    param min_unique_files: int = 2;
+    param include_tests: bool = false;
+    param include_visitors: bool = false;
+    param file_filter: str = "";
+    param limit: int = 30;
+    param dry_run: bool = true;
+
+    # Use RAG DBSCAN clustering - finds natural density-based clusters
+    rag {
+        dbscan,
+        eps: {eps},
+        min_samples: {min_samples},
+        min_size: {min_cluster_size},
+        exclude_same_file: false,
+        exclude_same_class: true,
+        entity_types: ["method", "function"]
+    }
+    # Filter clusters: keep only those with DIFFERENT method names
+    # (indicating body similarity, not just name similarity)
+    | python {
+        VISITOR_PATTERNS = ["visit", "Visit", "enter", "exit", "Enter", "Exit"]
+        TEST_PATTERNS = ["/test/", "_test.py", "test_", "/tests/", "conftest.py"]
+        BOILERPLATE = {"get_category", "get_conditions", "get_name", "get_type",
+                       "__init__", "__str__", "__repr__", "__hash__", "__eq__",
+                       "setUp", "tearDown", "get_id", "register_to"}
+
+        include_tests = ctx.params.get("include_tests", False) if ctx else False
+        include_visitors = ctx.params.get("include_visitors", False) if ctx else False
+        min_unique_files = int(ctx.params.get("min_unique_files", 2)) if ctx else 2
+        file_filter = ctx.params.get("file_filter", "") if ctx else ""
+
+        output = []
+        for cluster in rows:
+            members = cluster.get("details", [])
+            if not members:
+                continue
+
+            # Filter members
+            filtered_members = []
+            unique_files = set()
+            unique_names = set()
+
+            for m in members:
+                name = m.get("name", "")
+                file_path = m.get("file", "")
+
+                # Apply file filter (e.g. ".py" for Python only)
+                if file_filter and not file_path.endswith(file_filter):
+                    continue
+
+                # Skip boilerplate
+                if name in BOILERPLATE:
+                    continue
+
+                # Skip visitors unless requested
+                if not include_visitors:
+                    is_visitor = any(name.startswith(p) for p in VISITOR_PATTERNS)
+                    if is_visitor:
+                        continue
+
+                # Skip tests unless requested
+                if not include_tests:
+                    is_test = any(p in file_path for p in TEST_PATTERNS)
+                    if is_test:
+                        continue
+
+                filtered_members.append(m)
+                unique_files.add(file_path.replace("\\", "/"))
+                unique_names.add(name)
+
+            # KEY FILTER: Only keep clusters with DIFFERENT method names
+            # If all names are the same, it's likely interface pattern (FP)
+            # If names differ, bodies are similar = extraction opportunity
+            if len(unique_names) < 2:
+                continue
+
+            # Only keep clusters with enough unique files
+            if len(unique_files) >= min_unique_files and len(filtered_members) >= 2:
+                cluster["members"] = filtered_members
+                cluster["unique_files"] = len(unique_files)
+                cluster["unique_names"] = len(unique_names)
+                cluster["member_count"] = len(filtered_members)
+                output.append(cluster)
+
+        result = output
+    }
+    # Sort by impact (more members = more extraction value)
+    | order_by { -member_count, -unique_files }
+    | limit { {limit} }
+    # Build task description with all cluster members
+    | python {
+        output = []
+        for cluster in rows:
+            members = cluster.get("details", [])
+            if not members:
+                continue
+
+            # Get representative name (most common method name in cluster)
+            name_counts = {}
+            for m in members:
+                n = m.get("name", "unknown")
+                name_counts[n] = name_counts.get(n, 0) + 1
+            representative_name = max(name_counts, key=name_counts.get)
+
+            # Build member list for description
+            member_lines = []
+            for i, m in enumerate(members[:10]):  # Limit to 10 in description
+                file_path = m.get("file", "")
+                line = m.get("line", 0)
+                name = m.get("name", "")
+                class_name = m.get("class_name", "")
+                qual = f"{class_name}.{name}" if class_name else name
+                member_lines.append(f"{i+1}. `{file_path}:{line}` - `{qual}`")
+
+            if len(members) > 10:
+                member_lines.append(f"   ... and {len(members) - 10} more")
+
+            members_text = chr(10).join(member_lines)
+
+            # Collect unique names for task title
+            unique_names = list(set(m.get("name", "") for m in members))[:3]
+            names_str = ", ".join(unique_names)
+            if len(set(m.get("name", "") for m in members)) > 3:
+                names_str += ", ..."
+
+            # Build members list with file/line info for metadata
+            members_data = []
+            for m in members:
+                members_data.append({
+                    "file": m.get("file", ""),
+                    "line": m.get("line", 0),
+                    "name": m.get("name", ""),
+                    "class_name": m.get("class_name", "")
+                })
+
+            # Collect affected files for relations
+            affected_files = list(set(m.get("file", "") for m in members if m.get("file")))
+
+            output.append({
+                "cluster_id": cluster.get("cluster_id", 0),
+                "member_count": len(members),
+                "unique_files": cluster.get("unique_files", 0),
+                "unique_names": cluster.get("unique_names", 0),
+                "avg_similarity": cluster.get("avg_similarity", 0),
+                "representative_name": representative_name,
+                "names_summary": names_str,
+                "members_text": members_text,
+                "first_file": members[0].get("file", "") if members else "",
+                "priority": "high" if len(members) >= 5 else "medium",
+                "members": members_data,
+                "affected_files": affected_files
+            })
+        result = output
+    }
+    | create_task {
+        name: "[extract-dbscan] {member_count}x similar: {names_summary}",
+        category: "extraction-review",
+        priority: {priority},
+        description: "**Extraction Opportunity (DBSCAN)** - {member_count} similar implementations across {unique_files} files\n\n**Cluster**: {unique_names} different method names with similar bodies\n**Avg Similarity**: {avg_similarity}\n\n---\n\n**Locations to review:**\n{members_text}\n\n---\n\n## What We're Looking For\n\nCode fragments (loops, conditionals, sequences of statements) that are **nearly identical** across multiple methods and could be extracted into a shared utility function.\n\n**TRUE POSITIVE example:** Similar loops iterating over extensions and scanning files with rglob patterns across multiple methods - these could be extracted into a shared utility function like `scan_code_files(root, extensions, exclude_func)`.\n\n---\n\n## How to Review\n\n1. **Read the actual code** at each location listed above\n2. **Compare lexically** - is the code TEXT nearly identical (not just semantically similar)?\n3. **Check extractability** - could this become a shared function in a utils module?\n\n---\n\n## Common FALSE POSITIVES\n\n- **FP-INTERFACE**: Same method signature across classes (e.g., `to_dict`, `_register_methods`) - Template/Strategy pattern, not duplication\n- **FP-LAYERS**: Same parameters passed through architectural layers (client -> service -> handler) - proper layering, not duplication\n- **FP-STRUCTURAL**: Similar Python idioms (dict returns, list comprehensions, try/except) - coincidental structure, different logic\n- **FP-TRIVIAL**: Very short methods (1-3 lines) that happen to be similar\n\n---\n\n## Classification\n\n- **TP-EXTRACT**: Real duplication - create shared utility function\n- **TP-PARAMETERIZE**: Similar with small variations - extract with parameters\n- **PARTIAL-TP**: Some extractable fragments within larger different methods\n- **FP-INTERFACE/LAYERS/STRUCTURAL**: Not actual duplication",
+        affects: first_file,
+        dry_run: {dry_run},
+        source_tool: "extraction_opportunities_dbscan",
+        group_id: "extraction_dbscan",
+        filter_predicates: ["skip_trivial", "skip_boilerplate"],
+        metadata: {
+            avg_similarity: avg_similarity,
+            cluster_id: cluster_id,
+            member_count: member_count,
+            unique_files: unique_files,
+            unique_names: unique_names,
+            members: members,
+            affected_files: affected_files
+        },
+        prompt: "## Code Extraction Task\n\nReview the following similar code implementations and extract shared functionality.\n\n### Cluster Details\n- **{member_count}** similar implementations across **{unique_files}** files\n- **Average similarity**: {avg_similarity}\n- **Method names**: {names_summary}\n\n### Locations\n{members_text}\n\n### Instructions\n\n1. **Read each location** listed above\n2. **Identify the common pattern** - what code is repeated?\n3. **Design a shared utility function** that:\n   - Takes the varying parts as parameters\n   - Returns the common result\n   - Has a clear, descriptive name\n4. **Create the utility** in an appropriate utils module\n5. **Refactor each location** to use the new utility\n6. **Run tests** to ensure behavior is preserved\n\n### Expected Output\n- New utility function in `src/utils/` or similar\n- Refactored call sites using the utility\n- Any necessary imports added\n\n### Example Pattern\nIf you find code like:\n```python\n# In file1.py\nfor ext in extensions:\n    for f in root.rglob(f'*.{ext}'):\n        if not exclude(f):\n            results.append(f)\n\n# In file2.py  \nfor ext in exts:\n    for path in base.rglob(f'*.{ext}'):\n        if not should_skip(path):\n            files.append(path)\n```\n\nExtract to:\n```python\n# In utils/files.py\ndef scan_code_files(root: Path, extensions: list, exclude_fn=None) -> list:\n    results = []\n    for ext in extensions:\n        for f in root.rglob(f'*.{ext}'):\n            if exclude_fn is None or not exclude_fn(f):\n                results.append(f)\n    return results\n```"
+    }
+    | emit { tasks }
+}

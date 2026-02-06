@@ -21,6 +21,32 @@ from .catpy import Ok, Err, PipelineResult
 from .registry import Registry
 
 
+def _make_tool_wrapper(tool, params: Dict[str, Any]) -> Callable:
+    """Create a wrapper function for tool execution.
+
+    This is the shared implementation for all tool decorator wrappers.
+    """
+    def wrapper(ctx: Optional["Context"] = None, **kwargs) -> Dict[str, Any]:
+        if ctx is None:
+            ctx = Context(
+                reter=kwargs.pop("reter", None),
+                params=kwargs,
+                instance_name=kwargs.pop("instance_name", "default")
+            )
+        else:
+            ctx.params.update(kwargs)
+
+        for param_name, param_spec in params.items():
+            value = ctx.params.get(param_name)
+            result = param_spec.validate(value)
+            if result.is_err():
+                return {"success": False, "error": str(result)}
+            ctx.params[param_name] = result.unwrap()
+
+        return tool.execute(ctx)
+    return wrapper
+
+
 def query(name: str, description: str = "") -> Callable:
     """
     Decorator to define a query (read-only code inspection) tool.
@@ -70,30 +96,7 @@ def query(name: str, description: str = "") -> Callable:
         # Register with global registry
         Registry.register(spec)
 
-        @wraps(func)
-        def wrapper(ctx: Optional[Context] = None, **kwargs) -> Dict[str, Any]:
-            """Execute the query tool."""
-            if ctx is None:
-                # Create context from kwargs
-                ctx = Context(
-                    reter=kwargs.pop("reter", None),
-                    params=kwargs,
-                    instance_name=kwargs.pop("instance_name", "default")
-                )
-            else:
-                # Merge kwargs into context params
-                ctx.params.update(kwargs)
-
-            # Validate params
-            for param_name, param_spec in params.items():
-                value = ctx.params.get(param_name)
-                result = param_spec.validate(value)
-                if result.is_err():
-                    return {"success": False, "error": str(result)}
-                ctx.params[param_name] = result.unwrap()
-
-            return tool.execute(ctx)
-
+        wrapper = wraps(func)(_make_tool_wrapper(tool, params))
         wrapper._cadsl_spec = spec
         wrapper._cadsl_tool = tool
         return wrapper
@@ -154,26 +157,7 @@ def detector(name: str, description: str = "", *, category: str = "", severity: 
         tool = Detector(spec)
         Registry.register(spec)
 
-        @wraps(func)
-        def wrapper(ctx: Optional[Context] = None, **kwargs) -> Dict[str, Any]:
-            if ctx is None:
-                ctx = Context(
-                    reter=kwargs.pop("reter", None),
-                    params=kwargs,
-                    instance_name=kwargs.pop("instance_name", "default")
-                )
-            else:
-                ctx.params.update(kwargs)
-
-            for param_name, param_spec in params.items():
-                value = ctx.params.get(param_name)
-                result = param_spec.validate(value)
-                if result.is_err():
-                    return {"success": False, "error": str(result)}
-                ctx.params[param_name] = result.unwrap()
-
-            return tool.execute(ctx)
-
+        wrapper = wraps(func)(_make_tool_wrapper(tool, params))
         wrapper._cadsl_spec = spec
         wrapper._cadsl_tool = tool
         return wrapper
@@ -226,26 +210,7 @@ def diagram(name: str, description: str = "") -> Callable:
         tool = Diagram(spec)
         Registry.register(spec)
 
-        @wraps(func)
-        def wrapper(ctx: Optional[Context] = None, **kwargs) -> Dict[str, Any]:
-            if ctx is None:
-                ctx = Context(
-                    reter=kwargs.pop("reter", None),
-                    params=kwargs,
-                    instance_name=kwargs.pop("instance_name", "default")
-                )
-            else:
-                ctx.params.update(kwargs)
-
-            for param_name, param_spec in params.items():
-                value = ctx.params.get(param_name)
-                result = param_spec.validate(value)
-                if result.is_err():
-                    return {"success": False, "error": str(result)}
-                ctx.params[param_name] = result.unwrap()
-
-            return tool.execute(ctx)
-
+        wrapper = wraps(func)(_make_tool_wrapper(tool, params))
         wrapper._cadsl_spec = spec
         wrapper._cadsl_tool = tool
         return wrapper
@@ -429,25 +394,7 @@ class ToolBuilder:
 
         Registry.register(spec)
 
-        def wrapper(ctx: Optional[Context] = None, **kwargs) -> Dict[str, Any]:
-            if ctx is None:
-                ctx = Context(
-                    reter=kwargs.pop("reter", None),
-                    params=kwargs,
-                    instance_name=kwargs.pop("instance_name", "default")
-                )
-            else:
-                ctx.params.update(kwargs)
-
-            for param_name, param_spec in self._params.items():
-                value = ctx.params.get(param_name)
-                result = param_spec.validate(value)
-                if result.is_err():
-                    return {"success": False, "error": str(result)}
-                ctx.params[param_name] = result.unwrap()
-
-            return tool.execute(ctx)
-
+        wrapper = _make_tool_wrapper(tool, self._params)
         wrapper._cadsl_spec = spec
         wrapper._cadsl_tool = tool
         return wrapper

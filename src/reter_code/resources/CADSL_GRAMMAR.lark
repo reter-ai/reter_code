@@ -296,6 +296,13 @@ mermaid_param: "type" ":" mermaid_type      -> mermaid_type_spec
              // ER diagram specific
              | "entities" ":" NAME          -> mermaid_entities
              | "relationships" ":" NAME     -> mermaid_relationships
+             // Block diagram specific
+             | "groups" ":" NAME              -> mermaid_groups
+             | "columns" ":" INT              -> mermaid_columns
+             | "columns" ":" param_ref        -> mermaid_columns_param
+             | "color" ":" NAME               -> mermaid_color
+             | "max_per_group" ":" INT         -> mermaid_max_per_group
+             | "max_per_group" ":" param_ref   -> mermaid_max_per_group_param
 
 mermaid_type: "flowchart"   -> mermaid_flowchart
             | "sequence"    -> mermaid_sequence
@@ -307,6 +314,7 @@ mermaid_type: "flowchart"   -> mermaid_flowchart
             | "mindmap"     -> mermaid_mindmap
             | "timeline"    -> mermaid_timeline
             | "quadrant"    -> mermaid_quadrant
+            | "block_beta"  -> mermaid_block_beta
 
 mermaid_dir: "TB" -> dir_tb
            | "TD" -> dir_tb

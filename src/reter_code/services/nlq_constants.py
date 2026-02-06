@@ -5,29 +5,17 @@ Extracted from tool_registrar.py to reduce method size and improve maintainabili
 Prompts and grammar are loaded from external files for easier maintenance.
 """
 
-from pathlib import Path
-
-# Resource directory
-_RESOURCES_DIR = Path(__file__).parent.parent / "resources"
-
-
-def _load_resource(filename: str) -> str:
-    """Load a resource file from the resources directory."""
-    resource_path = _RESOURCES_DIR / filename
-    if resource_path.exists():
-        with open(resource_path, 'r', encoding='utf-8') as f:
-            return f.read()
-    return f"# Resource file not found: {filename}"
+from .resource_loader import load_resource
 
 
 def _build_prompts():
     """Load grammar and prompts, injecting grammar into prompt templates."""
     # Load the REQL Lark grammar
-    grammar = _load_resource("REQL_GRAMMAR.lark")
+    grammar = load_resource("REQL_GRAMMAR.lark")
 
     # Load prompt templates
-    system_prompt_template = _load_resource("REQL_SYSTEM.prompt")
-    syntax_help_template = _load_resource("REQL_SYNTAX_HELP.prompt")
+    system_prompt_template = load_resource("REQL_SYSTEM.prompt")
+    syntax_help_template = load_resource("REQL_SYNTAX_HELP.prompt")
 
     # Inject grammar into prompts
     system_prompt = system_prompt_template.replace("{GRAMMAR}", grammar)

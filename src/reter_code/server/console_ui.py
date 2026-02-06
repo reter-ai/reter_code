@@ -32,7 +32,12 @@ if TYPE_CHECKING:
 
 @dataclass
 class QueryLogEntry:
-    """Single query log entry."""
+    """Single query log entry.
+
+    ::: This is-in-layer Core-Layer.
+    ::: This is a value-object.
+    ::: This is stateless.
+    """
     timestamp: float
     method: str
     duration_ms: float
@@ -47,7 +52,12 @@ class QueryLogEntry:
 
 @dataclass
 class ServerStatus:
-    """Server status information."""
+    """Server status information.
+
+    ::: This is-in-layer Core-Layer.
+    ::: This is a value-object.
+    ::: This is stateful.
+    """
     started_at: float = field(default_factory=time.time)
     total_sources: int = 0
     total_wmes: int = 0
@@ -64,13 +74,19 @@ class ServerStatus:
     current_file: Optional[str] = None  # Current file being processed
     initialized: bool = False  # True when server is ready
 
+    # Spinner for indeterminate progress
+    spinner_active: bool = False
+    spinner_text: str = ""
+    spinner_frame: int = 0
+
 
 class ConsoleUI:
     """Rich console output for RETER server.
 
-    ::: This is-defined-in Console-UI.
-    ::: This displays-status ServerStatus.
-    ::: This logs-queries QueryLogEntry.
+    ::: This is-in-layer Presentation-Layer.
+    ::: This is a adapter.
+    ::: This is stateful.
+    ::: This depends-on `rich.console.Console`.
 
     Provides a live-updating terminal interface showing:
     - Server status and statistics
@@ -92,54 +108,107 @@ class ConsoleUI:
 
         self.server = server
         self.console = Console()
-        self.live: Optional[Live] = None
+        self._refresh_thread = None
 
         self.status = ServerStatus()
         self.query_log: deque[QueryLogEntry] = deque(maxlen=self.MAX_LOG_ENTRIES)
 
         self._running = False
-        self._last_size = (0, 0)  # Track terminal size for resize detection
 
     def __rich__(self) -> Layout:
-        """Return layout for Rich rendering - called on every refresh."""
+        """Return layout for Rich rendering."""
         return self._build_layout()
 
     def start(self) -> None:
-        """Start live display."""
+        """Start display refresh thread."""
+        import threading
         self._running = True
-        self.live = Live(
-            self,  # Pass self - Rich will call __rich__() on each refresh
-            console=self.console,
-            refresh_per_second=4,
-            screen=False
-        )
-        self.live.start()
+        self._refresh_thread = threading.Thread(target=self._refresh_loop, daemon=True)
+        self._refresh_thread.start()
+
+    def _refresh_loop(self) -> None:
+        """Background thread that refreshes the display."""
+        import os
+        import sys
+        import time
+
+        last_size = (0, 0)
+
+        # Hide cursor at start
+        sys.stdout.write("\033[?25l")
+        sys.stdout.flush()
+
+        try:
+            while self._running:
+                try:
+                    # Get current terminal size
+                    try:
+                        term_size = os.get_terminal_size()
+                        width = term_size.columns
+                        height = term_size.lines
+                    except OSError:
+                        width = 120
+                        height = 30
+
+                    current_size = (width, height)
+                    size_changed = current_size != last_size
+                    last_size = current_size
+
+                    # Only do full clear on resize, otherwise just move cursor home
+                    if size_changed and current_size != (0, 0):
+                        if sys.platform == 'win32':
+                            os.system('cls')
+                        else:
+                            os.system('clear')
+
+                    # Move cursor to home position (top-left)
+                    sys.stdout.write("\033[H")
+                    sys.stdout.flush()
+
+                    # Create console with explicit size (height-1 leaves one blank line but fits)
+                    self.console = Console(width=width, height=height - 1, force_terminal=True)
+                    # Print the layout with height constraint
+                    self.console.print(self._build_layout(), height=height - 1, end="")
+
+                    # Clear any remaining lines below
+                    sys.stdout.write("\033[J")
+                    sys.stdout.flush()
+                except Exception:
+                    pass  # Ignore errors during refresh
+                time.sleep(0.5)  # Refresh every 500ms
+        finally:
+            # Show cursor when done
+            sys.stdout.write("\033[?25h")
+            sys.stdout.flush()
 
     def stop(self) -> None:
         """Stop live display."""
         self._running = False
-        if self.live:
-            self.live.stop()
-            self.live = None
+        # Clear screen on exit
+        try:
+            self.console.clear()
+        except Exception:
+            pass
 
     def _build_layout(self) -> Layout:
         """Build console layout with panels."""
+        # Get terminal size directly from OS to handle resize
+        import os
+        try:
+            term_size = os.get_terminal_size()
+            term_height = term_size.lines
+        except OSError:
+            term_height = self.console.size.height
+
+        # Simple layout without explicit total height
         layout = Layout()
 
-        # Get terminal size for dynamic layout
-        term_height = self.console.size.height
-
-        # Calculate sizes based on terminal height
-        # Minimum heights: header=3, footer=3, progress=6, main gets the rest
-        header_size = 3
-        footer_size = 3
-        progress_size = min(8, max(6, term_height // 6))  # 6-8 lines for progress
-
+        # Fixed sizes for header, progress, footer - main is flexible
         layout.split_column(
-            Layout(name="header", size=header_size),
+            Layout(name="header", size=3),
             Layout(name="main"),
-            Layout(name="progress", size=progress_size),
-            Layout(name="footer", size=footer_size)
+            Layout(name="progress", size=5),
+            Layout(name="footer", size=3),
         )
 
         layout["main"].split_row(
@@ -208,7 +277,17 @@ class ConsoleUI:
         """Build progress panel for current operation."""
         content = Text()
 
-        if self.status.current_operation:
+        # Spinner animation frames
+        spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+        if self.status.spinner_active:
+            # Show spinner animation
+            frame = spinner_frames[self.status.spinner_frame % len(spinner_frames)]
+            self.status.spinner_frame += 1
+            content.append(f"{frame} ", style="bold cyan")
+            content.append(self.status.spinner_text, style="bold yellow")
+            content.append("...", style="dim")
+        elif self.status.current_operation:
             # Operation name
             content.append(self.status.current_operation, style="bold yellow")
 
@@ -283,12 +362,8 @@ class ConsoleUI:
     def _build_footer(self) -> Panel:
         """Build footer panel."""
         text = Text()
-        text.append("[Q]", style="bold")
-        text.append("uery stats  ", style="dim")
-        text.append("[C]", style="bold")
-        text.append("lients  ", style="dim")
-        text.append("[L]", style="bold")
-        text.append("ogs  ", style="dim")
+        text.append("[K]", style="bold")
+        text.append("ompact  ", style="dim")
         text.append("[Ctrl+C]", style="bold")
         text.append(" Exit", style="dim")
 
@@ -429,6 +504,21 @@ class ConsoleUI:
         self.status.current_operation = phase
         self._refresh()
 
+    def start_spinner(self, text: str) -> None:
+        """Start spinner animation for indeterminate progress."""
+        self.status.spinner_active = True
+        self.status.spinner_text = text
+        self.status.spinner_frame = 0
+        self.status.current_operation = None  # Clear regular operation
+        self._refresh()
+
+    def stop_spinner(self, result_text: str = None) -> None:
+        """Stop spinner and optionally show result."""
+        self.status.spinner_active = False
+        if result_text:
+            self.status.current_operation = result_text
+        self._refresh()
+
     def start_gitignore_loading(self) -> None:
         """Start gitignore loading phase."""
         self.status.current_operation = "Loading .gitignore patterns..."
@@ -557,13 +647,21 @@ class ConsoleUI:
         self._refresh()
 
     def _refresh(self) -> None:
-        """Refresh the display."""
-        if self.live and self._running:
-            self.live.update(self._build_layout())
+        """Refresh the display with current state.
+
+        With auto_refresh=True and __rich__(), Rich automatically rebuilds
+        the layout 4 times per second. Manual refresh not needed.
+        """
+        pass
 
 
 class NoOpConsoleUI:
-    """No-op console UI when Rich is not available."""
+    """No-op console UI when Rich is not available.
+
+    ::: This is-in-layer Presentation-Layer.
+    ::: This is a adapter.
+    ::: This is stateless.
+    """
 
     def __init__(self, server: Any):
         pass
@@ -585,6 +683,12 @@ class NoOpConsoleUI:
 
     # ConsoleProgress-compatible no-ops
     def set_phase(self, phase: str) -> None:
+        pass
+
+    def start_spinner(self, text: str) -> None:
+        pass
+
+    def stop_spinner(self, result_text: str = None) -> None:
         pass
 
     def start_gitignore_loading(self) -> None:

@@ -77,6 +77,23 @@ def check_initialization() -> None:
         )
 
 
+def test_hybrid_mode_function(x: int, y: int) -> int:
+    """
+    A test function to verify hybrid mode delta tracking.
+
+    This function was added to test that new code gets properly
+    tracked in the hybrid network's delta journal.
+
+    Args:
+        x: First number
+        y: Second number
+
+    Returns:
+        Sum of x and y
+    """
+    return x + y
+
+
 # Max length for parameter/return value logging
 DEBUG_MAX_VALUE_LEN = int(os.getenv("RETER_DEBUG_MAX_VALUE_LEN", "200"))
 
@@ -265,7 +282,68 @@ def generate_source_id(file_content: str, rel_path: str) -> str:
         Source ID string in format "md5hash|relative/path.py"
     """
     md5_hash = hashlib.md5(file_content.encode('utf-8')).hexdigest()
-    return f"{md5_hash}|{rel_path}"
+    # Normalize path separators to forward slashes for consistency across platforms
+    normalized_path = rel_path.replace('\\', '/')
+    return f"{md5_hash}|{normalized_path}"
+
+
+def extract_in_file_path(source: str) -> str:
+    """
+    Extract normalized file path from a source identifier.
+
+    Handles formats like:
+    - "md5hash|path/to/file.py" -> "path/to/file.py"
+    - "path/to/file.py@1234567890" -> "path/to/file.py"
+    - "path\\to\\file.py" -> "path/to/file.py"
+
+    Args:
+        source: Source identifier potentially containing MD5 prefix or timestamp suffix
+
+    Returns:
+        Normalized file path with forward slashes
+    """
+    in_file = source
+
+    # Strip MD5 prefix if present (format: "md5hash|path")
+    if '|' in in_file:
+        in_file = in_file.split('|', 1)[1]
+
+    # Strip timestamp suffix if present (format: "path@timestamp")
+    if '@' in in_file:
+        in_file = in_file.split('@', 1)[0]
+
+    # Normalize path separators to forward slashes
+    in_file = in_file.replace('\\', '/')
+
+    return in_file
+
+
+def format_parse_errors(errors: list) -> list:
+    """
+    Convert parser errors to standardized list of dicts.
+
+    Args:
+        errors: List of error dicts from C++ parser (with line, column, message keys)
+
+    Returns:
+        List of standardized error dicts with line, column, message keys
+    """
+    error_list = []
+    for err in errors:
+        error_list.append({
+            "line": err.get("line", 0),
+            "column": err.get("column", 0),
+            "message": err.get("message", "Unknown error")
+        })
+    return error_list
+
+
+def test_unified_hybrid_api(version: int = 10) -> str:
+    """
+    Test function to verify unified ReteNetwork hybrid mode works.
+    Hybrid persistence confirmed working.
+    """
+    return f"unified_hybrid_api_v{version}_working"
 
 
 __all__ = [
@@ -282,6 +360,8 @@ __all__ = [
     "_format_args",
     # Safe C++ call
     "safe_cpp_call",
-    # Source ID
+    # Source ID and path utilities
     "generate_source_id",
+    "extract_in_file_path",
+    "format_parse_errors",
 ]

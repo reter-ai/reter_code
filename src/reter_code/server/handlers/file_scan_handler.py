@@ -17,8 +17,9 @@ from ..protocol import METHOD_FILE_SCAN, FILE_SCAN_ERROR
 class FileScanHandler(BaseHandler):
     """Handler for file scan operations.
 
-    ::: This is-defined-in Query-Handlers.
-    ::: This handles-method file_scan.
+    ::: This is-in-layer Service-Layer.
+    ::: This is a handler.
+    ::: This is stateful.
     """
 
     def _register_methods(self) -> None:

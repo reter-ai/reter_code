@@ -11,7 +11,7 @@ This module provides operators for controlling pipeline execution:
 from typing import Callable, Any, Optional, List, TypeVar, Union
 from dataclasses import dataclass
 
-from .core import Pipeline, Step, Result, Ok, Err, Context, PipelineResult, PipelineError
+from .core import Pipeline, Step, Result, Ok, Err, Context, PipelineResult, PipelineError, TapStep
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -267,29 +267,7 @@ def identity() -> IdentityStep:
     return IdentityStep()
 
 
-@dataclass
-class TapStep(Step[T, T]):
-    """
-    Side-effect step that executes a function without modifying data.
-
-    Useful for logging, debugging, or triggering external actions.
-
-    ::: This is-in-layer Domain-Specific-Language-Layer.
-    ::: This is a step.
-    ::: This is-in-process Main-Process.
-    ::: This is stateless.
-    """
-    fn: Callable[[T], None]
-
-    def execute(self, data: T) -> PipelineResult[T]:
-        try:
-            self.fn(data)
-            return Ok(data)
-        except Exception as e:
-            return Err(PipelineError("tap", f"Side effect failed: {e}", e))
-
-
-def tap(fn: Callable[[T], None]) -> TapStep[T]:
+def tap(fn: Callable[[T], Any]) -> TapStep[T]:
     """
     Create a tap step for side effects.
 

@@ -1,0 +1,39 @@
+# architecture_diagram - Generate layered architecture diagram from semantic annotations
+#
+# Visualizes the codebase architecture as a block-beta Mermaid diagram with:
+# - Layers as colored blocks with grid layout
+# - Classes placed in their correct layer
+# - Configurable columns per row and max classes per layer
+#
+# Requires ::: annotations on classes. If insufficient annotations are found,
+# the diagram will be empty.
+#
+# Usage:
+#   execute_cadsl(script="...\architecture_diagram.cadsl")
+#   execute_cadsl(script="...\architecture_diagram.cadsl", params={"max_classes_per_layer": 8})
+#   execute_cadsl(script="...\architecture_diagram.cadsl", params={"columns": 5})
+
+diagram architecture_diagram() {
+    """Generate layered architecture diagram from semantic annotations."""
+
+    param max_classes_per_layer: int = 12;
+    param columns: int = 4;
+
+    reql {
+        SELECT ?class_name ?layer
+        WHERE {
+            ?class type class .
+            ?class has-name ?class_name .
+            ?class is-in-layer ?layer
+        }
+        ORDER BY ?layer ?class_name
+    }
+    | render_mermaid {
+        type: block_beta,
+        groups: layer,
+        nodes: class_name,
+        columns: {columns},
+        max_per_group: {max_classes_per_layer}
+    }
+    | emit { diagram }
+}

@@ -52,6 +52,26 @@ class CommentBlock:
     is_standalone: bool = False  # True if not attached to any code entity
 
 
+@dataclass
+class CodeChunk:
+    """
+    Represents a chunk of a code entity for RAG indexing.
+
+    Used when a method/function body is too long and needs to be split
+    into multiple chunks for better semantic search coverage.
+
+    ::: This is-in-layer Utility-Layer.
+    ::: This is a value-object.
+    """
+    parent_entity: CodeEntity
+    chunk_index: int
+    total_chunks: int
+    content: str
+    line_start: int
+    line_end: int
+    includes_header: bool  # True if this chunk includes signature/docstring
+
+
 class ContentExtractor:
     """
     Extracts source code content from files using line numbers.
@@ -413,42 +433,25 @@ class ContentExtractor:
         """
         Build text suitable for embedding from a code entity.
 
-        Combines entity type, name, docstring, signature, and truncated body
-        into a single text optimized for semantic search.
+        Returns code body only (no method identity) to enable clustering
+        by code similarity rather than name similarity. This supports
+        extraction detection - finding similar code fragments across
+        methods with different names.
 
         Args:
             entity: CodeEntity to build text for
-            include_body: Whether to include code body
+            include_body: Ignored - kept for API compatibility
 
         Returns:
-            Combined text for embedding
+            Code body for embedding (truncated to max_body_lines)
         """
-        parts = []
-
-        # Type and name (always included)
-        if entity.entity_type == "method" and entity.class_name:
-            parts.append(f"{entity.entity_type}: {entity.class_name}.{entity.name}")
-        else:
-            parts.append(f"{entity.entity_type}: {entity.name}")
-
-        # Qualified name if different
-        if entity.qualified_name and entity.qualified_name != entity.name:
-            parts.append(f"Full name: {entity.qualified_name}")
-
-        # Signature (high value for understanding function purpose)
-        if entity.signature:
-            parts.append(f"Signature: {entity.signature}")
-
-        # Docstring (highest value for semantic search)
-        if entity.docstring:
-            parts.append(f"Description: {entity.docstring}")
-
-        # Truncated body
-        if include_body and entity.body:
+        # Body-only embedding: enables clustering by code similarity
+        # Method identity (name, class, signature) is stored in metadata
+        # but not included in embedding to avoid polluting similarity
+        if entity.body:
             body_lines = entity.body.split('\n')[:self._max_body_lines]
-            parts.append(f"Code:\n{chr(10).join(body_lines)}")
-
-        return '\n\n'.join(parts)
+            return '\n'.join(body_lines)
+        return ""
 
     def build_indexable_text_from_parts(
         self,
@@ -463,46 +466,26 @@ class ContentExtractor:
         """
         Build indexable text from individual parts.
 
-        Convenience method when entity parts are already available.
+        Returns code body only (no method identity) to enable clustering
+        by code similarity rather than name similarity.
 
         Args:
-            entity_name: Name of the entity
-            entity_type: Type (class, method, function)
-            docstring: Docstring if available
-            signature: Function/method signature
+            entity_name: Ignored - kept for API compatibility
+            entity_type: Ignored - kept for API compatibility
+            docstring: Ignored - kept for API compatibility
+            signature: Ignored - kept for API compatibility
             body: Code body (will be truncated)
-            class_name: Parent class name for methods
-            qualified_name: Fully qualified name
+            class_name: Ignored - kept for API compatibility
+            qualified_name: Ignored - kept for API compatibility
 
         Returns:
-            Combined text for embedding
+            Code body for embedding (truncated)
         """
-        parts = []
-
-        # Type and name
-        if entity_type == "method" and class_name:
-            parts.append(f"{entity_type}: {class_name}.{entity_name}")
-        else:
-            parts.append(f"{entity_type}: {entity_name}")
-
-        # Qualified name
-        if qualified_name and qualified_name != entity_name:
-            parts.append(f"Full name: {qualified_name}")
-
-        # Signature
-        if signature:
-            parts.append(f"Signature: {signature}")
-
-        # Docstring
-        if docstring:
-            parts.append(f"Description: {docstring}")
-
-        # Truncated body
+        # Body-only embedding for code similarity clustering
         if body:
             body_lines = body.split('\n')[:self._max_body_lines]
-            parts.append(f"Code:\n{chr(10).join(body_lines)}")
-
-        return '\n\n'.join(parts)
+            return '\n'.join(body_lines)
+        return ""
 
     def extract_and_build(
         self,
@@ -828,3 +811,138 @@ class ContentExtractor:
         parts.append(comment.content)
 
         return '\n'.join(parts)
+
+    def chunk_entity_body(
+        self,
+        entity: CodeEntity,
+        chunk_size: int = 30,
+        chunk_overlap: int = 10,
+        min_chunk_size: int = 15
+    ) -> List[CodeChunk]:
+        """
+        Split a code entity's body into overlapping chunks for RAG indexing.
+
+        This enables better semantic search coverage for long methods/functions
+        by creating multiple indexed entries with overlapping content.
+
+        Args:
+            entity: CodeEntity to chunk
+            chunk_size: Maximum number of lines per chunk (default: 30)
+            chunk_overlap: Number of overlapping lines between chunks (default: 10)
+            min_chunk_size: Minimum lines to avoid tiny trailing chunks (default: 15)
+
+        Returns:
+            List of CodeChunk objects. Returns single chunk if body <= chunk_size.
+        """
+        if not entity.body:
+            return []
+
+        body_lines = entity.body.split('\n')
+        total_lines = len(body_lines)
+
+        # If body fits in a single chunk, return it as-is
+        if total_lines <= chunk_size:
+            return [CodeChunk(
+                parent_entity=entity,
+                chunk_index=0,
+                total_chunks=1,
+                content=entity.body,
+                line_start=entity.line_start,
+                line_end=entity.line_end or (entity.line_start + total_lines - 1),
+                includes_header=True
+            )]
+
+        chunks = []
+        start_idx = 0
+        chunk_index = 0
+
+        # Calculate step size (chunk_size - overlap)
+        step = chunk_size - chunk_overlap
+        if step <= 0:
+            step = 1  # Ensure we make progress
+
+        # Estimate total chunks for metadata
+        estimated_chunks = max(1, (total_lines - chunk_overlap) // step + 1)
+
+        while start_idx < total_lines:
+            end_idx = min(start_idx + chunk_size, total_lines)
+
+            # Check if remaining content is smaller than min_chunk_size
+            remaining = total_lines - start_idx
+            if remaining < min_chunk_size and chunk_index > 0:
+                # Merge with previous chunk by extending it
+                if chunks:
+                    prev_chunk = chunks[-1]
+                    # Extend the previous chunk to include remaining content
+                    extended_content = '\n'.join(body_lines[
+                        prev_chunk.line_start - entity.line_start:total_lines
+                    ])
+                    chunks[-1] = CodeChunk(
+                        parent_entity=entity,
+                        chunk_index=prev_chunk.chunk_index,
+                        total_chunks=len(chunks),  # Will be updated
+                        content=extended_content,
+                        line_start=prev_chunk.line_start,
+                        line_end=entity.line_start + total_lines - 1,
+                        includes_header=prev_chunk.includes_header
+                    )
+                break
+
+            chunk_content = '\n'.join(body_lines[start_idx:end_idx])
+
+            # Calculate actual line numbers in the file
+            chunk_line_start = entity.line_start + start_idx
+            chunk_line_end = entity.line_start + end_idx - 1
+
+            chunks.append(CodeChunk(
+                parent_entity=entity,
+                chunk_index=chunk_index,
+                total_chunks=estimated_chunks,  # Will be updated
+                content=chunk_content,
+                line_start=chunk_line_start,
+                line_end=chunk_line_end,
+                includes_header=(chunk_index == 0)
+            ))
+
+            start_idx += step
+            chunk_index += 1
+
+        # Update total_chunks in all chunks now that we know the final count
+        total_chunks = len(chunks)
+        for i, chunk in enumerate(chunks):
+            chunks[i] = CodeChunk(
+                parent_entity=chunk.parent_entity,
+                chunk_index=chunk.chunk_index,
+                total_chunks=total_chunks,
+                content=chunk.content,
+                line_start=chunk.line_start,
+                line_end=chunk.line_end,
+                includes_header=chunk.includes_header
+            )
+
+        return chunks
+
+    def build_chunk_indexable_text(
+        self,
+        chunk: CodeChunk,
+        include_context: bool = True
+    ) -> str:
+        """
+        Build text suitable for embedding from a code chunk.
+
+        Returns code body only (no method identity) to enable clustering
+        by code similarity rather than name similarity. This supports
+        extraction detection - finding similar code fragments across
+        methods with different names.
+
+        Args:
+            chunk: CodeChunk to build text for
+            include_context: Ignored - kept for API compatibility
+
+        Returns:
+            Code content only for embedding
+        """
+        # Body-only embedding: enables clustering by code similarity
+        # Method identity (name, class, signature) is stored in metadata
+        # but not included in embedding to avoid polluting similarity
+        return chunk.content
