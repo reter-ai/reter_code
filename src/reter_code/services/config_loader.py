@@ -16,7 +16,7 @@ Supported settings in reter_code.json:
 
     // RAG Configuration
     "rag_enabled": true,                   // -> RETER_RAG_ENABLED
-    "rag_embedding_model": "sentence-transformers/all-mpnet-base-v2",  // -> RETER_RAG_MODEL
+    "rag_embedding_model": "flax-sentence-embeddings/st-codesearch-distilroberta-base",  // -> RETER_RAG_MODEL
     "rag_embedding_cache_size": 1000,      // -> RETER_RAG_CACHE_SIZE
     "rag_max_body_lines": 50,              // -> RETER_RAG_MAX_BODY_LINES
     "rag_batch_size": 32,                  // -> RETER_RAG_BATCH_SIZE
@@ -82,7 +82,7 @@ class ConfigLoader:
     # Default values for RAG configuration
     RAG_DEFAULTS = {
         "rag_enabled": True,
-        "rag_embedding_model": "sentence-transformers/all-mpnet-base-v2",
+        "rag_embedding_model": "flax-sentence-embeddings/st-codesearch-distilroberta-base",
         "rag_embedding_cache_size": 1000,
         "rag_max_body_lines": 50,
         "rag_batch_size": 32,

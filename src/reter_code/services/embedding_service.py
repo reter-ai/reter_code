@@ -83,6 +83,7 @@ class EmbeddingService:
     # Model configurations
     MODEL_CONFIGS: Dict[str, Dict[str, Any]] = {
         # Local models (sentence-transformers)
+        "flax-sentence-embeddings/st-codesearch-distilroberta-base": {"dim": 768, "provider": "local"},
         "sentence-transformers/all-mpnet-base-v2": {"dim": 768, "provider": "local"},
         "sentence-transformers/all-MiniLM-L6-v2": {"dim": 384, "provider": "local"},
         "all-mpnet-base-v2": {"dim": 768, "provider": "local"},  # Short alias
@@ -101,7 +102,7 @@ class EmbeddingService:
 
     def __init__(
         self,
-        model_name: str = "sentence-transformers/all-mpnet-base-v2",
+        model_name: str = "flax-sentence-embeddings/st-codesearch-distilroberta-base",
         cache_size: int = 1000,
         api_key: Optional[str] = None
     ):
@@ -708,7 +709,7 @@ def get_embedding_service(
 
     model_name = config.get(
         "rag_embedding_model",
-        "sentence-transformers/all-mpnet-base-v2"
+        "flax-sentence-embeddings/st-codesearch-distilroberta-base"
     )
     cache_size = config.get("rag_embedding_cache_size", 1000)
     api_key = config.get("rag_api_key")  # Optional, falls back to env vars

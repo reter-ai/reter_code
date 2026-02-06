@@ -3922,7 +3922,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             # Return basic status without loading embedding model
             model_name = self._config.get(
                 "rag_embedding_model",
-                "sentence-transformers/all-mpnet-base-v2"
+                "flax-sentence-embeddings/st-codesearch-distilroberta-base"
             )
             return {
                 "status": "not_initialized",
