@@ -9,7 +9,9 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import List, Optional, Any, Tuple, Dict, Set, Callable
+from typing import List, Optional, Any, Tuple, Dict, Set, Callable, TypeVar
+
+T = TypeVar('T')
 import functools
 
 from reter import Reter
