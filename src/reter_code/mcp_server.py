@@ -274,10 +274,54 @@ def create_server():
     return ReterCodeServer()
 
 
+def _print_setup_instructions():
+    """Print setup instructions when run directly from terminal."""
+    print("""
+Reter Code - AI-powered code reasoning MCP server
+
+Setup:
+
+  1. Start the RETER server (in a separate terminal):
+
+     reter_server --project /path/to/your/project
+
+  2. Add MCP to Claude Code:
+
+     claude mcp add reter -- uvx --from git+https://github.com/reter-ai/reter_code --find-links https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html reter_code --stdio
+
+  3. Or add to Claude Desktop config:
+
+     {
+       "mcpServers": {
+         "reter": {
+           "command": "uvx",
+           "args": [
+             "--from", "git+https://github.com/reter-ai/reter_code",
+             "--find-links", "https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html",
+             "reter_code", "--stdio"
+           ]
+         }
+       }
+     }
+
+  Config locations:
+    macOS:   ~/Library/Application Support/Claude/claude_desktop_config.json
+    Windows: %APPDATA%\\Claude\\claude_desktop_config.json
+    Linux:   ~/.config/Claude/claude_desktop_config.json
+""")
+
+
 def main():
-    """Main entry point - always runs MCP server in remote-only mode."""
-    server = create_server()
-    server.run()
+    """Main entry point.
+
+    When run from a terminal (TTY), prints setup instructions.
+    When run with --stdio (by an MCP host), starts the MCP server.
+    """
+    if "--stdio" in sys.argv:
+        server = create_server()
+        server.run()
+    else:
+        _print_setup_instructions()
 
 
 if __name__ == "__main__":

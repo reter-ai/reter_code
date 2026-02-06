@@ -73,14 +73,10 @@ This separation means the expensive RETE network and RAG index stay alive across
 ### Step 1: Install
 
 ```bash
-pip install reter_code
-```
-
-Or with uvx:
-
-```bash
 uvx --from git+https://github.com/reter-ai/reter_code --find-links https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html reter_code
 ```
+
+This installs everything and prints setup instructions.
 
 ### Step 2: Start the RETER Server
 
@@ -111,7 +107,7 @@ reter_server --project /path/to/project --verbose    # Debug logging
 ### Step 3: Add MCP Client to Claude Code
 
 ```bash
-claude mcp add reter_code -s user -- uvx --from git+https://github.com/reter-ai/reter_code --find-links https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html reter_code
+claude mcp add reter -- uvx --from git+https://github.com/reter-ai/reter_code --find-links https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html reter_code --stdio
 ```
 
 The MCP client automatically discovers the server via `.reter_code/server.json`.
@@ -128,14 +124,13 @@ The MCP client automatically discovers the server via `.reter_code/server.json`.
 ```json
 {
   "mcpServers": {
-    "reter_code": {
+    "reter": {
       "command": "uvx",
       "args": [
         "--from", "git+https://github.com/reter-ai/reter_code",
         "--find-links", "https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html",
-        "reter_code"
-      ],
-      "timeout": 120000
+        "reter_code", "--stdio"
+      ]
     }
   }
 }
