@@ -207,7 +207,7 @@ class ConsoleUI:
         layout.split_column(
             Layout(name="header", size=3),
             Layout(name="main"),
-            Layout(name="progress", size=5),
+            Layout(name="progress", size=7),
             Layout(name="footer", size=3),
         )
 
@@ -334,7 +334,10 @@ class ConsoleUI:
                 content.append("waiting...", style="dim")
         elif self.status.initialized:
             content.append("Ready", style="bold green")
-            content.append(" - Server is idle, waiting for queries", style="dim")
+            content.append(" - Server is idle, waiting for queries\n\n", style="dim")
+            content.append("  Add MCP to Claude Code:\n  ", style="dim")
+            project_root = str(self.server.config.project_root) if self.server.config.project_root else ""
+            content.append(self._get_mcp_command(project_root), style="bold white")
         else:
             content.append("Starting up...", style="bold yellow")
 
@@ -380,6 +383,8 @@ class ConsoleUI:
     def _build_footer(self) -> Panel:
         """Build footer panel."""
         text = Text()
+        text.append("[C]", style="bold")
+        text.append("opy MCP command  ", style="dim")
         text.append("[K]", style="bold")
         text.append("ompact  ", style="dim")
         text.append("[Ctrl+C]", style="bold")
@@ -444,6 +449,13 @@ class ConsoleUI:
         # Last resort: truncate filename
         available = max_width - 4  # for ".../""
         return f".../{filename[:available]}"
+
+    @staticmethod
+    def _get_mcp_command(project_root: str) -> str:
+        """Build the claude mcp add command with project root."""
+        _UVX_FROM = "git+https://github.com/reter-ai/reter_code"
+        _FIND_LINKS = "https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html"
+        return f"claude mcp add reter -e RETER_PROJECT_ROOT={project_root} -- uvx --from {_UVX_FROM} --find-links {_FIND_LINKS} reter_code --stdio"
 
     def log_query(
         self,

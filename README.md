@@ -106,10 +106,10 @@ The server will:
 ### Step 2: Add MCP Client to Claude Code
 
 ```bash
-claude mcp add reter -- uvx --from git+https://github.com/reter-ai/reter_code --find-links https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html reter_code --stdio
+claude mcp add reter -e RETER_PROJECT_ROOT=/path/to/your/project -- uvx --from git+https://github.com/reter-ai/reter_code --find-links https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html reter_code --stdio
 ```
 
-The MCP client automatically discovers the server via `.reter_code/server.json`.
+The `-e RETER_PROJECT_ROOT=...` tells the MCP client where to find the server's discovery file (`.reter_code/server.json`).
 
 ---
 
@@ -129,7 +129,10 @@ The MCP client automatically discovers the server via `.reter_code/server.json`.
         "--from", "git+https://github.com/reter-ai/reter_code",
         "--find-links", "https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html",
         "reter_code", "--stdio"
-      ]
+      ],
+      "env": {
+        "RETER_PROJECT_ROOT": "/path/to/your/project"
+      }
     }
   }
 }

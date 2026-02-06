@@ -413,6 +413,10 @@ class ReterServer:
                     # Manual compaction
                     logger.info("[Keyboard] K pressed - triggering compaction")
                     self._trigger_compaction()
+                elif key in (b'c', b'C'):
+                    # Copy MCP command to clipboard
+                    logger.info("[Keyboard] C pressed - copying MCP command")
+                    self._copy_mcp_command()
                 elif key in (b'r', b'R'):
                     # Refresh stats
                     logger.info("[Keyboard] R pressed - refreshing stats")
@@ -477,6 +481,26 @@ class ReterServer:
                 self._compacting = False
 
         threading.Thread(target=do_compact, daemon=True).start()
+
+    def _copy_mcp_command(self) -> None:
+        """Copy MCP setup command to system clipboard."""
+        import subprocess
+        import threading
+        from .console_ui import ConsoleUI
+        project_root = str(self.config.project_root) if self.config.project_root else ""
+        cmd = ConsoleUI._get_mcp_command(project_root)
+        try:
+            subprocess.run(["clip"], input=cmd.encode(), check=True)
+            if self._console:
+                self._console.set_phase("Copied MCP command to clipboard!")
+                import time as _time
+                def _clear_phase():
+                    _time.sleep(2)
+                    if self._console and self._console.status.current_operation == "Copied MCP command to clipboard!":
+                        self._console.status.current_operation = None
+                threading.Thread(target=_clear_phase, daemon=True).start()
+        except Exception as e:
+            logger.error(f"Failed to copy to clipboard: {e}")
 
     def _run_event_loop(self) -> None:
         """Main event loop processing requests."""

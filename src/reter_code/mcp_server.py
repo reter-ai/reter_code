@@ -292,7 +292,7 @@ Setup:
 
   2. Add MCP to Claude Code:
 
-     claude mcp add reter -- uvx --from {_UVX_FROM} --find-links {_FIND_LINKS} reter_code --stdio
+     claude mcp add reter -e RETER_PROJECT_ROOT=/path/to/your/project -- uvx --from {_UVX_FROM} --find-links {_FIND_LINKS} reter_code --stdio
 
   3. Or add to Claude Desktop config:
 
@@ -304,7 +304,10 @@ Setup:
              "--from", "{_UVX_FROM}",
              "--find-links", "{_FIND_LINKS}",
              "reter_code", "--stdio"
-           ]
+           ],
+           "env": {{
+             "RETER_PROJECT_ROOT": "/path/to/your/project"
+           }}
          }}
        }}
      }}
