@@ -492,11 +492,12 @@ class ReterServer:
         try:
             subprocess.run(["clip"], input=cmd.encode(), check=True)
             if self._console:
-                self._console.set_phase("Copied MCP command to clipboard!")
+                msg = "Copied! Run from the project directory where you'll use Claude Code."
+                self._console.set_phase(msg)
                 import time as _time
                 def _clear_phase():
-                    _time.sleep(2)
-                    if self._console and self._console.status.current_operation == "Copied MCP command to clipboard!":
+                    _time.sleep(4)
+                    if self._console and self._console.status.current_operation == msg:
                         self._console.status.current_operation = None
                 threading.Thread(target=_clear_phase, daemon=True).start()
         except Exception as e:
