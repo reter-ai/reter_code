@@ -114,6 +114,15 @@ class ConsoleUI:
         self.query_log: deque[QueryLogEntry] = deque(maxlen=self.MAX_LOG_ENTRIES)
 
         self._running = False
+        self._keyboard_callback = None  # Set by server for keyboard polling
+
+        # Log viewer state
+        self._view_mode: str = "dashboard"  # "dashboard", "debug_log", "nlq_log", "source_tree"
+        self._log_scroll_offset: int = 0  # 0 = follow tail, positive = lines scrolled up
+
+        # Source tree cache (built once on enter, not every render)
+        self._source_tree_cache: Optional[List[tuple]] = None
+        self._source_tree_count: int = 0
 
     def __rich__(self) -> Layout:
         """Return layout for Rich rendering."""
@@ -173,9 +182,17 @@ class ConsoleUI:
                     # Clear any remaining lines below
                     sys.stdout.write("\033[J")
                     sys.stdout.flush()
+
+                    # Poll keyboard if callback is set (works during init too)
+                    if self._keyboard_callback:
+                        try:
+                            self._keyboard_callback()
+                        except Exception:
+                            pass
                 except Exception:
                     pass  # Ignore errors during refresh
-                time.sleep(0.5)  # Refresh every 500ms
+                # Faster refresh in log view for live-tail feel
+                time.sleep(0.15 if self._view_mode != "dashboard" else 0.5)
         finally:
             # Show cursor when done
             sys.stdout.write("\033[?25h")
@@ -192,15 +209,12 @@ class ConsoleUI:
 
     def _build_layout(self) -> Layout:
         """Build console layout with panels."""
-        # Get terminal size directly from OS to handle resize
-        import os
-        try:
-            term_size = os.get_terminal_size()
-            term_height = term_size.lines
-        except OSError:
-            term_height = self.console.size.height
+        if self._view_mode in ("debug_log", "nlq_log"):
+            return self._build_log_viewer_layout()
+        if self._view_mode == "source_tree":
+            return self._build_source_tree_layout()
 
-        # Simple layout without explicit total height
+        # Dashboard layout
         layout = Layout()
 
         # Fixed sizes for header, progress, footer - main is flexible
@@ -387,10 +401,376 @@ class ConsoleUI:
         text.append("opy MCP command  ", style="dim")
         text.append("[K]", style="bold")
         text.append("ompact  ", style="dim")
+        text.append("[D]", style="bold")
+        text.append("ebug log  ", style="dim")
+        text.append("[N]", style="bold")
+        text.append("lq log  ", style="dim")
+        text.append("[S]", style="bold")
+        text.append("ources  ", style="dim")
         text.append("[Ctrl+C]", style="bold")
         text.append(" Exit", style="dim")
 
         return Panel(text, style="dim")
+
+    # =========================================================================
+    # Log viewer
+    # =========================================================================
+
+    def _build_log_viewer_layout(self) -> Layout:
+        """Build layout for log file viewer mode."""
+        import os
+
+        try:
+            term_size = os.get_terminal_size()
+            term_height = term_size.lines
+        except OSError:
+            term_height = 30
+
+        # Determine log file info
+        if self._view_mode == "debug_log":
+            filename = "debug_trace.log"
+            title = "Debug Trace Log"
+        else:
+            filename = "nlq_debug.log"
+            title = "NLQ Debug Log"
+
+        log_path = self._get_log_path(filename)
+
+        # Header
+        header_text = Text()
+        header_text.append(title, style="bold blue")
+        header_text.append(f"  [{log_path}]", style="dim cyan")
+
+        # Footer
+        footer_text = Text()
+        footer_text.append("[ESC]", style="bold")
+        footer_text.append(" Back  ", style="dim")
+        footer_text.append("[↑/↓]", style="bold")
+        footer_text.append(" Scroll  ", style="dim")
+        footer_text.append("[Home]", style="bold")
+        footer_text.append(" Top  ", style="dim")
+        footer_text.append("[End]", style="bold")
+        footer_text.append(" Follow", style="dim")
+        if self._log_scroll_offset == 0:
+            footer_text.append("  ", style="dim")
+            footer_text.append("● FOLLOWING", style="bold green")
+
+        # Get terminal width for line truncation (subtract panel borders)
+        try:
+            term_width = os.get_terminal_size().columns - 4
+        except OSError:
+            term_width = 116
+
+        # Available height for log text:
+        # term_height - 1 (console) - 3 (header) - 3 (footer) - 2 (content panel borders)
+        visible_lines = max(1, term_height - 9)
+
+        # Read only what we need from the tail of the file
+        max_lines_needed = visible_lines + self._log_scroll_offset
+        lines = self._read_log_tail(filename, max_lines_needed)
+        total_lines = len(lines)
+
+        # Calculate visible window
+        if self._log_scroll_offset == 0:
+            # Follow mode: show last N lines
+            start = max(0, total_lines - visible_lines)
+            end = total_lines
+        else:
+            # Scrolled: show lines ending at total - offset
+            end = max(0, total_lines - self._log_scroll_offset)
+            start = max(0, end - visible_lines)
+
+        # Build content
+        content = Text(no_wrap=True, overflow="ellipsis")
+        if total_lines == 0:
+            content.append("(empty log file)", style="dim italic")
+        else:
+            visible = lines[start:end]
+            for i, line in enumerate(visible):
+                if i > 0:
+                    content.append("\n")
+                # Truncate long lines to terminal width
+                display = line[:term_width] + "…" if len(line) > term_width else line
+                # Syntax-highlight log levels
+                if " ERROR " in line or " CRITICAL " in line:
+                    content.append(display, style="red")
+                elif " WARNING " in line:
+                    content.append(display, style="yellow")
+                elif " DEBUG " in line:
+                    content.append(display, style="dim")
+                else:
+                    content.append(display)
+
+        layout = Layout()
+        layout.split_column(
+            Layout(name="header", size=3),
+            Layout(name="content"),
+            Layout(name="footer", size=3),
+        )
+
+        layout["header"].update(Panel(header_text, style="blue"))
+        layout["content"].update(Panel(content, border_style="dim"))
+        layout["footer"].update(Panel(footer_text, style="dim"))
+
+        return layout
+
+    def _get_log_path(self, filename: str) -> str:
+        """Get full path to a log file."""
+        from ..logging_config import _get_log_directory
+        log_dir = _get_log_directory()
+        if log_dir:
+            return str(log_dir / filename)
+        return f"(unknown)/{filename}"
+
+    def _read_log_tail(self, filename: str, max_lines: int = 200) -> List[str]:
+        """Read the last N lines from a log file efficiently.
+
+        Reads from the end of the file to avoid loading the entire file.
+        Returns empty list if file doesn't exist.
+        """
+        from ..logging_config import _get_log_directory
+        log_dir = _get_log_directory()
+        if not log_dir:
+            return []
+        log_file = log_dir / filename
+        try:
+            size = log_file.stat().st_size
+            if size == 0:
+                return []
+            # Read a chunk from the end (generous: ~300 bytes per line)
+            chunk_size = min(size, max_lines * 300)
+            with open(log_file, "rb") as f:
+                f.seek(max(0, size - chunk_size))
+                data = f.read()
+            lines = data.decode("utf-8", errors="replace").splitlines()
+            # If we didn't read from the start, drop the first partial line
+            if chunk_size < size:
+                lines = lines[1:]
+            return lines[-max_lines:]
+        except FileNotFoundError:
+            return []
+        except Exception:
+            return ["(error reading log file)"]
+
+    def enter_log_view(self, mode: str) -> None:
+        """Switch to log viewer mode.
+
+        Args:
+            mode: "debug_log" or "nlq_log"
+        """
+        self._view_mode = mode
+        self._log_scroll_offset = 0
+
+    def exit_log_view(self) -> None:
+        """Return to dashboard mode."""
+        self._view_mode = "dashboard"
+
+    def scroll_log(self, delta: int) -> None:
+        """Scroll log by delta lines (positive = scroll up, negative = scroll down).
+
+        Args:
+            delta: Number of lines to scroll. Positive scrolls up (older),
+                   negative scrolls down (newer).
+        """
+        new_offset = self._log_scroll_offset + delta
+        self._log_scroll_offset = max(0, new_offset)
+
+    def scroll_log_home(self) -> None:
+        """Scroll to top of log file."""
+        # Large offset — _read_log_tail will clamp to what's available
+        self._log_scroll_offset = 999999
+
+    def scroll_log_end(self) -> None:
+        """Scroll to bottom (follow mode)."""
+        self._log_scroll_offset = 0
+
+    @property
+    def in_overlay_view(self) -> bool:
+        """True if currently in an overlay view (not the dashboard)."""
+        return self._view_mode in ("debug_log", "nlq_log", "source_tree")
+
+    # =========================================================================
+    # Source tree viewer
+    # =========================================================================
+
+    def enter_source_tree(self) -> None:
+        """Switch to source tree view (fetches sources once)."""
+        self._view_mode = "source_tree"
+        self._log_scroll_offset = 0
+
+        # Build tree cache once
+        sources: List[str] = []
+        if self.server._reter:
+            try:
+                raw_sources, _ = self.server._reter.get_all_sources()
+                if raw_sources:
+                    sources = raw_sources
+            except Exception:
+                pass
+
+        self._source_tree_count = len(sources)
+
+        if not sources:
+            if self.server._reter is None:
+                self._source_tree_cache = [("  (not initialized yet)", "dim italic")]
+            else:
+                self._source_tree_cache = [("  (no sources loaded)", "dim italic")]
+        else:
+            project_root = str(self.server.config.project_root) if self.server.config.project_root else ""
+            root_prefix = project_root.replace("\\", "/").rstrip("/") + "/"
+            rel_paths = []
+            for s in sources:
+                # Strip hash prefix (e.g. "abc123|path/to/file" → "path/to/file")
+                if "|" in s:
+                    s = s.split("|", 1)[1]
+                normalized = s.replace("\\", "/")
+                if normalized.startswith(root_prefix):
+                    rel_paths.append(normalized[len(root_prefix):])
+                else:
+                    rel_paths.append(normalized)
+            self._source_tree_cache = self._build_tree_lines(sorted(rel_paths))
+
+    def _build_source_tree_layout(self) -> Layout:
+        """Build layout for source tree view (renders from cache)."""
+        import os
+
+        try:
+            term_size = os.get_terminal_size()
+            term_height = term_size.lines
+            term_width = term_size.columns - 4
+        except OSError:
+            term_height = 30
+            term_width = 116
+
+        tree_lines = self._source_tree_cache or [("  (no sources loaded)", "dim italic")]
+
+        # Header
+        header_text = Text()
+        header_text.append("Source Tree", style="bold blue")
+        header_text.append(f"  {self._source_tree_count} files", style="dim cyan")
+        project_root = str(self.server.config.project_root) if self.server.config.project_root else ""
+        if project_root:
+            root_display = project_root
+            if len(root_display) > 60:
+                root_display = "..." + root_display[-57:]
+            header_text.append(f"  [{root_display}]", style="dim")
+
+        # Footer
+        footer_text = Text()
+        footer_text.append("[ESC]", style="bold")
+        footer_text.append(" Back  ", style="dim")
+        footer_text.append("[↑/↓]", style="bold")
+        footer_text.append(" Scroll  ", style="dim")
+        footer_text.append("[Home]", style="bold")
+        footer_text.append(" Top  ", style="dim")
+        footer_text.append("[End]", style="bold")
+        footer_text.append(" Bottom", style="dim")
+
+        # Visible window (top-anchored scroll)
+        visible_lines = max(1, term_height - 9)
+        total_lines = len(tree_lines)
+        start = max(0, min(self._log_scroll_offset, max(0, total_lines - visible_lines)))
+        end = min(total_lines, start + visible_lines)
+
+        # Build content
+        content = Text(no_wrap=True, overflow="ellipsis")
+        visible = tree_lines[start:end]
+        for i, (line_text, style) in enumerate(visible):
+            if i > 0:
+                content.append("\n")
+            display = line_text[:term_width] if len(line_text) > term_width else line_text
+            content.append(display, style=style)
+
+        layout = Layout()
+        layout.split_column(
+            Layout(name="header", size=3),
+            Layout(name="content"),
+            Layout(name="footer", size=3),
+        )
+        layout["header"].update(Panel(header_text, style="blue"))
+        layout["content"].update(Panel(content, border_style="dim"))
+        layout["footer"].update(Panel(footer_text, style="dim"))
+        return layout
+
+    @staticmethod
+    def _build_tree_lines(paths: List[str]) -> List[tuple]:
+        """Convert sorted flat paths into tree-rendered lines with box-drawing chars.
+
+        Returns list of (text, style) tuples.
+        """
+        # Extension → style map
+        ext_styles = {
+            ".py": "green",
+            ".pyx": "green",
+            ".pyi": "green",
+            ".js": "yellow",
+            ".ts": "yellow",
+            ".tsx": "yellow",
+            ".jsx": "yellow",
+            ".md": "dim",
+            ".txt": "dim",
+            ".json": "cyan",
+            ".yaml": "cyan",
+            ".yml": "cyan",
+            ".toml": "cyan",
+            ".cfg": "cyan",
+            ".ini": "cyan",
+            ".html": "magenta",
+            ".css": "magenta",
+            ".scss": "magenta",
+            ".c": "blue",
+            ".cpp": "blue",
+            ".h": "blue",
+            ".hpp": "blue",
+            ".rs": "red",
+            ".go": "bright_cyan",
+            ".java": "bright_red",
+            ".cs": "bright_green",
+            ".rb": "red",
+            ".sh": "bright_yellow",
+            ".bat": "bright_yellow",
+            ".sql": "bright_blue",
+        }
+
+        if not paths:
+            return []
+
+        # Build a nested dict representing the directory tree
+        tree: Dict[str, Any] = {}
+        for p in paths:
+            parts = p.split("/")
+            node = tree
+            for part in parts:
+                if part not in node:
+                    node[part] = {}
+                node = node[part]
+
+        # Walk the tree and produce lines
+        result: List[tuple] = []
+
+        def walk(node: dict, prefix: str, depth: int):
+            entries = sorted(node.keys(), key=lambda k: (not bool(node[k]), k.lower()))
+            for i, name in enumerate(entries):
+                is_last = (i == len(entries) - 1)
+                connector = "└── " if is_last else "├── "
+                child_prefix = prefix + ("    " if is_last else "│   ")
+
+                children = node[name]
+                if children:
+                    # Directory
+                    result.append((f"{prefix}{connector}{name}/", "bold cyan"))
+                    walk(children, child_prefix, depth + 1)
+                else:
+                    # File — color by extension
+                    ext = ""
+                    dot_pos = name.rfind(".")
+                    if dot_pos >= 0:
+                        ext = name[dot_pos:]
+                    style = ext_styles.get(ext.lower(), "white")
+                    result.append((f"{prefix}{connector}{name}", style))
+
+        walk(tree, "  ", 0)
+        return result
 
     def _format_duration(self, seconds: float) -> str:
         """Format duration as human-readable string."""
@@ -777,6 +1157,30 @@ class NoOpConsoleUI:
 
     def mark_initialized(self) -> None:
         pass
+
+    # Log viewer no-ops
+    def enter_log_view(self, mode: str) -> None:
+        pass
+
+    def exit_log_view(self) -> None:
+        pass
+
+    def scroll_log(self, delta: int) -> None:
+        pass
+
+    def scroll_log_home(self) -> None:
+        pass
+
+    def scroll_log_end(self) -> None:
+        pass
+
+    # Source tree no-op
+    def enter_source_tree(self) -> None:
+        pass
+
+    @property
+    def in_overlay_view(self) -> bool:
+        return False
 
 
 # Export appropriate class based on Rich availability

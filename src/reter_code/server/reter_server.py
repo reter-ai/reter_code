@@ -141,8 +141,7 @@ class ReterServer:
             self._default_manager.set_rag_manager(self._rag_manager)
 
             # Initialize RAG index after RETER is loaded
-            from ..reter_wrapper import debug_log
-            debug_log(f"[RAG-INIT] RAG manager is_enabled: {self._rag_manager.is_enabled}")
+            logger.debug(f"[RAG-INIT] RAG manager is_enabled: {self._rag_manager.is_enabled}")
             if self._rag_manager.is_enabled:
                 # Load embedding model first (required before sync_sources)
                 from ..services.config_loader import get_config_loader
@@ -151,7 +150,7 @@ class ReterServer:
                     "rag_embedding_model",
                     "sentence-transformers/all-MiniLM-L6-v2"
                 )
-                debug_log(f"[RAG-INIT] Loading embedding model: {model_name}")
+                logger.debug(f"[RAG-INIT] Loading embedding model: {model_name}")
                 if self._console:
                     self._console.start_embedding_loading(model_name)
 
@@ -160,18 +159,18 @@ class ReterServer:
                     import os
                     from sentence_transformers import SentenceTransformer
                     cache_dir = os.environ.get('TRANSFORMERS_CACHE', None)
-                    debug_log(f"[RAG-INIT] Creating SentenceTransformer...")
+                    logger.debug("[RAG-INIT] Creating SentenceTransformer...")
                     preloaded_model = SentenceTransformer(model_name, cache_folder=cache_dir)
-                    debug_log(f"[RAG-INIT] Calling set_preloaded_model...")
+                    logger.debug("[RAG-INIT] Calling set_preloaded_model...")
                     self._rag_manager.set_preloaded_model(preloaded_model)
-                    debug_log("[RAG-INIT] Embedding model loaded successfully")
+                    logger.debug("[RAG-INIT] Embedding model loaded successfully")
 
                     if self._console:
                         self._console.end_embedding_loading()
                         self._console.start_rag_indexing()
 
                     # Now sync sources (model is loaded)
-                    debug_log("[RAG-INIT] Starting RAG sync_sources...")
+                    logger.debug("[RAG-INIT] Starting RAG sync_sources...")
 
                     def rag_progress_callback(current: int, total: int, phase: str):
                         if self._console:
@@ -188,23 +187,23 @@ class ReterServer:
                         project_root=self._default_manager.project_root,
                         progress_callback=rag_progress_callback,
                     )
-                    debug_log(f"[RAG-INIT] RAG sync complete: {rag_stats}")
+                    logger.debug(f"[RAG-INIT] RAG sync complete: {rag_stats}")
 
                     # Mark RAG components as ready
                     from ..services.initialization_progress import get_component_readiness
                     get_component_readiness().set_rag_code_ready(True)
                     get_component_readiness().set_rag_docs_ready(True)
-                    debug_log("[RAG-INIT] RAG component readiness flags set")
+                    logger.debug("[RAG-INIT] RAG component readiness flags set")
 
                     if self._console:
                         self._console.end_rag_indexing(rag_stats.get('total_vectors', 0))
                 except Exception as e:
                     import traceback
-                    debug_log(f"[RAG-INIT] ERROR: {e}\n{traceback.format_exc()}")
+                    logger.debug(f"[RAG-INIT] ERROR: {e}\n{traceback.format_exc()}")
                     if self._console:
                         self._console.end_rag_indexing(0)
             else:
-                debug_log("[RAG-INIT] RAG is disabled, skipping initialization")
+                logger.debug("[RAG-INIT] RAG is disabled, skipping initialization")
 
             # Mark initialization complete
             set_initialization_complete(True)
@@ -268,14 +267,6 @@ class ReterServer:
 
         try:
             from .console_ui import ConsoleUI
-
-            # Suppress ALL stderr logging to prevent interference with rich console
-            # This must happen before console starts
-            try:
-                from ..logging_config import suppress_stderr_logging
-                suppress_stderr_logging()
-            except ImportError:
-                pass
 
             # Also suppress root logger stderr output
             root_logger = logging.getLogger()
@@ -402,30 +393,150 @@ class ReterServer:
         except Exception as e:
             logger.debug(f"Error updating console stats: {e}")
 
-    def _handle_keyboard(self) -> None:
-        """Handle keyboard input for manual actions."""
+    def _setup_unix_raw_mode(self) -> None:
+        """Enable raw non-blocking stdin on Unix/macOS (called once)."""
+        if sys.platform == 'win32' or getattr(self, '_unix_raw_mode', False):
+            return
         try:
-            import msvcrt  # Windows-specific
-            if msvcrt.kbhit():
-                key = msvcrt.getch()
-                logger.debug(f"[Keyboard] Key pressed: {key}")
-                if key in (b'k', b'K'):
-                    # Manual compaction
-                    logger.info("[Keyboard] K pressed - triggering compaction")
-                    self._trigger_compaction()
-                elif key in (b'c', b'C'):
-                    # Copy MCP command to clipboard
-                    logger.info("[Keyboard] C pressed - copying MCP command")
-                    self._copy_mcp_command()
-                elif key in (b'r', b'R'):
-                    # Refresh stats
-                    logger.info("[Keyboard] R pressed - refreshing stats")
-                    self._update_console_stats()
-        except ImportError:
-            # Not on Windows, keyboard handling not available
+            import tty, termios
+            self._orig_termios = termios.tcgetattr(sys.stdin)
+            tty.setcbreak(sys.stdin.fileno())
+            # Set non-blocking
+            import fcntl
+            flags = fcntl.fcntl(sys.stdin, fcntl.F_GETFL)
+            fcntl.fcntl(sys.stdin, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+            self._unix_raw_mode = True
+        except Exception:
             pass
-        except Exception as e:
-            logger.debug(f"[Keyboard] Error: {e}")
+
+    def _restore_unix_terminal(self) -> None:
+        """Restore original terminal settings on Unix/macOS."""
+        if getattr(self, '_unix_raw_mode', False):
+            try:
+                import termios
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self._orig_termios)
+            except Exception:
+                pass
+            self._unix_raw_mode = False
+
+    def _read_key_unix(self) -> Optional[str]:
+        """Read a key from stdin on Unix/macOS. Returns None if nothing available."""
+        try:
+            ch = sys.stdin.read(1)
+            if not ch:
+                return None
+            if ch == '\x1b':
+                # Could be ESC or start of escape sequence
+                seq = sys.stdin.read(1)
+                if not seq:
+                    return 'ESC'
+                if seq == '[':
+                    code = sys.stdin.read(1)
+                    if code == 'A': return 'UP'
+                    if code == 'B': return 'DOWN'
+                    if code == 'H': return 'HOME'
+                    if code == 'F': return 'END'
+                    if code == '5':
+                        sys.stdin.read(1)  # consume '~'
+                        return 'PGUP'
+                    if code == '6':
+                        sys.stdin.read(1)  # consume '~'
+                        return 'PGDN'
+                    return None
+                return 'ESC'
+            return ch
+        except (BlockingIOError, IOError):
+            return None
+
+    def _handle_keyboard(self) -> None:
+        """Handle keyboard input for manual actions (cross-platform)."""
+        try:
+            if sys.platform == 'win32':
+                self._handle_keyboard_win32()
+            else:
+                self._setup_unix_raw_mode()
+                self._handle_keyboard_unix()
+        except Exception:
+            pass
+
+    def _handle_keyboard_win32(self) -> None:
+        """Windows keyboard handling via msvcrt."""
+        import msvcrt
+        if not msvcrt.kbhit():
+            return
+        key = msvcrt.getch()
+
+        # Overlay mode (log viewer, source tree)
+        if self._console and self._console.in_overlay_view:
+            if key == b'\x1b':  # ESC
+                self._console.exit_log_view()
+            elif key == b'\xe0':  # Windows special key prefix
+                if msvcrt.kbhit():
+                    special = msvcrt.getch()
+                    # Source tree: offset is top-anchored (inverted scroll + home/end)
+                    is_tree = self._console._view_mode == "source_tree"
+                    flip = -1 if is_tree else 1
+                    if special == b'H':     self._console.scroll_log(3 * flip)
+                    elif special == b'P':   self._console.scroll_log(-3 * flip)
+                    elif special == b'G':
+                        if is_tree: self._console.scroll_log_end()
+                        else:       self._console.scroll_log_home()
+                    elif special == b'O':
+                        if is_tree: self._console.scroll_log_home()
+                        else:       self._console.scroll_log_end()
+                    elif special == b'I':   self._console.scroll_log(20 * flip)
+                    elif special == b'Q':   self._console.scroll_log(-20 * flip)
+            return
+
+        # Dashboard mode keys
+        self._handle_dashboard_key(key)
+
+    def _handle_keyboard_unix(self) -> None:
+        """Unix/macOS keyboard handling via raw stdin."""
+        key = self._read_key_unix()
+        if key is None:
+            return
+
+        # Overlay mode (log viewer, source tree)
+        if self._console and self._console.in_overlay_view:
+            # Source tree: offset is top-anchored (inverted scroll + home/end)
+            is_tree = self._console._view_mode == "source_tree"
+            flip = -1 if is_tree else 1
+            if key == 'ESC':    self._console.exit_log_view()
+            elif key == 'UP':   self._console.scroll_log(3 * flip)
+            elif key == 'DOWN': self._console.scroll_log(-3 * flip)
+            elif key == 'HOME':
+                if is_tree: self._console.scroll_log_end()
+                else:       self._console.scroll_log_home()
+            elif key == 'END':
+                if is_tree: self._console.scroll_log_home()
+                else:       self._console.scroll_log_end()
+            elif key == 'PGUP': self._console.scroll_log(20 * flip)
+            elif key == 'PGDN': self._console.scroll_log(-20 * flip)
+            return
+
+        # Dashboard mode keys
+        self._handle_dashboard_key(key.encode() if len(key) == 1 else None)
+
+    def _handle_dashboard_key(self, key) -> None:
+        """Process a dashboard-mode keypress."""
+        if key is None:
+            return
+        if key in (b'k', b'K'):
+            logger.info("[Keyboard] K pressed - triggering compaction")
+            self._trigger_compaction()
+        elif key in (b'c', b'C'):
+            logger.info("[Keyboard] C pressed - copying MCP command")
+            self._copy_mcp_command()
+        elif key in (b'r', b'R'):
+            logger.info("[Keyboard] R pressed - refreshing stats")
+            self._update_console_stats()
+        elif key in (b'd', b'D'):
+            self._console.enter_log_view("debug_log")
+        elif key in (b'n', b'N'):
+            self._console.enter_log_view("nlq_log")
+        elif key in (b's', b'S'):
+            self._console.enter_source_tree()
 
     def _trigger_compaction(self) -> None:
         """Trigger manual compaction in background with progress."""
@@ -548,6 +659,7 @@ class ReterServer:
         # Initialize and START console FIRST so we can show progress during init
         self._init_console()
         if self._console:
+            self._console._keyboard_callback = self._handle_keyboard
             self._console.start()
 
         try:
@@ -581,14 +693,12 @@ class ReterServer:
 
         self._running = False
 
+        # Restore terminal settings on Unix/macOS
+        self._restore_unix_terminal()
+
         # Stop console UI and restore stderr logging
         if self._console:
             self._console.stop()
-            try:
-                from ..logging_config import restore_stderr_logging
-                restore_stderr_logging()
-            except ImportError:
-                pass
 
         logger.info("Stopping RETER server...")
 
@@ -667,12 +777,7 @@ def main():
     root_logger.setLevel(log_level)
 
     if use_console:
-        # Rich console mode - suppress ALL stderr logging immediately
-        try:
-            from ..logging_config import suppress_stderr_logging
-            suppress_stderr_logging()
-        except ImportError:
-            pass
+        pass
     else:
         # No rich console - use standard logging to stderr
         handler = logging.StreamHandler(sys.stderr)
