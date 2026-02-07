@@ -15,8 +15,10 @@ from .initialization_progress import (
     SyncStatus,
     SyncPhase,
 )
-from ..reter_wrapper import debug_log
+from ..logging_config import configure_logger_for_debug_trace
 from .rag_types import SyncChanges as RAGSyncChanges, LanguageSourceChanges
+
+logger = configure_logger_for_debug_trace(__name__)
 
 if TYPE_CHECKING:
     from .default_instance_manager import DefaultInstanceManager
@@ -65,7 +67,7 @@ class BackgroundSyncTask:
     def start(self) -> None:
         """Start background sync (non-blocking)."""
         if self._thread is not None and self._thread.is_alive():
-            debug_log("[BackgroundSync] Already running, skipping")
+            logger.debug("[BackgroundSync] Already running, skipping")
             return
 
         total_changes = (
@@ -92,7 +94,7 @@ class BackgroundSyncTask:
             daemon=True
         )
         self._thread.start()
-        debug_log(f"[BackgroundSync] Started sync of {total_changes} files")
+        logger.debug(f"[BackgroundSync] Started sync of {total_changes} files")
 
     def is_running(self) -> bool:
         """Check if sync is currently running."""
@@ -115,7 +117,7 @@ class BackgroundSyncTask:
                     try:
                         self._reter.load_python_file(f["path"], str(self._project_root))
                     except Exception as e:
-                        debug_log(f"[BackgroundSync] Error loading {f['rel_path']}: {e}")
+                        logger.debug(f"[BackgroundSync] Error loading {f['rel_path']}: {e}")
                     files_synced += 1
                     self._update_sync_progress(files_synced, total)
 
@@ -131,7 +133,7 @@ class BackgroundSyncTask:
                         self._reter.forget_source(f["old_source_id"])
                         self._reter.load_python_file(f["path"], str(self._project_root))
                     except Exception as e:
-                        debug_log(f"[BackgroundSync] Error reloading {f['rel_path']}: {e}")
+                        logger.debug(f"[BackgroundSync] Error reloading {f['rel_path']}: {e}")
                     files_synced += 1
                     self._update_sync_progress(files_synced, total)
 
@@ -146,7 +148,7 @@ class BackgroundSyncTask:
                     try:
                         self._reter.forget_source(f["source_id"])
                     except Exception as e:
-                        debug_log(f"[BackgroundSync] Error forgetting {f['rel_path']}: {e}")
+                        logger.debug(f"[BackgroundSync] Error forgetting {f['rel_path']}: {e}")
                     files_synced += 1
                     self._update_sync_progress(files_synced, total)
 
@@ -174,7 +176,7 @@ class BackgroundSyncTask:
                         changes=rag_changes,
                     )
                 except Exception as e:
-                    debug_log(f"[BackgroundSync] RAG sync error: {e}")
+                    logger.debug(f"[BackgroundSync] RAG sync error: {e}")
 
             # Phase 5: Save snapshot
             self._progress.update(
@@ -198,10 +200,10 @@ class BackgroundSyncTask:
                 sync_message=f"Sync complete: {total} files processed",
                 sync_completed_at=datetime.now()
             )
-            debug_log(f"[BackgroundSync] Complete: {total} files synced")
+            logger.debug(f"[BackgroundSync] Complete: {total} files synced")
 
         except Exception as e:
-            debug_log(f"[BackgroundSync] ERROR: {e}")
+            logger.debug(f"[BackgroundSync] ERROR: {e}")
             import traceback
             traceback.print_exc()
             self._progress.update(

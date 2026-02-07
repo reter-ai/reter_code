@@ -10,7 +10,6 @@ Handles all core RETER knowledge operations including:
 Extracted from LogicalThinkingServer as part of God Class refactoring.
 """
 
-import sys
 import logging
 from pathlib import Path
 from typing import Dict, Any
@@ -18,7 +17,6 @@ from datetime import datetime
 
 from .instance_manager import InstanceManager
 from .utils import make_path_relative
-from ..logging_config import is_stderr_suppressed
 
 logger = logging.getLogger(__name__)
 
@@ -184,8 +182,7 @@ class ReterOperations:
 
                     except Exception as e:
                         # Error parsing or checking this source, skip it
-                        if not is_stderr_suppressed():
-                            print(f"Error checking source '{source_id}': {e}", file=sys.stderr)
+                        logger.debug(f"Error checking source '{source_id}': {e}")
                         continue
 
             except TypeError as e:

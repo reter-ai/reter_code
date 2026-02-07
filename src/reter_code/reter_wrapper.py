@@ -16,7 +16,7 @@ import functools
 
 from reter import Reter
 
-from .logging_config import configure_logger_for_debug_trace, is_stderr_suppressed
+from .logging_config import configure_logger_for_debug_trace
 
 # Import exceptions from separate module (re-export for backward compatibility)
 from .reter_exceptions import (
@@ -38,7 +38,6 @@ from .reter_utils import (
     check_initialization,
     DEBUG_MAX_VALUE_LEN,
     RETER_REQL_TIMEOUT_MS,
-    debug_log,
     _shorten_value,
     _format_args,
     safe_cpp_call,
@@ -67,7 +66,6 @@ __all__ = [
     "set_initialization_complete",
     "is_initialization_complete",
     "check_initialization",
-    "debug_log",
     "safe_cpp_call",
     "generate_source_id",
     # Main class
@@ -119,13 +117,13 @@ class ReterWrapper(ReterLoaderMixin):
             load_ontology: If True, automatically load Python ontology.
                           Set to False when loading from snapshot (ontology already included).
         """
-        debug_log(f"ReterWrapper.__init__ starting... (load_ontology={load_ontology})")
-        debug_log("Creating Reter(variant='ai')...")
+        logger.debug(f"ReterWrapper.__init__ starting... (load_ontology={load_ontology})")
+        logger.debug("Creating Reter(variant='ai')...")
         try:
             self.reasoner = Reter(variant="ai")
-            debug_log("Reter created successfully")
+            logger.debug("Reter created successfully")
         except Exception as e:
-            debug_log(f"ERROR creating Reter: {type(e).__name__}: {e}")
+            logger.debug(f"ERROR creating Reter: {type(e).__name__}: {e}")
             raise
         self._session_stats = {"total_wmes": 0, "total_sources": 0}
 
@@ -143,7 +141,7 @@ class ReterWrapper(ReterLoaderMixin):
             self._load_csharp_ontology()
             self._load_cpp_ontology()
         else:
-            debug_log("Skipping ontology load (will be loaded from snapshot)")
+            logger.debug("Skipping ontology load (will be loaded from snapshot)")
 
     def _load_oo_ontology(self) -> None:
         """
@@ -155,33 +153,33 @@ class ReterWrapper(ReterLoaderMixin):
 
         Loaded with source "oo_ontology" for potential selective forgetting.
         """
-        debug_log("_load_oo_ontology starting...")
+        logger.debug("_load_oo_ontology starting...")
         try:
             # Get path to CNL ontology file relative to this module
             # Resources are now inside the package: src/reter_code/resources/
             ontology_path = Path(__file__).parent / "resources" / "oo_ontology.cnl"
-            debug_log(f"OO ontology path: {ontology_path}")
+            logger.debug(f"OO ontology path: {ontology_path}")
 
             if ontology_path.exists():
-                debug_log("Reading OO CNL ontology file...")
+                logger.debug("Reading OO CNL ontology file...")
                 with open(ontology_path, 'r', encoding='utf-8') as f:
                     ontology_content = f.read()
-                debug_log(f"OO ontology content length: {len(ontology_content)} chars")
+                logger.debug(f"OO ontology content length: {len(ontology_content)} chars")
 
                 # Load the CNL ontology into RETER - wrap with safe call for C++ protection
-                debug_log("Calling safe_cpp_call(load_cnl) for OO...")
+                logger.debug("Calling safe_cpp_call(load_cnl) for OO...")
                 wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, "oo_ontology")
-                debug_log(f"load_cnl returned: {wme_count} WMEs")
+                logger.debug(f"load_cnl returned: {wme_count} WMEs")
                 self._session_stats["total_wmes"] += wme_count
                 self._session_stats["total_sources"] += 1
 
-                debug_log(f"OO meta-ontology loaded successfully ({wme_count} WMEs)")
+                logger.debug(f"OO meta-ontology loaded successfully ({wme_count} WMEs)")
             else:
                 # Log warning but don't fail - ontology is optional
-                debug_log(f"WARNING: OO ontology not found at {ontology_path}")
+                logger.debug(f"WARNING: OO ontology not found at {ontology_path}")
         except Exception as e:
             # Log error but don't fail initialization - ontology is optional
-            debug_log(f"ERROR loading OO ontology: {type(e).__name__}: {e}")
+            logger.debug(f"ERROR loading OO ontology: {type(e).__name__}: {e}")
 
     def _load_python_ontology(self) -> None:
         """
@@ -195,33 +193,33 @@ class ReterWrapper(ReterLoaderMixin):
 
         Loaded with source "python_ontology" for potential selective forgetting.
         """
-        debug_log("_load_python_ontology starting...")
+        logger.debug("_load_python_ontology starting...")
         try:
             # Get path to CNL ontology file relative to this module
             # Resources are now inside the package: src/reter_code/resources/
             ontology_path = Path(__file__).parent / "resources" / "py_ontology.cnl"
-            debug_log(f"Ontology path: {ontology_path}")
+            logger.debug(f"Ontology path: {ontology_path}")
 
             if ontology_path.exists():
-                debug_log("Reading CNL ontology file...")
+                logger.debug("Reading CNL ontology file...")
                 with open(ontology_path, 'r', encoding='utf-8') as f:
                     ontology_content = f.read()
-                debug_log(f"Ontology content length: {len(ontology_content)} chars")
+                logger.debug(f"Ontology content length: {len(ontology_content)} chars")
 
                 # Load the CNL ontology into RETER - wrap with safe call for C++ protection
-                debug_log("Calling safe_cpp_call(load_cnl)...")
+                logger.debug("Calling safe_cpp_call(load_cnl)...")
                 wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, "python_ontology")
-                debug_log(f"load_cnl returned: {wme_count} WMEs")
+                logger.debug(f"load_cnl returned: {wme_count} WMEs")
                 self._session_stats["total_wmes"] += wme_count
                 self._session_stats["total_sources"] += 1
 
-                debug_log(f"Python ontology loaded successfully ({wme_count} WMEs)")
+                logger.debug(f"Python ontology loaded successfully ({wme_count} WMEs)")
             else:
                 # Log warning but don't fail - ontology is optional
-                debug_log(f"WARNING: Python ontology not found at {ontology_path}")
+                logger.debug(f"WARNING: Python ontology not found at {ontology_path}")
         except Exception as e:
             # Log error but don't fail initialization - ontology is optional
-            debug_log(f"ERROR loading Python ontology: {type(e).__name__}: {e}")
+            logger.debug(f"ERROR loading Python ontology: {type(e).__name__}: {e}")
 
     def _load_javascript_ontology(self) -> None:
         """
@@ -236,33 +234,33 @@ class ReterWrapper(ReterLoaderMixin):
 
         Loaded with source "javascript_ontology" for potential selective forgetting.
         """
-        debug_log("_load_javascript_ontology starting...")
+        logger.debug("_load_javascript_ontology starting...")
         try:
             # Get path to CNL ontology file relative to this module
             # Resources are now inside the package: src/reter_code/resources/
             ontology_path = Path(__file__).parent / "resources" / "js_ontology.cnl"
-            debug_log(f"JavaScript ontology path: {ontology_path}")
+            logger.debug(f"JavaScript ontology path: {ontology_path}")
 
             if ontology_path.exists():
-                debug_log("Reading JavaScript CNL ontology file...")
+                logger.debug("Reading JavaScript CNL ontology file...")
                 with open(ontology_path, 'r', encoding='utf-8') as f:
                     ontology_content = f.read()
-                debug_log(f"JavaScript ontology content length: {len(ontology_content)} chars")
+                logger.debug(f"JavaScript ontology content length: {len(ontology_content)} chars")
 
                 # Load the CNL ontology into RETER - wrap with safe call for C++ protection
-                debug_log("Calling safe_cpp_call(load_cnl) for JavaScript...")
+                logger.debug("Calling safe_cpp_call(load_cnl) for JavaScript...")
                 wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, "javascript_ontology")
-                debug_log(f"load_cnl returned: {wme_count} WMEs")
+                logger.debug(f"load_cnl returned: {wme_count} WMEs")
                 self._session_stats["total_wmes"] += wme_count
                 self._session_stats["total_sources"] += 1
 
-                debug_log(f"JavaScript ontology loaded successfully ({wme_count} WMEs)")
+                logger.debug(f"JavaScript ontology loaded successfully ({wme_count} WMEs)")
             else:
                 # Log warning but don't fail - ontology is optional
-                debug_log(f"WARNING: JavaScript ontology not found at {ontology_path}")
+                logger.debug(f"WARNING: JavaScript ontology not found at {ontology_path}")
         except Exception as e:
             # Log error but don't fail initialization - ontology is optional
-            debug_log(f"ERROR loading JavaScript ontology: {type(e).__name__}: {e}")
+            logger.debug(f"ERROR loading JavaScript ontology: {type(e).__name__}: {e}")
 
     def _load_html_ontology(self) -> None:
         """
@@ -277,33 +275,33 @@ class ReterWrapper(ReterLoaderMixin):
 
         Loaded with source "html_ontology" for potential selective forgetting.
         """
-        debug_log("_load_html_ontology starting...")
+        logger.debug("_load_html_ontology starting...")
         try:
             # Get path to CNL ontology file relative to this module
             # Resources are now inside the package: src/reter_code/resources/
             ontology_path = Path(__file__).parent / "resources" / "html_ontology.cnl"
-            debug_log(f"HTML ontology path: {ontology_path}")
+            logger.debug(f"HTML ontology path: {ontology_path}")
 
             if ontology_path.exists():
-                debug_log("Reading HTML CNL ontology file...")
+                logger.debug("Reading HTML CNL ontology file...")
                 with open(ontology_path, 'r', encoding='utf-8') as f:
                     ontology_content = f.read()
-                debug_log(f"HTML ontology content length: {len(ontology_content)} chars")
+                logger.debug(f"HTML ontology content length: {len(ontology_content)} chars")
 
                 # Load the CNL ontology into RETER - wrap with safe call for C++ protection
-                debug_log("Calling safe_cpp_call(load_cnl) for HTML...")
+                logger.debug("Calling safe_cpp_call(load_cnl) for HTML...")
                 wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, "html_ontology")
-                debug_log(f"load_cnl returned: {wme_count} WMEs")
+                logger.debug(f"load_cnl returned: {wme_count} WMEs")
                 self._session_stats["total_wmes"] += wme_count
                 self._session_stats["total_sources"] += 1
 
-                debug_log(f"HTML ontology loaded successfully ({wme_count} WMEs)")
+                logger.debug(f"HTML ontology loaded successfully ({wme_count} WMEs)")
             else:
                 # Log warning but don't fail - ontology is optional
-                debug_log(f"WARNING: HTML ontology not found at {ontology_path}")
+                logger.debug(f"WARNING: HTML ontology not found at {ontology_path}")
         except Exception as e:
             # Log error but don't fail initialization - ontology is optional
-            debug_log(f"ERROR loading HTML ontology: {type(e).__name__}: {e}")
+            logger.debug(f"ERROR loading HTML ontology: {type(e).__name__}: {e}")
 
     def _load_csharp_ontology(self) -> None:
         """
@@ -318,33 +316,33 @@ class ReterWrapper(ReterLoaderMixin):
 
         Loaded with source "csharp_ontology" for potential selective forgetting.
         """
-        debug_log("_load_csharp_ontology starting...")
+        logger.debug("_load_csharp_ontology starting...")
         try:
             # Get path to CNL ontology file relative to this module
             # Resources are now inside the package: src/reter_code/resources/
             ontology_path = Path(__file__).parent / "resources" / "cs_ontology.cnl"
-            debug_log(f"C# ontology path: {ontology_path}")
+            logger.debug(f"C# ontology path: {ontology_path}")
 
             if ontology_path.exists():
-                debug_log("Reading C# CNL ontology file...")
+                logger.debug("Reading C# CNL ontology file...")
                 with open(ontology_path, 'r', encoding='utf-8') as f:
                     ontology_content = f.read()
-                debug_log(f"C# ontology content length: {len(ontology_content)} chars")
+                logger.debug(f"C# ontology content length: {len(ontology_content)} chars")
 
                 # Load the CNL ontology into RETER - wrap with safe call for C++ protection
-                debug_log("Calling safe_cpp_call(load_cnl) for C#...")
+                logger.debug("Calling safe_cpp_call(load_cnl) for C#...")
                 wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, "csharp_ontology")
-                debug_log(f"load_cnl returned: {wme_count} WMEs")
+                logger.debug(f"load_cnl returned: {wme_count} WMEs")
                 self._session_stats["total_wmes"] += wme_count
                 self._session_stats["total_sources"] += 1
 
-                debug_log(f"C# ontology loaded successfully ({wme_count} WMEs)")
+                logger.debug(f"C# ontology loaded successfully ({wme_count} WMEs)")
             else:
                 # Log warning but don't fail - ontology is optional
-                debug_log(f"WARNING: C# ontology not found at {ontology_path}")
+                logger.debug(f"WARNING: C# ontology not found at {ontology_path}")
         except Exception as e:
             # Log error but don't fail initialization - ontology is optional
-            debug_log(f"ERROR loading C# ontology: {type(e).__name__}: {e}")
+            logger.debug(f"ERROR loading C# ontology: {type(e).__name__}: {e}")
 
     def _load_cpp_ontology(self) -> None:
         """
@@ -360,33 +358,33 @@ class ReterWrapper(ReterLoaderMixin):
 
         Loaded with source "cpp_ontology" for potential selective forgetting.
         """
-        debug_log("_load_cpp_ontology starting...")
+        logger.debug("_load_cpp_ontology starting...")
         try:
             # Get path to CNL ontology file relative to this module
             # Resources are now inside the package: src/reter_code/resources/
             ontology_path = Path(__file__).parent / "resources" / "cpp_ontology.cnl"
-            debug_log(f"C++ ontology path: {ontology_path}")
+            logger.debug(f"C++ ontology path: {ontology_path}")
 
             if ontology_path.exists():
-                debug_log("Reading C++ CNL ontology file...")
+                logger.debug("Reading C++ CNL ontology file...")
                 with open(ontology_path, 'r', encoding='utf-8') as f:
                     ontology_content = f.read()
-                debug_log(f"C++ ontology content length: {len(ontology_content)} chars")
+                logger.debug(f"C++ ontology content length: {len(ontology_content)} chars")
 
                 # Load the CNL ontology into RETER - wrap with safe call for C++ protection
-                debug_log("Calling safe_cpp_call(load_cnl) for C++...")
+                logger.debug("Calling safe_cpp_call(load_cnl) for C++...")
                 wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, "cpp_ontology")
-                debug_log(f"load_cnl returned: {wme_count} WMEs")
+                logger.debug(f"load_cnl returned: {wme_count} WMEs")
                 self._session_stats["total_wmes"] += wme_count
                 self._session_stats["total_sources"] += 1
 
-                debug_log(f"C++ ontology loaded successfully ({wme_count} WMEs)")
+                logger.debug(f"C++ ontology loaded successfully ({wme_count} WMEs)")
             else:
                 # Log warning but don't fail - ontology is optional
-                debug_log(f"WARNING: C++ ontology not found at {ontology_path}")
+                logger.debug(f"WARNING: C++ ontology not found at {ontology_path}")
         except Exception as e:
             # Log error but don't fail initialization - ontology is optional
-            debug_log(f"ERROR loading C++ ontology: {type(e).__name__}: {e}")
+            logger.debug(f"ERROR loading C++ ontology: {type(e).__name__}: {e}")
 
     def _run_with_lock(self, func: Callable[..., T], *args: Any) -> T:
         """
@@ -864,7 +862,7 @@ class ReterWrapper(ReterLoaderMixin):
         # so using network.save() would write a partial/corrupt snapshot.
         if self.is_hybrid_mode():
             success, delta_path, time_ms = self.save_incremental()
-            debug_log(f"save_network: redirected to save_incremental in hybrid mode")
+            logger.debug(f"save_network: redirected to save_incremental in hybrid mode")
             return success, delta_path, time_ms
 
         # Use network.save() method from C++ bindings - wrap with safe call for C++ protection
@@ -1022,7 +1020,7 @@ class ReterWrapper(ReterLoaderMixin):
             self._dirty = False
             self._last_save_time = time.time()
 
-            debug_log(f"Opened hybrid network: base={self.reasoner.network.base_fact_count()}, "
+            logger.debug(f"Opened hybrid network: base={self.reasoner.network.base_fact_count()}, "
                      f"delta={self.reasoner.network.delta_fact_count()}")
 
             return success, filename, time_ms
@@ -1065,7 +1063,7 @@ class ReterWrapper(ReterLoaderMixin):
             self._last_save_time = time.time()
 
             delta_path = self.reasoner.network.delta_path()
-            debug_log(f"Incremental save: delta={self.reasoner.network.delta_fact_count()} facts, "
+            logger.debug(f"Incremental save: delta={self.reasoner.network.delta_fact_count()} facts, "
                      f"size={self.reasoner.network.delta_file_size()} bytes")
 
             return True, delta_path, time_ms
@@ -1100,7 +1098,7 @@ class ReterWrapper(ReterLoaderMixin):
             self.reasoner.network.compact(progress_callback)
             time_ms = (time.time() - start_time) * 1000
 
-            debug_log(f"Compacted: base now has {self.reasoner.network.base_fact_count()} facts")
+            logger.debug(f"Compacted: base now has {self.reasoner.network.base_fact_count()} facts")
 
             return True, time_ms
 
@@ -1157,7 +1155,7 @@ class ReterWrapper(ReterLoaderMixin):
             try:
                 self.reasoner.network.close()
             except Exception as e:
-                debug_log(f"Error closing hybrid network: {e}")
+                logger.debug(f"Error closing hybrid network: {e}")
 
     # =========================================================================
     # Entity Accumulation API (for cross-file deduplication)
@@ -1294,5 +1292,4 @@ class ReterWrapper(ReterLoaderMixin):
         """
         # No async resources to clean up in synchronous version
         # The operation lock is automatically released when operations complete
-        if not is_stderr_suppressed():
-            print(f"  ReterWrapper shutdown complete", file=sys.stderr)
+        logger.debug("ReterWrapper shutdown complete")

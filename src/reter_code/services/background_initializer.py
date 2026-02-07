@@ -21,9 +21,11 @@ from .initialization_progress import (
     SyncStatus,
     SyncPhase,
 )
-from ..reter_wrapper import debug_log
+from ..logging_config import configure_logger_for_debug_trace
 
 from .rag_index_manager import SyncChanges as RAGSyncChanges, LanguageSourceChanges
+
+logger = configure_logger_for_debug_trace(__name__)
 
 # Re-export BackgroundSyncTask for backward compatibility
 from .background_sync_task import BackgroundSyncTask
@@ -83,10 +85,10 @@ class BackgroundInitializer:
                      If False, run in background thread (non-blocking).
         """
         if self._thread is not None and self._thread.is_alive():
-            debug_log("[BackgroundInit] Already running, skipping")
+            logger.debug("[BackgroundInit] Already running, skipping")
             return
 
-        debug_log(f"[BackgroundInit] start() called with blocking={blocking}")
+        logger.debug(f"[BackgroundInit] start() called with blocking={blocking}")
 
         self._progress.update(
             init_status=InitStatus.INITIALIZING,
@@ -100,9 +102,9 @@ class BackgroundInitializer:
 
         if blocking:
             # Run synchronously (blocking)
-            debug_log("[BackgroundInit] Starting synchronous initialization...")
+            logger.debug("[BackgroundInit] Starting synchronous initialization...")
             self._run_initialization(blocking=True)
-            debug_log("[BackgroundInit] Synchronous initialization complete")
+            logger.debug("[BackgroundInit] Synchronous initialization complete")
         else:
             # Run in background thread (non-blocking)
             self._thread = threading.Thread(
@@ -111,7 +113,7 @@ class BackgroundInitializer:
                 daemon=True  # Don't block process exit
             )
             self._thread.start()
-            debug_log("[BackgroundInit] Started background initialization thread")
+            logger.debug("[BackgroundInit] Started background initialization thread")
 
     def is_running(self) -> bool:
         """Check if background initialization is currently running."""
@@ -138,16 +140,16 @@ class BackgroundInitializer:
 
         try:
             # Phase 1: Load Python files into RETER
-            debug_log("[BackgroundInit] Phase 1: Loading Python files...")
+            logger.debug("[BackgroundInit] Phase 1: Loading Python files...")
             self._phase_load_python()
-            debug_log("[BackgroundInit] Phase 1 complete")
+            logger.debug("[BackgroundInit] Phase 1 complete")
 
             # Phase 2: Build RAG index (if enabled)
             # Note: Embedding model loads lazily on first generate_embedding() call
             if self._rag_manager and self._rag_manager.is_enabled:
-                debug_log("[BackgroundInit] Phase 2: Building RAG index...")
+                logger.debug("[BackgroundInit] Phase 2: Building RAG index...")
                 self._phase_build_rag_index()
-                debug_log("[BackgroundInit] Phase 2 complete")
+                logger.debug("[BackgroundInit] Phase 2 complete")
 
             # Complete
             self._progress.update(
@@ -158,11 +160,11 @@ class BackgroundInitializer:
                 init_completed_at=datetime.now()
             )
             elapsed = (datetime.now() - self._progress.init_started_at).total_seconds()
-            debug_log(f"[BackgroundInit] Initialization complete in {elapsed:.1f}s!")
+            logger.debug(f"[BackgroundInit] Initialization complete in {elapsed:.1f}s!")
 
         except Exception as e:
-            debug_log(f"[BackgroundInit] ERROR: {e}")
-            debug_log(f"[BackgroundInit] Traceback: {traceback.format_exc()}")
+            logger.debug(f"[BackgroundInit] ERROR: {e}")
+            logger.debug(f"[BackgroundInit] Traceback: {traceback.format_exc()}")
             self._progress.update(
                 init_status=InitStatus.ERROR,
                 init_error=str(e),
@@ -174,7 +176,7 @@ class BackgroundInitializer:
 
     def _phase_load_python(self) -> None:
         """Phase 1: Load Python files into RETER."""
-        debug_log("[BackgroundInit] Phase 1: Loading Python files...")
+        logger.debug("[BackgroundInit] Phase 1: Loading Python files...")
         self._progress.update(
             init_phase=InitPhase.LOADING_PYTHON,
             init_progress=0.05,
@@ -191,7 +193,7 @@ class BackgroundInitializer:
         # Sync files with progress updates
         self._sync_python_files_with_progress(reter)
 
-        debug_log("[BackgroundInit] Phase 1 complete")
+        logger.debug("[BackgroundInit] Phase 1 complete")
 
     def _sync_python_files_with_progress(self, reter: "ReterWrapper") -> None:
         """Sync Python files with progress updates."""
@@ -229,7 +231,7 @@ class BackgroundInitializer:
                     reter.load_python_file(abs_path, str(self._project_root))
                     added += 1
                 except Exception as e:
-                    debug_log(f"[BackgroundInit] Error loading {rel_path}: {e}")
+                    logger.debug(f"[BackgroundInit] Error loading {rel_path}: {e}")
             else:
                 old_md5, old_source_id = existing_sources[rel_path]
                 if old_md5 != current_md5:
@@ -239,7 +241,7 @@ class BackgroundInitializer:
                         reter.load_python_file(abs_path, str(self._project_root))
                         modified += 1
                     except Exception as e:
-                        debug_log(f"[BackgroundInit] Error reloading {rel_path}: {e}")
+                        logger.debug(f"[BackgroundInit] Error reloading {rel_path}: {e}")
 
             loaded += 1
 
@@ -260,11 +262,11 @@ class BackgroundInitializer:
                     reter.forget_source(old_source_id)
                     deleted += 1
                 except Exception as e:
-                    debug_log(f"[BackgroundInit] Error forgetting {rel_path}: {e}")
+                    logger.debug(f"[BackgroundInit] Error forgetting {rel_path}: {e}")
 
         # Save snapshot if changes were made
         if added > 0 or modified > 0 or deleted > 0:
-            debug_log(f"[BackgroundInit] Changes: +{added} ~{modified} -{deleted}")
+            logger.debug(f"[BackgroundInit] Changes: +{added} ~{modified} -{deleted}")
             snapshot_path = self._instance_manager._persistence.snapshots_dir / ".default.reter"
 
             # Create progress callback for save operation
@@ -295,7 +297,7 @@ class BackgroundInitializer:
         generate_embedding(). This happens automatically if any files
         need to be indexed.
         """
-        debug_log("[BackgroundInit] Phase 2: Syncing RAG index...")
+        logger.debug("[BackgroundInit] Phase 2: Syncing RAG index...")
         self._progress.update(
             init_phase=InitPhase.BUILDING_RAG_INDEX,
             init_progress=0.50,
@@ -338,12 +340,12 @@ class BackgroundInitializer:
                 rag_vectors_indexed=total_vectors,
                 init_message=msg
             )
-            debug_log(f"[BackgroundInit] Phase 2 complete: {stats}")
+            logger.debug(f"[BackgroundInit] Phase 2 complete: {stats}")
 
         except Exception as e:
-            debug_log(f"[BackgroundInit] RAG sync failed: {e}")
+            logger.debug(f"[BackgroundInit] RAG sync failed: {e}")
             import traceback
-            debug_log(f"[BackgroundInit] Traceback: {traceback.format_exc()}")
+            logger.debug(f"[BackgroundInit] Traceback: {traceback.format_exc()}")
             # Don't fail the whole initialization for RAG errors
             self._progress.update(
                 init_progress=0.95,

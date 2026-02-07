@@ -38,13 +38,12 @@ from .initialization_progress import (
     require_rag_document_index,
     ComponentNotReadyError,
 )
-from ..reter_wrapper import debug_log
 
 if TYPE_CHECKING:
     from ..reter_wrapper import ReterWrapper
     from .state_persistence import StatePersistenceService
 
-from ..logging_config import configure_logger_for_debug_trace, is_stderr_suppressed
+from ..logging_config import configure_logger_for_debug_trace
 from .rag_analysis import RAGAnalysisMixin
 from .rag_collectors import RAGCollectorMixin, ChunkConfig
 
@@ -240,8 +239,8 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                         break
                 indexed_code[clean_key.replace("\\", "/")] = md5
 
-            debug_log(f"[RAG] get_sync_status: current_code has {len(current_code)} files, indexed_code has {len(indexed_code)} files")
-            debug_log(f"[RAG] get_sync_status: _indexed_files sample keys: {list(self._indexed_files.keys())[:5]}")
+            logger.debug(f"[RAG] get_sync_status: current_code has {len(current_code)} files, indexed_code has {len(indexed_code)} files")
+            logger.debug(f"[RAG] get_sync_status: _indexed_files sample keys: {list(self._indexed_files.keys())[:5]}")
 
             stale_files = []
             missing_files = []
@@ -280,7 +279,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             }
 
         except Exception as e:
-            debug_log(f"[RAG] get_sync_status: Error checking sync status: {e}")
+            logger.debug(f"[RAG] get_sync_status: Error checking sync status: {e}")
             return {
                 "is_synced": True,  # Assume synced on error to not block searches
                 "stale_files": [],
@@ -297,40 +296,35 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             project_root: Project root directory
         """
         if not self._enabled:
-            debug_log("[RAG] initialize: RAG is disabled, skipping")
+            logger.debug("[RAG] initialize: RAG is disabled, skipping")
             return
 
         # Check if embedding model is loaded (may be loading in background)
         if not self.is_model_loaded:
-            debug_log("[RAG] initialize: Embedding model not yet loaded, skipping initialization")
+            logger.debug("[RAG] initialize: Embedding model not yet loaded, skipping initialization")
             return
 
         self._project_root = project_root
-        debug_log(f"[RAG] initialize: Starting initialization for {project_root}")
+        logger.debug(f"[RAG] initialize: Starting initialization for {project_root}")
         logger.info(f"Initializing RAG index for {project_root}")
 
         # Initialize embedding service
         # If a pre-loaded model was set on RAGIndexManager, pass it to embedding service
-        import sys
-        if not is_stderr_suppressed():
-            print(f"[RAG] initialize: Creating embedding service...", file=sys.stderr, flush=True)
+        logger.info("[RAG] initialize: Creating embedding service...")
         embed_start = time.time()
         self._embedding_service = get_embedding_service(self._config)
 
         # Check if we have a pre-loaded model (set by server at startup to avoid async deadlock)
         if hasattr(self, '_preloaded_model') and self._preloaded_model is not None:
-            if not is_stderr_suppressed():
-                print(f"[RAG] initialize: Using pre-loaded model", file=sys.stderr, flush=True)
+            logger.info("[RAG] initialize: Using pre-loaded model")
             self._embedding_service.set_preloaded_model(self._preloaded_model)
 
-        if not is_stderr_suppressed():
-            print(f"[RAG] initialize: Loading embedding model '{self._embedding_service.model_name}'...", file=sys.stderr, flush=True)
+        logger.info(f"[RAG] initialize: Loading embedding model '{self._embedding_service.model_name}'...")
         self._embedding_service.initialize()
-        if not is_stderr_suppressed():
-            print(f"[RAG] initialize: Embedding model loaded in {time.time() - embed_start:.2f}s", file=sys.stderr, flush=True)
+        logger.info(f"[RAG] initialize: Embedding model loaded in {time.time() - embed_start:.2f}s")
 
         # Initialize content extractor
-        debug_log("[RAG] initialize: Creating content extractor...")
+        logger.debug("[RAG] initialize: Creating content extractor...")
         max_body_lines = self._config.get("rag_max_body_lines", 50)
         self._content_extractor = ContentExtractor(
             project_root=project_root,
@@ -338,7 +332,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         )
 
         # Initialize markdown indexer
-        debug_log("[RAG] initialize: Creating markdown indexer...")
+        logger.debug("[RAG] initialize: Creating markdown indexer...")
         max_chunk_words = self._config.get("rag_markdown_max_chunk_words", 500)
         min_chunk_words = self._config.get("rag_markdown_min_chunk_words", 50)
         self._markdown_indexer = MarkdownIndexer(
@@ -358,10 +352,10 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 chunk_overlap=rag_config.get("rag_code_chunk_overlap", 10),
                 min_chunk_size=rag_config.get("rag_code_chunk_min_size", 15)
             )
-            debug_log(f"[RAG] initialize: Code chunking enabled (size={self._chunk_config.chunk_size}, overlap={self._chunk_config.chunk_overlap})")
+            logger.debug(f"[RAG] initialize: Code chunking enabled (size={self._chunk_config.chunk_size}, overlap={self._chunk_config.chunk_overlap})")
         else:
             self._chunk_config = None
-            debug_log("[RAG] initialize: Code chunking disabled")
+            logger.debug("[RAG] initialize: Code chunking disabled")
 
         # Set up index paths
         reter_dir = self._persistence.snapshots_dir
@@ -369,24 +363,24 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         self._index_path = reter_dir / ".default.faiss"
         self._metadata_path = reter_dir / ".default.faiss.meta"
         self._rag_files_path = reter_dir / ".default.rag_files.json"
-        debug_log(f"[RAG] initialize: Index path: {self._index_path}")
+        logger.debug(f"[RAG] initialize: Index path: {self._index_path}")
 
         # Try to load existing index
         if self._index_path.exists() and self._metadata_path.exists():
-            debug_log("[RAG] initialize: Found existing index, loading...")
+            logger.debug("[RAG] initialize: Found existing index, loading...")
             try:
                 self._load_index()
-                debug_log(f"[RAG] initialize: Loaded existing index with {self._faiss_wrapper.total_vectors} vectors")
+                logger.debug(f"[RAG] initialize: Loaded existing index with {self._faiss_wrapper.total_vectors} vectors")
             except Exception as e:
-                debug_log(f"[RAG] initialize: Failed to load existing index: {e}. Will rebuild.")
+                logger.debug(f"[RAG] initialize: Failed to load existing index: {e}. Will rebuild.")
                 logger.warning(f"Failed to load existing index: {e}. Will rebuild.")
                 self._create_new_index()
         else:
-            debug_log("[RAG] initialize: No existing index found, creating new...")
+            logger.debug("[RAG] initialize: No existing index found, creating new...")
             self._create_new_index()
 
         self._initialized = True
-        debug_log(
+        logger.debug(
             f"[RAG] initialize: READY - {self._faiss_wrapper.total_vectors} vectors, "
             f"model={self._embedding_service.model_name}"
         )
@@ -503,13 +497,13 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 # Markdown files get md: prefix
                 result.update({f"md:{k}": v for k, v in data.get("markdown", {}).items()})
 
-                debug_log(f"[RAG] _load_rag_files: Loaded {len(result)} indexed files "
+                logger.debug(f"[RAG] _load_rag_files: Loaded {len(result)} indexed files "
                          f"(py={len(data.get('python', {}))}, js={len(data.get('javascript', {}))}, "
                          f"html={len(data.get('html', {}))}, cs={len(data.get('csharp', {}))}, "
                          f"cpp={len(data.get('cpp', {}))}, md={len(data.get('markdown', {}))})")
                 return result
         except Exception as e:
-            debug_log(f"[RAG] _load_rag_files: Error loading: {e}")
+            logger.debug(f"[RAG] _load_rag_files: Error loading: {e}")
             return {}
 
     def _save_rag_files(self) -> None:
@@ -552,15 +546,15 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             "markdown": markdown_files,
         }
 
-        debug_log(f"[RAG] _save_rag_files: Saving py={len(python_files)}, js={len(javascript_files)}, "
+        logger.debug(f"[RAG] _save_rag_files: Saving py={len(python_files)}, js={len(javascript_files)}, "
                  f"html={len(html_files)}, cs={len(csharp_files)}, cpp={len(cpp_files)}, md={len(markdown_files)}")
 
         try:
             with open(self._rag_files_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
-            debug_log(f"[RAG] _save_rag_files: Saved {len(self._indexed_files)} indexed files")
+            logger.debug(f"[RAG] _save_rag_files: Saved {len(self._indexed_files)} indexed files")
         except Exception as e:
-            debug_log(f"[RAG] _save_rag_files: Error saving: {e}")
+            logger.debug(f"[RAG] _save_rag_files: Error saving: {e}")
 
     def sync(
         self,
@@ -651,7 +645,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
 
         # Check if embedding model is loaded
         if not self.is_model_loaded:
-            debug_log("[RAG] sync: Embedding model not yet loaded, skipping sync")
+            logger.debug("[RAG] sync: Embedding model not yet loaded, skipping sync")
             return {"status": "model_loading", "error": "Embedding model still loading in background"}
 
         start_time = time.time()
@@ -830,7 +824,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
 
         # 4. Generate embeddings for ALL texts in one batch
         if all_texts:
-            debug_log(f"[RAG] sync_with_sources: Generating embeddings for {len(all_texts)} texts in one batch")
+            logger.debug(f"[RAG] sync_with_sources: Generating embeddings for {len(all_texts)} texts in one batch")
             batch_size = self._config.get("rag_batch_size", 32)
             embeddings = self._embedding_service.generate_embeddings_batch(all_texts, batch_size=batch_size)
 
@@ -949,15 +943,13 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         Returns:
             Sync statistics
         """
-        import sys
-
         if not self._enabled:
-            debug_log("[RAG] sync_sources: RAG is disabled")
+            logger.debug("[RAG] sync_sources: RAG is disabled")
             return {"status": "disabled"}
 
         # Check if embedding model is loaded (may be loading in background)
         if not self.is_model_loaded:
-            debug_log("[RAG] sync_sources: Embedding model not yet loaded, skipping sync")
+            logger.debug("[RAG] sync_sources: Embedding model not yet loaded, skipping sync")
             return {"status": "model_loading", "error": "Embedding model still loading in background"}
 
         start_time = time.time()
@@ -970,7 +962,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         self._metadata_path = reter_dir / ".default.faiss.meta"
         self._rag_files_path = reter_dir / ".default.rag_files.json"
 
-        debug_log(f"[RAG] sync_sources: Starting sync for {project_root}")
+        logger.debug(f"[RAG] sync_sources: Starting sync for {project_root}")
 
         # Load indexed files from JSON (fast, no model needed)
         self._indexed_files = self._load_rag_files()
@@ -981,7 +973,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         cs_count = sum(1 for k in self._indexed_files if k.startswith("cs:"))
         cpp_count = sum(1 for k in self._indexed_files if k.startswith("cpp:"))
         md_count = sum(1 for k in self._indexed_files if k.startswith("md:"))
-        debug_log(f"[RAG] sync_sources: Loaded {len(self._indexed_files)} indexed files from JSON "
+        logger.debug(f"[RAG] sync_sources: Loaded {len(self._indexed_files)} indexed files from JSON "
                  f"(py={py_count}, js={js_count}, html={html_count}, cs={cs_count}, cpp={cpp_count}, md={md_count})")
 
         stats = {
@@ -1030,9 +1022,9 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
 
         # If targeted sync, log the count
         if changed_files:
-            debug_log(f"[RAG] sync_sources: Targeted sync for {len(changed_files)} changed files")
-            if not progress_callback and not is_stderr_suppressed():
-                print(f"[RAG] Targeted sync for {len(changed_files)} changed files", file=sys.stderr, flush=True)
+            logger.debug(f"[RAG] sync_sources: Targeted sync for {len(changed_files)} changed files")
+            if not progress_callback:
+                logger.info(f"[RAG] Targeted sync for {len(changed_files)} changed files")
 
         for source_id in all_sources:
             if "|" in source_id:
@@ -1111,7 +1103,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 # Legacy: Python files without prefix
                 indexed_python[key] = md5
 
-        debug_log(f"[RAG] sync_sources: Python - {len(current_python)} current, {len(indexed_python)} indexed")
+        logger.debug(f"[RAG] sync_sources: Python - {len(current_python)} current, {len(indexed_python)} indexed")
 
         # Find Python changes
         python_to_add: List[Tuple[str, str, str]] = []  # (source_id, rel_path, md5) to add
@@ -1121,11 +1113,11 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             indexed_md5 = indexed_python.get(rel_path)
             if indexed_md5 is None:
                 # New file
-                debug_log(f"[RAG] sync_sources: Python NEW: {rel_path}")
+                logger.debug(f"[RAG] sync_sources: Python NEW: {rel_path}")
                 python_to_add.append((source_id, rel_path, current_md5))
             elif current_md5 != indexed_md5:
                 # Modified file
-                debug_log(f"[RAG] sync_sources: Python MODIFIED: {rel_path} (indexed={indexed_md5[:8]}... vs current={current_md5[:8]}...)")
+                logger.debug(f"[RAG] sync_sources: Python MODIFIED: {rel_path} (indexed={indexed_md5[:8]}... vs current={current_md5[:8]}...)")
                 python_to_remove.append(rel_path)
                 python_to_add.append((source_id, rel_path, current_md5))
             else:
@@ -1136,10 +1128,10 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 # Deleted file
                 python_to_remove.append(rel_path)
 
-        debug_log(f"[RAG] sync_sources: Python changes - +{len(python_to_add)} -{len(python_to_remove)} ={stats['python_unchanged']}")
+        logger.debug(f"[RAG] sync_sources: Python changes - +{len(python_to_add)} -{len(python_to_remove)} ={stats['python_unchanged']}")
 
         # Find JavaScript changes
-        debug_log(f"[RAG] sync_sources: JavaScript - {len(current_javascript)} current, {len(indexed_javascript)} indexed")
+        logger.debug(f"[RAG] sync_sources: JavaScript - {len(current_javascript)} current, {len(indexed_javascript)} indexed")
         javascript_to_add: List[Tuple[str, str, str]] = []  # (source_id, rel_path, md5) to add
         javascript_to_remove: List[str] = []  # rel_paths to remove from _indexed_files
 
@@ -1160,10 +1152,10 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 # Deleted file
                 javascript_to_remove.append(rel_path)
 
-        debug_log(f"[RAG] sync_sources: JavaScript changes - +{len(javascript_to_add)} -{len(javascript_to_remove)} ={stats['javascript_unchanged']}")
+        logger.debug(f"[RAG] sync_sources: JavaScript changes - +{len(javascript_to_add)} -{len(javascript_to_remove)} ={stats['javascript_unchanged']}")
 
         # Find HTML changes
-        debug_log(f"[RAG] sync_sources: HTML - {len(current_html)} current, {len(indexed_html)} indexed")
+        logger.debug(f"[RAG] sync_sources: HTML - {len(current_html)} current, {len(indexed_html)} indexed")
         html_to_add: List[Tuple[str, str, str]] = []  # (source_id, rel_path, md5) to add
         html_to_remove: List[str] = []  # rel_paths to remove from _indexed_files
 
@@ -1184,10 +1176,10 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 # Deleted file
                 html_to_remove.append(rel_path)
 
-        debug_log(f"[RAG] sync_sources: HTML changes - +{len(html_to_add)} -{len(html_to_remove)} ={stats['html_unchanged']}")
+        logger.debug(f"[RAG] sync_sources: HTML changes - +{len(html_to_add)} -{len(html_to_remove)} ={stats['html_unchanged']}")
 
         # Find C# changes
-        debug_log(f"[RAG] sync_sources: C# - {len(current_csharp)} current, {len(indexed_csharp)} indexed")
+        logger.debug(f"[RAG] sync_sources: C# - {len(current_csharp)} current, {len(indexed_csharp)} indexed")
         csharp_to_add: List[Tuple[str, str, str]] = []  # (source_id, rel_path, md5) to add
         csharp_to_remove: List[str] = []  # rel_paths to remove from _indexed_files
 
@@ -1208,10 +1200,10 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 # Deleted file
                 csharp_to_remove.append(rel_path)
 
-        debug_log(f"[RAG] sync_sources: C# changes - +{len(csharp_to_add)} -{len(csharp_to_remove)} ={stats['csharp_unchanged']}")
+        logger.debug(f"[RAG] sync_sources: C# changes - +{len(csharp_to_add)} -{len(csharp_to_remove)} ={stats['csharp_unchanged']}")
 
         # Find C++ changes
-        debug_log(f"[RAG] sync_sources: C++ - {len(current_cpp)} current, {len(indexed_cpp)} indexed")
+        logger.debug(f"[RAG] sync_sources: C++ - {len(current_cpp)} current, {len(indexed_cpp)} indexed")
         cpp_to_add: List[Tuple[str, str, str]] = []  # (source_id, rel_path, md5) to add
         cpp_to_remove: List[str] = []  # rel_paths to remove from _indexed_files
 
@@ -1232,7 +1224,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 # Deleted file
                 cpp_to_remove.append(rel_path)
 
-        debug_log(f"[RAG] sync_sources: C++ changes - +{len(cpp_to_add)} -{len(cpp_to_remove)} ={stats['cpp_unchanged']}")
+        logger.debug(f"[RAG] sync_sources: C++ changes - +{len(cpp_to_add)} -{len(cpp_to_remove)} ={stats['cpp_unchanged']}")
 
         # Get current Markdown files and compute MD5s
         current_markdown: Dict[str, str] = {}  # rel_path -> md5
@@ -1253,7 +1245,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 md5_hash = hashlib.md5(content.encode('utf-8')).hexdigest()
                 current_markdown[rel_path_normalized] = md5_hash
             except Exception as e:
-                debug_log(f"[RAG] sync_sources: Error reading {rel_path}: {e}")
+                logger.debug(f"[RAG] sync_sources: Error reading {rel_path}: {e}")
 
         # Get indexed Markdown from _indexed_files
         indexed_markdown: Dict[str, str] = {}  # rel_path -> md5
@@ -1261,7 +1253,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             if key.startswith("md:"):
                 indexed_markdown[key[3:]] = md5  # Remove "md:" prefix
 
-        debug_log(f"[RAG] sync_sources: Markdown - {len(current_markdown)} current, {len(indexed_markdown)} indexed")
+        logger.debug(f"[RAG] sync_sources: Markdown - {len(current_markdown)} current, {len(indexed_markdown)} indexed")
 
         # Find Markdown changes
         markdown_to_add: List[Tuple[str, str]] = []  # (rel_path, md5) to add
@@ -1284,7 +1276,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 # Deleted file
                 markdown_to_remove.append(rel_path)
 
-        debug_log(f"[RAG] sync_sources: Markdown changes - +{len(markdown_to_add)} -{len(markdown_to_remove)} ={stats['markdown_unchanged']}")
+        logger.debug(f"[RAG] sync_sources: Markdown changes - +{len(markdown_to_add)} -{len(markdown_to_remove)} ={stats['markdown_unchanged']}")
 
         # Check if any changes
         total_changes = (
@@ -1296,7 +1288,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             len(markdown_to_add) + len(markdown_to_remove)
         )
 
-        debug_log(f"[RAG] sync_sources: {total_changes} changes detected")
+        logger.debug(f"[RAG] sync_sources: {total_changes} changes detected")
 
         # Estimate total files to index for progress reporting
         total_files_to_index = (
@@ -1305,8 +1297,8 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         )
         if progress_callback:
             progress_callback(0, total_files_to_index, "initializing")
-        elif not is_stderr_suppressed():
-            print(f"[RAG] sync_sources: {total_changes} changes detected, {total_files_to_index} files to index", file=sys.stderr, flush=True)
+        else:
+            logger.info(f"[RAG] sync_sources: {total_changes} changes detected, {total_files_to_index} files to index")
 
         # ALWAYS initialize fully (loads embedding model + FAISS index)
         self.initialize(project_root)
@@ -1315,9 +1307,9 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         if total_changes == 0:
             stats["time_ms"] = int((time.time() - start_time) * 1000)
             stats["total_vectors"] = self._faiss_wrapper.total_vectors
-            debug_log(f"[RAG] sync_sources: COMPLETE (no changes) - {stats['total_vectors']} vectors in {stats['time_ms']}ms")
+            logger.debug(f"[RAG] sync_sources: COMPLETE (no changes) - {stats['total_vectors']} vectors in {stats['time_ms']}ms")
             return stats
-        debug_log(f"[RAG] sync_sources: Initialized with {self._faiss_wrapper.total_vectors} existing vectors")
+        logger.debug(f"[RAG] sync_sources: Initialized with {self._faiss_wrapper.total_vectors} existing vectors")
 
         # Remove vectors for deleted/modified Python files
         for rel_path in python_to_remove:
@@ -1390,13 +1382,13 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
 
         # --- Phase 1: Collect Python entities, comments, and literals ---
         if python_to_add:
-            debug_log(f"[RAG] sync_sources: Querying entities for {len(python_to_add)} Python files...")
+            logger.debug(f"[RAG] sync_sources: Querying entities for {len(python_to_add)} Python files...")
             entities_by_file = self._query_all_entities_bulk(reter)
             total_python = len(python_to_add)
 
             for i, (source_id, rel_path, md5_hash) in enumerate(python_to_add):
                 try:
-                    debug_log(f"[RAG] sync_sources: Collecting Python [{i+1}/{total_python}]: {rel_path}")
+                    logger.debug(f"[RAG] sync_sources: Collecting Python [{i+1}/{total_python}]: {rel_path}")
                     # Convert rel_path to is-in-file format (keep extension)
                     in_file = rel_path.replace("\\", "/")
                     entities = entities_by_file.get(in_file, [])
@@ -1415,24 +1407,24 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                             all_texts.extend(c_texts)
                             all_metadata.extend(c_meta)
 
-                        debug_log(f"[RAG] sync_sources: Collected {len(texts)} entities + {len(c_texts)} comments for {rel_path}")
+                        logger.debug(f"[RAG] sync_sources: Collected {len(texts)} entities + {len(c_texts)} comments for {rel_path}")
 
                     # Update indexed files tracking
                     self._indexed_files[rel_path] = md5_hash
 
                     if progress_callback and (i + 1) % 10 == 0:
                         progress_callback(i + 1, total_python, "collecting_python")
-                    elif not progress_callback and not is_stderr_suppressed() and (i + 1) % 10 == 0:
-                        print(f"[RAG] Collecting Python: {i+1}/{total_python}", file=sys.stderr, flush=True)
+                    elif not progress_callback and (i + 1) % 10 == 0:
+                        logger.info(f"[RAG] Collecting Python: {i+1}/{total_python}")
 
                 except Exception as e:
                     import traceback
-                    debug_log(f"[RAG] sync_sources: Error collecting {source_id}: {e}")
-                    debug_log(f"[RAG] sync_sources: Traceback: {traceback.format_exc()}")
+                    logger.debug(f"[RAG] sync_sources: Error collecting {source_id}: {e}")
+                    logger.debug(f"[RAG] sync_sources: Traceback: {traceback.format_exc()}")
                     stats["errors"].append(f"Python: {source_id}: {e}")
 
             # Collect Python literals (only from files being added/modified)
-            debug_log("[RAG] sync_sources: Collecting Python string literals...")
+            logger.debug("[RAG] sync_sources: Collecting Python string literals...")
             # Extract source_ids from python_to_add for filtering
             changed_source_ids = [source_id for source_id, _, _ in python_to_add]
             literal_texts, literal_metadata = self._collect_all_python_literals_bulk(
@@ -1442,17 +1434,17 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 source_tracking.append(("python_literals_bulk", "python_literal", len(all_texts), len(literal_texts)))
                 all_texts.extend(literal_texts)
                 all_metadata.extend(literal_metadata)
-                debug_log(f"[RAG] sync_sources: Collected {len(literal_texts)} Python literals")
+                logger.debug(f"[RAG] sync_sources: Collected {len(literal_texts)} Python literals")
 
         # --- Phase 2: Collect JavaScript entities and literals (bulk query) ---
         if javascript_to_add:
-            debug_log(f"[RAG] sync_sources: Querying entities for {len(javascript_to_add)} JavaScript files...")
+            logger.debug(f"[RAG] sync_sources: Querying entities for {len(javascript_to_add)} JavaScript files...")
             js_entities_by_file = self._query_all_entities_bulk(reter, language="javascript")
             total_javascript = len(javascript_to_add)
 
             for i, (source_id, rel_path, md5_hash) in enumerate(javascript_to_add):
                 try:
-                    debug_log(f"[RAG] sync_sources: Collecting JavaScript [{i+1}/{total_javascript}]: {rel_path}")
+                    logger.debug(f"[RAG] sync_sources: Collecting JavaScript [{i+1}/{total_javascript}]: {rel_path}")
                     # Convert rel_path to is-in-file format (JavaScript keeps extension)
                     in_file = rel_path.replace("\\", "/")
                     entities = js_entities_by_file.get(in_file, [])
@@ -1462,40 +1454,40 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                             source_tracking.append((source_id, "javascript", len(all_texts), len(texts)))
                             all_texts.extend(texts)
                             all_metadata.extend(metadata)
-                        debug_log(f"[RAG] sync_sources: Collected {len(texts)} entities for {rel_path}")
+                        logger.debug(f"[RAG] sync_sources: Collected {len(texts)} entities for {rel_path}")
 
                     # Update indexed files tracking
                     self._indexed_files[f"js:{rel_path}"] = md5_hash
 
                     if progress_callback and (i + 1) % 10 == 0:
                         progress_callback(i + 1, total_javascript, "collecting_javascript")
-                    elif not progress_callback and not is_stderr_suppressed() and (i + 1) % 10 == 0:
-                        print(f"[RAG] Collecting JavaScript: {i+1}/{total_javascript}", file=sys.stderr, flush=True)
+                    elif not progress_callback and (i + 1) % 10 == 0:
+                        logger.info(f"[RAG] Collecting JavaScript: {i+1}/{total_javascript}")
 
                 except Exception as e:
                     import traceback
-                    debug_log(f"[RAG] sync_sources: Error collecting JavaScript {source_id}: {e}")
-                    debug_log(f"[RAG] sync_sources: Traceback: {traceback.format_exc()}")
+                    logger.debug(f"[RAG] sync_sources: Error collecting JavaScript {source_id}: {e}")
+                    logger.debug(f"[RAG] sync_sources: Traceback: {traceback.format_exc()}")
                     stats["errors"].append(f"JavaScript: {source_id}: {e}")
 
             # Collect JavaScript literals (bulk query)
-            debug_log("[RAG] sync_sources: Collecting JavaScript string literals...")
+            logger.debug("[RAG] sync_sources: Collecting JavaScript string literals...")
             js_literal_texts, js_literal_metadata = self._collect_all_javascript_literals_bulk(reter, project_root)
             if js_literal_texts:
                 source_tracking.append(("javascript_literals_bulk", "javascript_literal", len(all_texts), len(js_literal_texts)))
                 all_texts.extend(js_literal_texts)
                 all_metadata.extend(js_literal_metadata)
-                debug_log(f"[RAG] sync_sources: Collected {len(js_literal_texts)} JavaScript literals")
+                logger.debug(f"[RAG] sync_sources: Collected {len(js_literal_texts)} JavaScript literals")
 
         # --- Phase 3: Collect HTML entities (bulk query) ---
         if html_to_add:
-            debug_log(f"[RAG] sync_sources: Querying entities for {len(html_to_add)} HTML files...")
+            logger.debug(f"[RAG] sync_sources: Querying entities for {len(html_to_add)} HTML files...")
             html_entities_by_file = self._query_all_html_entities_bulk(reter)
             total_html = len(html_to_add)
 
             for i, (source_id, rel_path, md5_hash) in enumerate(html_to_add):
                 try:
-                    debug_log(f"[RAG] sync_sources: Collecting HTML [{i+1}/{total_html}]: {rel_path}")
+                    logger.debug(f"[RAG] sync_sources: Collecting HTML [{i+1}/{total_html}]: {rel_path}")
                     # Convert rel_path to is-in-document format (keeps extension)
                     in_doc = rel_path.replace("\\", ".").replace("/", ".")
                     entities = html_entities_by_file.get(in_doc, [])
@@ -1505,31 +1497,31 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                             source_tracking.append((source_id, "html", len(all_texts), len(texts)))
                             all_texts.extend(texts)
                             all_metadata.extend(metadata)
-                        debug_log(f"[RAG] sync_sources: Collected {len(texts)} entities for {rel_path}")
+                        logger.debug(f"[RAG] sync_sources: Collected {len(texts)} entities for {rel_path}")
 
                     # Update indexed files tracking
                     self._indexed_files[f"html:{rel_path}"] = md5_hash
 
                     if progress_callback and (i + 1) % 10 == 0:
                         progress_callback(i + 1, total_html, "collecting_html")
-                    elif not progress_callback and not is_stderr_suppressed() and (i + 1) % 10 == 0:
-                        print(f"[RAG] Collecting HTML: {i+1}/{total_html}", file=sys.stderr, flush=True)
+                    elif not progress_callback and (i + 1) % 10 == 0:
+                        logger.info(f"[RAG] Collecting HTML: {i+1}/{total_html}")
 
                 except Exception as e:
                     import traceback
-                    debug_log(f"[RAG] sync_sources: Error collecting HTML {source_id}: {e}")
-                    debug_log(f"[RAG] sync_sources: Traceback: {traceback.format_exc()}")
+                    logger.debug(f"[RAG] sync_sources: Error collecting HTML {source_id}: {e}")
+                    logger.debug(f"[RAG] sync_sources: Traceback: {traceback.format_exc()}")
                     stats["errors"].append(f"HTML: {source_id}: {e}")
 
         # --- Phase 4a: Collect C# entities (bulk query) ---
         if csharp_to_add:
-            debug_log(f"[RAG] sync_sources: Querying entities for {len(csharp_to_add)} C# files...")
+            logger.debug(f"[RAG] sync_sources: Querying entities for {len(csharp_to_add)} C# files...")
             csharp_entities_by_file = self._query_all_entities_bulk(reter, language="csharp")
             total_csharp = len(csharp_to_add)
 
             for i, (source_id, rel_path, md5_hash) in enumerate(csharp_to_add):
                 try:
-                    debug_log(f"[RAG] sync_sources: Collecting C# [{i+1}/{total_csharp}]: {rel_path}")
+                    logger.debug(f"[RAG] sync_sources: Collecting C# [{i+1}/{total_csharp}]: {rel_path}")
                     # Convert rel_path to is-in-file format (keep extension)
                     in_file = rel_path.replace("\\", "/")
                     entities = csharp_entities_by_file.get(in_file, [])
@@ -1539,31 +1531,31 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                             source_tracking.append((source_id, "csharp", len(all_texts), len(texts)))
                             all_texts.extend(texts)
                             all_metadata.extend(metadata)
-                        debug_log(f"[RAG] sync_sources: Collected {len(texts)} entities for {rel_path}")
+                        logger.debug(f"[RAG] sync_sources: Collected {len(texts)} entities for {rel_path}")
 
                     # Update indexed files tracking
                     self._indexed_files[f"cs:{rel_path}"] = md5_hash
 
                     if progress_callback and (i + 1) % 10 == 0:
                         progress_callback(i + 1, total_csharp, "collecting_csharp")
-                    elif not progress_callback and not is_stderr_suppressed() and (i + 1) % 10 == 0:
-                        print(f"[RAG] Collecting C#: {i+1}/{total_csharp}", file=sys.stderr, flush=True)
+                    elif not progress_callback and (i + 1) % 10 == 0:
+                        logger.info(f"[RAG] Collecting C#: {i+1}/{total_csharp}")
 
                 except Exception as e:
                     import traceback
-                    debug_log(f"[RAG] sync_sources: Error collecting C# {source_id}: {e}")
-                    debug_log(f"[RAG] sync_sources: Traceback: {traceback.format_exc()}")
+                    logger.debug(f"[RAG] sync_sources: Error collecting C# {source_id}: {e}")
+                    logger.debug(f"[RAG] sync_sources: Traceback: {traceback.format_exc()}")
                     stats["errors"].append(f"C#: {source_id}: {e}")
 
         # --- Phase 4b: Collect C++ entities (bulk query) ---
         if cpp_to_add:
-            debug_log(f"[RAG] sync_sources: Querying entities for {len(cpp_to_add)} C++ files...")
+            logger.debug(f"[RAG] sync_sources: Querying entities for {len(cpp_to_add)} C++ files...")
             cpp_entities_by_file = self._query_all_entities_bulk(reter, language="cpp")
             total_cpp = len(cpp_to_add)
 
             for i, (source_id, rel_path, md5_hash) in enumerate(cpp_to_add):
                 try:
-                    debug_log(f"[RAG] sync_sources: Collecting C++ [{i+1}/{total_cpp}]: {rel_path}")
+                    logger.debug(f"[RAG] sync_sources: Collecting C++ [{i+1}/{total_cpp}]: {rel_path}")
                     # Convert rel_path to is-in-file format (keep extension)
                     in_file = rel_path.replace("\\", "/")
                     entities = cpp_entities_by_file.get(in_file, [])
@@ -1573,25 +1565,25 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                             source_tracking.append((source_id, "cpp", len(all_texts), len(texts)))
                             all_texts.extend(texts)
                             all_metadata.extend(metadata)
-                        debug_log(f"[RAG] sync_sources: Collected {len(texts)} entities for {rel_path}")
+                        logger.debug(f"[RAG] sync_sources: Collected {len(texts)} entities for {rel_path}")
 
                     # Update indexed files tracking
                     self._indexed_files[f"cpp:{rel_path}"] = md5_hash
 
                     if progress_callback and (i + 1) % 10 == 0:
                         progress_callback(i + 1, total_cpp, "collecting_cpp")
-                    elif not progress_callback and not is_stderr_suppressed() and (i + 1) % 10 == 0:
-                        print(f"[RAG] Collecting C++: {i+1}/{total_cpp}", file=sys.stderr, flush=True)
+                    elif not progress_callback and (i + 1) % 10 == 0:
+                        logger.info(f"[RAG] Collecting C++: {i+1}/{total_cpp}")
 
                 except Exception as e:
                     import traceback
-                    debug_log(f"[RAG] sync_sources: Error collecting C++ {source_id}: {e}")
-                    debug_log(f"[RAG] sync_sources: Traceback: {traceback.format_exc()}")
+                    logger.debug(f"[RAG] sync_sources: Error collecting C++ {source_id}: {e}")
+                    logger.debug(f"[RAG] sync_sources: Traceback: {traceback.format_exc()}")
                     stats["errors"].append(f"C++: {source_id}: {e}")
 
         # --- Phase 5: Collect Markdown chunks ---
         if markdown_to_add:
-            debug_log(f"[RAG] sync_sources: Collecting {len(markdown_to_add)} Markdown files...")
+            logger.debug(f"[RAG] sync_sources: Collecting {len(markdown_to_add)} Markdown files...")
             total_markdown = len(markdown_to_add)
 
             for i, (rel_path, md5_hash) in enumerate(markdown_to_add):
@@ -1609,20 +1601,20 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
 
                     if progress_callback and (i + 1) % 10 == 0:
                         progress_callback(i + 1, total_markdown, "collecting_markdown")
-                    elif not progress_callback and not is_stderr_suppressed() and (i + 1) % 10 == 0:
-                        print(f"[RAG] Collecting Markdown: {i+1}/{total_markdown}", file=sys.stderr, flush=True)
+                    elif not progress_callback and (i + 1) % 10 == 0:
+                        logger.info(f"[RAG] Collecting Markdown: {i+1}/{total_markdown}")
 
                 except Exception as e:
-                    debug_log(f"[RAG] sync_sources: Error collecting {rel_path}: {e}")
+                    logger.debug(f"[RAG] sync_sources: Error collecting {rel_path}: {e}")
                     stats["errors"].append(f"Markdown: {rel_path}: {e}")
 
         # --- Phase 5: Generate embeddings for ALL texts in ONE batch ---
         if all_texts:
-            debug_log(f"[RAG] sync_sources: Generating embeddings for {len(all_texts)} texts in ONE batch...")
+            logger.debug(f"[RAG] sync_sources: Generating embeddings for {len(all_texts)} texts in ONE batch...")
             if progress_callback:
                 progress_callback(0, len(all_texts), "generating_embeddings")
-            elif not is_stderr_suppressed():
-                print(f"[RAG] Generating embeddings for {len(all_texts)} texts...", file=sys.stderr, flush=True)
+            else:
+                logger.info(f"[RAG] Generating embeddings for {len(all_texts)} texts...")
 
             batch_size = self._config.get("rag_batch_size", 32)
             last_console_percent = 0
@@ -1632,11 +1624,11 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 nonlocal last_console_percent
                 if progress_callback:
                     progress_callback(current, total, "generating_embeddings")
-                elif not is_stderr_suppressed() and total > 0:
+                elif total > 0:
                     percent = (current * 100) // total
                     if percent >= last_console_percent + 10:  # Report every 10%
                         last_console_percent = percent
-                        print(f"[RAG] Generating embeddings: {percent}%", file=sys.stderr, flush=True)
+                        logger.info(f"[RAG] Generating embeddings: {percent}%")
 
             embeddings = self._embedding_service.generate_embeddings_batch(
                 all_texts, batch_size=batch_size, progress_callback=embedding_progress
@@ -1644,8 +1636,8 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
 
             if progress_callback:
                 progress_callback(len(all_texts), len(all_texts), "embeddings_complete")
-            elif not is_stderr_suppressed():
-                print(f"[RAG] Embeddings complete: {len(all_texts)} vectors", file=sys.stderr, flush=True)
+            else:
+                logger.info(f"[RAG] Embeddings complete: {len(all_texts)} vectors")
 
             # Assign vector IDs
             vector_ids = list(range(self._next_vector_id, self._next_vector_id + len(all_texts)))
@@ -1692,19 +1684,19 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 elif file_type == "markdown":
                     stats["markdown_added"] += count
 
-            debug_log(f"[RAG] sync_sources: Added {len(all_texts)} vectors to index")
+            logger.debug(f"[RAG] sync_sources: Added {len(all_texts)} vectors to index")
 
         # Save index and rag_files.json
-        debug_log("[RAG] sync_sources: Saving index and rag_files.json...")
-        if not progress_callback and not is_stderr_suppressed():
-            print(f"[RAG] Saving index...", file=sys.stderr, flush=True)
+        logger.debug("[RAG] sync_sources: Saving index and rag_files.json...")
+        if not progress_callback:
+            logger.info("[RAG] Saving index...")
         self._save_index()
         self._save_rag_files()
 
         stats["time_ms"] = int((time.time() - start_time) * 1000)
         stats["total_vectors"] = self._faiss_wrapper.total_vectors
 
-        debug_log(
+        logger.debug(
             f"[RAG] sync_sources: COMPLETE - Python(+{stats['python_added']} -{stats['python_removed']} "
             f"={stats['python_unchanged']}) Markdown(+{stats['markdown_added']} -{stats['markdown_removed']} "
             f"={stats['markdown_unchanged']}) total={stats['total_vectors']} in {stats['time_ms']}ms"
@@ -1714,10 +1706,10 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             f"(+{stats['python_added']+stats['markdown_added']} -{stats['python_removed']+stats['markdown_removed']} "
             f"unchanged={stats['python_unchanged']+stats['markdown_unchanged']}) in {stats['time_ms']}ms"
         )
-        if not progress_callback and not is_stderr_suppressed():
+        if not progress_callback:
             total_added = stats['python_added'] + stats['javascript_added'] + stats['html_added'] + stats['csharp_added'] + stats['cpp_added'] + stats['markdown_added']
             total_removed = stats['python_removed'] + stats['javascript_removed'] + stats['html_removed'] + stats['csharp_removed'] + stats['cpp_removed'] + stats['markdown_removed']
-            print(f"[RAG] Sync complete: {stats['total_vectors']} vectors (+{total_added} -{total_removed}) in {stats['time_ms']}ms", file=sys.stderr, flush=True)
+            logger.info(f"[RAG] Sync complete: {stats['total_vectors']} vectors (+{total_added} -{total_removed}) in {stats['time_ms']}ms")
 
         return stats
 
@@ -1802,7 +1794,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         # Convert backslashes to dots (keep extension)
         in_file = rel_path.replace("\\", "/")
 
-        debug_log(f"[RAG] _query_entities: source_id={source_id}, rel_path={rel_path}, in_file={in_file}, language={language}")
+        logger.debug(f"[RAG] _query_entities: source_id={source_id}, rel_path={rel_path}, in_file={in_file}, language={language}")
 
         # Query classes
         class_query = f'''
@@ -1817,11 +1809,11 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         }}
         '''
         try:
-            debug_log(f"[RAG] _query_entities: Executing class query for in_file={in_file}")
+            logger.debug(f"[RAG] _query_entities: Executing class query for in_file={in_file}")
             class_table = reter.reql(class_query)
             if class_table is not None and class_table.num_rows > 0:
                 class_results = class_table.to_pylist()  # PyArrow built-in: list of dicts
-                debug_log(f"[RAG] _query_entities: Class query returned {len(class_results)} results")
+                logger.debug(f"[RAG] _query_entities: Class query returned {len(class_results)} results")
                 for row in class_results:
                     line = int(row.get("?line", 0))
                     end_line_val = row.get("?endLine")
@@ -1835,9 +1827,9 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                         "docstring": row.get("?docstring"),
                     })
             else:
-                debug_log(f"[RAG] _query_entities: Class query returned 0 results")
+                logger.debug(f"[RAG] _query_entities: Class query returned 0 results")
         except Exception as e:
-            debug_log(f"[RAG] _query_entities: Class query FAILED for {source_id}: {e}")
+            logger.debug(f"[RAG] _query_entities: Class query FAILED for {source_id}: {e}")
             logger.debug(f"Class query failed for {source_id}: {e}")
 
         # Query methods
@@ -1855,11 +1847,11 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         }}
         '''
         try:
-            debug_log(f"[RAG] _query_entities: Executing method query for in_file={in_file}")
+            logger.debug(f"[RAG] _query_entities: Executing method query for in_file={in_file}")
             method_table = reter.reql(method_query)
             if method_table is not None and method_table.num_rows > 0:
                 method_results = method_table.to_pylist()
-                debug_log(f"[RAG] _query_entities: Method query returned {len(method_results)} results")
+                logger.debug(f"[RAG] _query_entities: Method query returned {len(method_results)} results")
                 for row in method_results:
                     line = int(row.get("?line", 0))
                     end_line_val = row.get("?endLine")
@@ -1875,9 +1867,9 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                         "class_name": class_name,
                     })
             else:
-                debug_log(f"[RAG] _query_entities: Method query returned 0 results")
+                logger.debug(f"[RAG] _query_entities: Method query returned 0 results")
         except Exception as e:
-            debug_log(f"[RAG] _query_entities: Method query FAILED for {source_id}: {e}")
+            logger.debug(f"[RAG] _query_entities: Method query FAILED for {source_id}: {e}")
             logger.debug(f"Method query failed for {source_id}: {e}")
 
         # Query functions (excluding methods - methods are already indexed separately)
@@ -1895,11 +1887,11 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         }}
         '''
         try:
-            debug_log(f"[RAG] _query_entities: Executing function query for in_file={in_file}")
+            logger.debug(f"[RAG] _query_entities: Executing function query for in_file={in_file}")
             func_table = reter.reql(func_query)
             if func_table is not None and func_table.num_rows > 0:
                 func_results = func_table.to_pylist()
-                debug_log(f"[RAG] _query_entities: Function query returned {len(func_results)} results")
+                logger.debug(f"[RAG] _query_entities: Function query returned {len(func_results)} results")
                 for row in func_results:
                     line = int(row.get("?line", 0))
                     end_line_val = row.get("?endLine")
@@ -1913,12 +1905,12 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                         "docstring": row.get("?docstring"),
                     })
             else:
-                debug_log(f"[RAG] _query_entities: Function query returned 0 results")
+                logger.debug(f"[RAG] _query_entities: Function query returned 0 results")
         except Exception as e:
-            debug_log(f"[RAG] _query_entities: Function query FAILED for {source_id}: {e}")
+            logger.debug(f"[RAG] _query_entities: Function query FAILED for {source_id}: {e}")
             logger.debug(f"Function query failed for {source_id}: {e}")
 
-        debug_log(f"[RAG] _query_entities: Total entities found for {source_id}: {len(entities)}")
+        logger.debug(f"[RAG] _query_entities: Total entities found for {source_id}: {len(entities)}")
         return entities
 
     def _prepare_python_entities(
@@ -1958,12 +1950,12 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         if not texts:
             return 0
 
-        debug_log(f"[RAG] _add_vectors_bulk: Generating {len(texts)} embeddings for {source_type}...")
+        logger.debug(f"[RAG] _add_vectors_bulk: Generating {len(texts)} embeddings for {source_type}...")
         batch_size = self._config.get("rag_batch_size", 32)
         embeddings = self._embedding_service.generate_embeddings_batch(
             texts, batch_size=batch_size
         )
-        debug_log(f"[RAG] _add_vectors_bulk: Generated {len(embeddings)} embeddings")
+        logger.debug(f"[RAG] _add_vectors_bulk: Generated {len(embeddings)} embeddings")
 
         # Assign vector IDs
         vector_ids = list(range(self._next_vector_id, self._next_vector_id + len(texts)))
@@ -2099,9 +2091,9 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         Returns number of vectors added.
         """
         log_prefix = f"[RAG] _index_{language}_entities"
-        debug_log(f"{log_prefix}: Starting for {source_id} with {len(entities)} entities")
+        logger.debug(f"{log_prefix}: Starting for {source_id} with {len(entities)} entities")
         if not entities:
-            debug_log(f"{log_prefix}: No entities, returning 0")
+            logger.debug(f"{log_prefix}: No entities, returning 0")
             return 0
 
         # Extract file path from source_id (format: "md5|rel_path")
@@ -2111,14 +2103,14 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             rel_path = source_id
 
         abs_path = project_root / rel_path
-        debug_log(f"{log_prefix}: File path: {abs_path}")
+        logger.debug(f"{log_prefix}: File path: {abs_path}")
 
         # Build indexable texts
         texts = []
         entity_metadata = []
 
         for i, entity in enumerate(entities):
-            debug_log(f"{log_prefix}: Processing entity [{i+1}/{len(entities)}]: {entity.get('name')}")
+            logger.debug(f"{log_prefix}: Processing entity [{i+1}/{len(entities)}]: {entity.get('name')}")
             # Extract content from file
             try:
                 code_entity = self._content_extractor.extract_and_build(
@@ -2131,11 +2123,11 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                     docstring=entity.get("docstring"),
                     class_name=entity.get("class_name")
                 )
-                debug_log(f"{log_prefix}: extract_and_build returned: {code_entity is not None}")
+                logger.debug(f"{log_prefix}: extract_and_build returned: {code_entity is not None}")
             except Exception as e:
                 import traceback
-                debug_log(f"{log_prefix}: extract_and_build FAILED: {e}")
-                debug_log(f"{log_prefix}: Traceback: {traceback.format_exc()}")
+                logger.debug(f"{log_prefix}: extract_and_build FAILED: {e}")
+                logger.debug(f"{log_prefix}: Traceback: {traceback.format_exc()}")
                 continue
 
             if code_entity:
@@ -2153,18 +2145,18 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                     "class_name": entity.get("class_name"),
                 })
 
-        debug_log(f"{log_prefix}: Built {len(texts)} texts for embedding")
+        logger.debug(f"{log_prefix}: Built {len(texts)} texts for embedding")
         if not texts:
-            debug_log(f"{log_prefix}: No texts to embed, returning 0")
+            logger.debug(f"{log_prefix}: No texts to embed, returning 0")
             return 0
 
         # Generate embeddings
-        debug_log(f"{log_prefix}: Generating embeddings...")
+        logger.debug(f"{log_prefix}: Generating embeddings...")
         batch_size = self._config.get("rag_batch_size", 32)
         embeddings = self._embedding_service.generate_embeddings_batch(
             texts, batch_size=batch_size
         )
-        debug_log(f"{log_prefix}: Generated {len(embeddings)} embeddings")
+        logger.debug(f"{log_prefix}: Generated {len(embeddings)} embeddings")
 
         # Assign vector IDs
         vector_ids = list(range(self._next_vector_id, self._next_vector_id + len(texts)))
@@ -2238,7 +2230,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         # Convert backslashes to dots
         in_file = rel_path.replace("\\", "/")
 
-        debug_log(f"[RAG] _query_html_entities: source_id={source_id}, in_file={in_file}")
+        logger.debug(f"[RAG] _query_html_entities: source_id={source_id}, in_file={in_file}")
 
         # Query scripts (inline JavaScript)
         script_query = f'''
@@ -2263,7 +2255,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                         "source_type": "html",
                     })
         except Exception as e:
-            debug_log(f"[RAG] _query_html_entities: Script query failed: {e}")
+            logger.debug(f"[RAG] _query_html_entities: Script query failed: {e}")
 
         # Query event handlers
         handler_query = f'''
@@ -2291,7 +2283,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                         "source_type": "html",
                     })
         except Exception as e:
-            debug_log(f"[RAG] _query_html_entities: Handler query failed: {e}")
+            logger.debug(f"[RAG] _query_html_entities: Handler query failed: {e}")
 
         # Query forms
         form_query = f'''
@@ -2321,7 +2313,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                         "source_type": "html",
                     })
         except Exception as e:
-            debug_log(f"[RAG] _query_html_entities: Form query failed: {e}")
+            logger.debug(f"[RAG] _query_html_entities: Form query failed: {e}")
 
         # Query framework directives (Vue, Angular, HTMX, Alpine)
         for framework, concept in [
@@ -2355,9 +2347,9 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                             "source_type": "html",
                         })
             except Exception as e:
-                debug_log(f"[RAG] _query_html_entities: {framework} query failed: {e}")
+                logger.debug(f"[RAG] _query_html_entities: {framework} query failed: {e}")
 
-        debug_log(f"[RAG] _query_html_entities: Found {len(entities)} total entities")
+        logger.debug(f"[RAG] _query_html_entities: Found {len(entities)} total entities")
         return entities
 
     def _index_html_entities(
@@ -2376,7 +2368,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
 
         Returns number of vectors added.
         """
-        debug_log(f"[RAG] _index_html_entities: Starting for {source_id} with {len(entities)} entities")
+        logger.debug(f"[RAG] _index_html_entities: Starting for {source_id} with {len(entities)} entities")
         if not entities:
             return 0
 
@@ -2461,7 +2453,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             "vector_ids": vector_ids,
         }
 
-        debug_log(f"[RAG] _index_html_entities: Indexed {len(texts)} entities for {rel_path}")
+        logger.debug(f"[RAG] _index_html_entities: Indexed {len(texts)} entities for {rel_path}")
         return len(texts)
 
     def _index_python_comments(
@@ -2632,7 +2624,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             columns = [result.column(name).to_pylist() for name in result.column_names]
             rows = list(zip(*columns))
         except Exception as e:
-            debug_log(f"[RAG] _index_python_literals: Query failed for {source_id}: {e}")
+            logger.debug(f"[RAG] _index_python_literals: Query failed for {source_id}: {e}")
             return 0
 
         # Build indexable texts - filter by length and skip common patterns
@@ -2697,7 +2689,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             "vector_ids": vector_ids,
         }
 
-        debug_log(f"[RAG] _index_python_literals: Indexed {len(texts)} literals for {rel_path}")
+        logger.debug(f"[RAG] _index_python_literals: Indexed {len(texts)} literals for {rel_path}")
         return len(texts)
 
     def _index_all_python_literals_bulk(
@@ -2735,19 +2727,19 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             result = reter.reql(query, timeout_ms=60000)  # Longer timeout for bulk
 
             if result.num_rows == 0:
-                debug_log("[RAG] _index_all_python_literals_bulk: No literals found")
+                logger.debug("[RAG] _index_all_python_literals_bulk: No literals found")
                 return 0
 
             # Convert to list
             columns = [result.column(name).to_pylist() for name in result.column_names]
             rows = list(zip(*columns))
-            debug_log(f"[RAG] _index_all_python_literals_bulk: Found {len(rows)} total literals")
+            logger.debug(f"[RAG] _index_all_python_literals_bulk: Found {len(rows)} total literals")
         except Exception as e:
-            debug_log(f"[RAG] _index_all_python_literals_bulk: Query failed: {e}")
+            logger.debug(f"[RAG] _index_all_python_literals_bulk: Query failed: {e}")
             return 0
 
         query_time = time.time() - start_time
-        debug_log(f"[RAG] _index_all_python_literals_bulk: Query took {query_time:.2f}s")
+        logger.debug(f"[RAG] _index_all_python_literals_bulk: Query took {query_time:.2f}s")
 
         # Build indexable texts - filter by length and skip common patterns
         texts = []
@@ -2791,10 +2783,10 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             })
 
         if not texts:
-            debug_log("[RAG] _index_all_python_literals_bulk: No literals passed filtering")
+            logger.debug("[RAG] _index_all_python_literals_bulk: No literals passed filtering")
             return 0
 
-        debug_log(f"[RAG] _index_all_python_literals_bulk: {len(texts)} literals passed filtering")
+        logger.debug(f"[RAG] _index_all_python_literals_bulk: {len(texts)} literals passed filtering")
 
         # Generate embeddings in large batches
         batch_size = self._config.get("rag_batch_size", 32)
@@ -2803,7 +2795,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             texts, batch_size=batch_size
         )
         embed_time = time.time() - embed_start
-        debug_log(f"[RAG] _index_all_python_literals_bulk: Embeddings took {embed_time:.2f}s")
+        logger.debug(f"[RAG] _index_all_python_literals_bulk: Embeddings took {embed_time:.2f}s")
 
         # Assign vector IDs
         vector_ids = list(range(self._next_vector_id, self._next_vector_id + len(texts)))
@@ -2826,7 +2818,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         }
 
         total_time = time.time() - start_time
-        debug_log(f"[RAG] _index_all_python_literals_bulk: Indexed {len(texts)} literals in {total_time:.2f}s")
+        logger.debug(f"[RAG] _index_all_python_literals_bulk: Indexed {len(texts)} literals in {total_time:.2f}s")
         return len(texts)
 
     def _index_javascript_literals(
@@ -2885,7 +2877,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             columns = [result.column(name).to_pylist() for name in result.column_names]
             rows = list(zip(*columns))
         except Exception as e:
-            debug_log(f"[RAG] _index_javascript_literals: Query failed for {source_id}: {e}")
+            logger.debug(f"[RAG] _index_javascript_literals: Query failed for {source_id}: {e}")
             return 0
 
         # Build indexable texts - filter by length and skip common patterns
@@ -2950,7 +2942,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             "vector_ids": vector_ids,
         }
 
-        debug_log(f"[RAG] _index_javascript_literals: Indexed {len(texts)} literals for {rel_path}")
+        logger.debug(f"[RAG] _index_javascript_literals: Indexed {len(texts)} literals for {rel_path}")
         return len(texts)
 
     def _index_all_javascript_literals_bulk(
@@ -2989,19 +2981,19 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             result = reter.reql(query, timeout_ms=60000)  # Longer timeout for bulk
 
             if result.num_rows == 0:
-                debug_log("[RAG] _index_all_javascript_literals_bulk: No literals found")
+                logger.debug("[RAG] _index_all_javascript_literals_bulk: No literals found")
                 return 0
 
             # Convert to list
             columns = [result.column(name).to_pylist() for name in result.column_names]
             rows = list(zip(*columns))
-            debug_log(f"[RAG] _index_all_javascript_literals_bulk: Found {len(rows)} total literals")
+            logger.debug(f"[RAG] _index_all_javascript_literals_bulk: Found {len(rows)} total literals")
         except Exception as e:
-            debug_log(f"[RAG] _index_all_javascript_literals_bulk: Query failed: {e}")
+            logger.debug(f"[RAG] _index_all_javascript_literals_bulk: Query failed: {e}")
             return 0
 
         query_time = time.time() - start_time
-        debug_log(f"[RAG] _index_all_javascript_literals_bulk: Query took {query_time:.2f}s")
+        logger.debug(f"[RAG] _index_all_javascript_literals_bulk: Query took {query_time:.2f}s")
 
         # Build indexable texts - filter by length and skip common patterns
         texts = []
@@ -3045,10 +3037,10 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             })
 
         if not texts:
-            debug_log("[RAG] _index_all_javascript_literals_bulk: No literals passed filtering")
+            logger.debug("[RAG] _index_all_javascript_literals_bulk: No literals passed filtering")
             return 0
 
-        debug_log(f"[RAG] _index_all_javascript_literals_bulk: {len(texts)} literals passed filtering")
+        logger.debug(f"[RAG] _index_all_javascript_literals_bulk: {len(texts)} literals passed filtering")
 
         # Generate embeddings in large batches
         batch_size = self._config.get("rag_batch_size", 32)
@@ -3057,7 +3049,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             texts, batch_size=batch_size
         )
         embed_time = time.time() - embed_start
-        debug_log(f"[RAG] _index_all_javascript_literals_bulk: Embeddings took {embed_time:.2f}s")
+        logger.debug(f"[RAG] _index_all_javascript_literals_bulk: Embeddings took {embed_time:.2f}s")
 
         # Assign vector IDs
         vector_ids = list(range(self._next_vector_id, self._next_vector_id + len(texts)))
@@ -3080,7 +3072,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         }
 
         total_time = time.time() - start_time
-        debug_log(f"[RAG] _index_all_javascript_literals_bulk: Indexed {len(texts)} literals in {total_time:.2f}s")
+        logger.debug(f"[RAG] _index_all_javascript_literals_bulk: Indexed {len(texts)} literals in {total_time:.2f}s")
         return len(texts)
 
     def _index_markdown_chunks(
@@ -3393,7 +3385,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             prefix = "py"  # fallback
 
         # Bulk query all classes
-        debug_log(f"[RAG] _query_all_entities_bulk: Querying all {language} classes...")
+        logger.debug(f"[RAG] _query_all_entities_bulk: Querying all {language} classes...")
         class_query = f'''
         SELECT DISTINCT ?entity ?name ?line ?endLine ?docstring ?inFile
         WHERE {{
@@ -3409,7 +3401,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             class_table = reter.reql(class_query)
             if class_table is not None and class_table.num_rows > 0:
                 class_results = class_table.to_pylist()
-                debug_log(f"[RAG] _query_all_entities_bulk: Found {len(class_results)} classes")
+                logger.debug(f"[RAG] _query_all_entities_bulk: Found {len(class_results)} classes")
                 for row in class_results:
                     qualified_name = row.get("?entity", "")
                     if qualified_name in seen_entities:
@@ -3430,12 +3422,12 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                         "docstring": row.get("?docstring"),
                     })
         except Exception as e:
-            debug_log(f"[RAG] _query_all_entities_bulk: Class query FAILED: {e}")
+            logger.debug(f"[RAG] _query_all_entities_bulk: Class query FAILED: {e}")
 
         # Bulk query all methods
         # Note: We query definedIn as required (not OPTIONAL) because REQL OPTIONAL
         # doesn't return bound values. All methods should have a defining class.
-        debug_log(f"[RAG] _query_all_entities_bulk: Querying all {language} methods...")
+        logger.debug(f"[RAG] _query_all_entities_bulk: Querying all {language} methods...")
         method_query = f'''
         SELECT DISTINCT ?entity ?name ?line ?endLine ?docstring ?className ?inFile
         WHERE {{
@@ -3452,7 +3444,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             method_table = reter.reql(method_query)
             if method_table is not None and method_table.num_rows > 0:
                 method_results = method_table.to_pylist()
-                debug_log(f"[RAG] _query_all_entities_bulk: Found {len(method_results)} methods")
+                logger.debug(f"[RAG] _query_all_entities_bulk: Found {len(method_results)} methods")
                 for row in method_results:
                     qualified_name = row.get("?entity", "")
                     if qualified_name in seen_entities:
@@ -3476,11 +3468,11 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                         "class_name": class_name,
                     })
         except Exception as e:
-            debug_log(f"[RAG] _query_all_entities_bulk: Method query FAILED: {e}")
+            logger.debug(f"[RAG] _query_all_entities_bulk: Method query FAILED: {e}")
 
         # Bulk query all functions (excluding methods - they are already queried above)
         # Note: Method is_subclass_of Function, so we need to exclude methods
-        debug_log(f"[RAG] _query_all_entities_bulk: Querying all {language} functions...")
+        logger.debug(f"[RAG] _query_all_entities_bulk: Querying all {language} functions...")
         func_query = f'''
         SELECT DISTINCT ?entity ?name ?line ?endLine ?docstring ?inFile
         WHERE {{
@@ -3497,7 +3489,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             func_table = reter.reql(func_query)
             if func_table is not None and func_table.num_rows > 0:
                 func_results = func_table.to_pylist()
-                debug_log(f"[RAG] _query_all_entities_bulk: Found {len(func_results)} functions")
+                logger.debug(f"[RAG] _query_all_entities_bulk: Found {len(func_results)} functions")
                 for row in func_results:
                     qualified_name = row.get("?entity", "")
                     if qualified_name in seen_entities:
@@ -3518,10 +3510,10 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                         "docstring": row.get("?docstring"),
                     })
         except Exception as e:
-            debug_log(f"[RAG] _query_all_entities_bulk: Function query FAILED: {e}")
+            logger.debug(f"[RAG] _query_all_entities_bulk: Function query FAILED: {e}")
 
         total_entities = sum(len(ents) for ents in entities_by_file.values())
-        debug_log(f"[RAG] _query_all_entities_bulk: Total {len(entities_by_file)} files, {total_entities} entities (deduplicated via {len(seen_entities)} unique qualified_names)")
+        logger.debug(f"[RAG] _query_all_entities_bulk: Total {len(entities_by_file)} files, {total_entities} entities (deduplicated via {len(seen_entities)} unique qualified_names)")
         return entities_by_file
 
     def _query_all_html_entities_bulk(self, reter: "ReterWrapper") -> Dict[str, List[Dict[str, Any]]]:
@@ -3533,7 +3525,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         entities_by_file: Dict[str, List[Dict[str, Any]]] = {}
 
         # Bulk query all scripts
-        debug_log("[RAG] _query_all_html_entities_bulk: Querying all HTML scripts...")
+        logger.debug("[RAG] _query_all_html_entities_bulk: Querying all HTML scripts...")
         script_query = '''
         SELECT DISTINCT ?entity ?name ?line ?content ?inDocument
         WHERE {
@@ -3548,7 +3540,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             script_table = reter.reql(script_query)
             if script_table is not None and script_table.num_rows > 0:
                 script_results = script_table.to_pylist()
-                debug_log(f"[RAG] _query_all_html_entities_bulk: Found {len(script_results)} scripts")
+                logger.debug(f"[RAG] _query_all_html_entities_bulk: Found {len(script_results)} scripts")
                 for row in script_results:
                     in_doc = row.get("?inDocument", "")
                     if in_doc not in entities_by_file:
@@ -3561,10 +3553,10 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                         "source_type": "html",
                     })
         except Exception as e:
-            debug_log(f"[RAG] _query_all_html_entities_bulk: Script query FAILED: {e}")
+            logger.debug(f"[RAG] _query_all_html_entities_bulk: Script query FAILED: {e}")
 
         # Bulk query all event handlers
-        debug_log("[RAG] _query_all_html_entities_bulk: Querying all HTML event handlers...")
+        logger.debug("[RAG] _query_all_html_entities_bulk: Querying all HTML event handlers...")
         handler_query = '''
         SELECT DISTINCT ?entity ?event ?handler ?line ?inDocument
         WHERE {
@@ -3579,7 +3571,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             handler_table = reter.reql(handler_query)
             if handler_table is not None and handler_table.num_rows > 0:
                 handler_results = handler_table.to_pylist()
-                debug_log(f"[RAG] _query_all_html_entities_bulk: Found {len(handler_results)} event handlers")
+                logger.debug(f"[RAG] _query_all_html_entities_bulk: Found {len(handler_results)} event handlers")
                 for row in handler_results:
                     in_doc = row.get("?inDocument", "")
                     if in_doc not in entities_by_file:
@@ -3595,10 +3587,10 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                         "source_type": "html",
                     })
         except Exception as e:
-            debug_log(f"[RAG] _query_all_html_entities_bulk: Handler query FAILED: {e}")
+            logger.debug(f"[RAG] _query_all_html_entities_bulk: Handler query FAILED: {e}")
 
         # Bulk query all forms
-        debug_log("[RAG] _query_all_html_entities_bulk: Querying all HTML forms...")
+        logger.debug("[RAG] _query_all_html_entities_bulk: Querying all HTML forms...")
         form_query = '''
         SELECT DISTINCT ?entity ?name ?action ?method ?line ?inDocument
         WHERE {
@@ -3614,7 +3606,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             form_table = reter.reql(form_query)
             if form_table is not None and form_table.num_rows > 0:
                 form_results = form_table.to_pylist()
-                debug_log(f"[RAG] _query_all_html_entities_bulk: Found {len(form_results)} forms")
+                logger.debug(f"[RAG] _query_all_html_entities_bulk: Found {len(form_results)} forms")
                 for row in form_results:
                     in_doc = row.get("?inDocument", "")
                     if in_doc not in entities_by_file:
@@ -3631,7 +3623,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                         "source_type": "html",
                     })
         except Exception as e:
-            debug_log(f"[RAG] _query_all_html_entities_bulk: Form query FAILED: {e}")
+            logger.debug(f"[RAG] _query_all_html_entities_bulk: Form query FAILED: {e}")
 
         # Bulk query framework directives
         for framework, concept in [
@@ -3640,7 +3632,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             ("htmx", "htmx-attribute"),
             ("alpine", "alpine-directive"),
         ]:
-            debug_log(f"[RAG] _query_all_html_entities_bulk: Querying all {framework} directives...")
+            logger.debug(f"[RAG] _query_all_html_entities_bulk: Querying all {framework} directives...")
             directive_query = f'''
             SELECT DISTINCT ?entity ?directive ?value ?line ?inDocument
             WHERE {{
@@ -3655,7 +3647,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 directive_table = reter.reql(directive_query)
                 if directive_table is not None and directive_table.num_rows > 0:
                     directive_results = directive_table.to_pylist()
-                    debug_log(f"[RAG] _query_all_html_entities_bulk: Found {len(directive_results)} {framework} directives")
+                    logger.debug(f"[RAG] _query_all_html_entities_bulk: Found {len(directive_results)} {framework} directives")
                     for row in directive_results:
                         in_doc = row.get("?inDocument", "")
                         if in_doc not in entities_by_file:
@@ -3671,9 +3663,9 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                             "source_type": "html",
                         })
             except Exception as e:
-                debug_log(f"[RAG] _query_all_html_entities_bulk: {framework} directive query FAILED: {e}")
+                logger.debug(f"[RAG] _query_all_html_entities_bulk: {framework} directive query FAILED: {e}")
 
-        debug_log(f"[RAG] _query_all_html_entities_bulk: Total {len(entities_by_file)} documents with entities")
+        logger.debug(f"[RAG] _query_all_html_entities_bulk: Total {len(entities_by_file)} documents with entities")
         return entities_by_file
 
     def reindex_all(
@@ -3701,32 +3693,32 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         require_default_instance()
 
         if not self._enabled:
-            debug_log("[RAG] reindex_all: RAG is disabled")
+            logger.debug("[RAG] reindex_all: RAG is disabled")
             return {"status": "disabled"}
 
-        debug_log(f"[RAG] reindex_all: Starting reindex for {project_root}")
+        logger.debug(f"[RAG] reindex_all: Starting reindex for {project_root}")
 
         # Initialize if not already done
         if not self._initialized:
-            debug_log("[RAG] reindex_all: Initializing RAG index manager...")
+            logger.debug("[RAG] reindex_all: Initializing RAG index manager...")
             init_start = time.time()
             self.initialize(project_root)
-            debug_log(f"[RAG] reindex_all: Initialization complete in {time.time() - init_start:.2f}s")
+            logger.debug(f"[RAG] reindex_all: Initialization complete in {time.time() - init_start:.2f}s")
 
         start_time = time.time()
 
         # Clear existing index
-        debug_log("[RAG] reindex_all: Clearing existing index...")
+        logger.debug("[RAG] reindex_all: Clearing existing index...")
         self._faiss_wrapper.clear()
         self._metadata["sources"] = {}
         self._metadata["vectors"] = {}
         self._next_vector_id = 0
 
         # Get all Python sources from RETER
-        debug_log("[RAG] reindex_all: Querying Python sources from RETER...")
+        logger.debug("[RAG] reindex_all: Querying Python sources from RETER...")
         all_sources, _ = reter.get_all_sources()
         python_sources = [s for s in all_sources if s.endswith(".py") or "|" in s]
-        debug_log(f"[RAG] reindex_all: Found {len(python_sources)} Python sources")
+        logger.debug(f"[RAG] reindex_all: Found {len(python_sources)} Python sources")
 
         stats = {
             "python_sources": len(python_sources),
@@ -3737,10 +3729,10 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         }
 
         # BULK query all entities (3 queries instead of 3 per file)
-        debug_log("[RAG] reindex_all: Bulk querying all Python entities...")
+        logger.debug("[RAG] reindex_all: Bulk querying all Python entities...")
         bulk_start = time.time()
         entities_by_file = self._query_all_entities_bulk(reter)
-        debug_log(f"[RAG] reindex_all: Bulk query complete in {time.time() - bulk_start:.2f}s")
+        logger.debug(f"[RAG] reindex_all: Bulk query complete in {time.time() - bulk_start:.2f}s")
 
         # Build mapping from inFile to source_id
         infile_to_source: Dict[str, str] = {}
@@ -3753,7 +3745,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             infile_to_source[in_file] = source_id
 
         # Index Python entities by file
-        debug_log(f"[RAG] reindex_all: Indexing entities from {len(entities_by_file)} files...")
+        logger.debug(f"[RAG] reindex_all: Indexing entities from {len(entities_by_file)} files...")
 
         # Estimate total vectors for progress tracking
         total_entities = sum(len(entities) for entities in entities_by_file.values())
@@ -3775,12 +3767,12 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                             break
 
                 if not source_id:
-                    debug_log(f"[RAG] reindex_all: No source_id found for {in_file}, skipping")
+                    logger.debug(f"[RAG] reindex_all: No source_id found for {in_file}, skipping")
                     continue
 
                 # Log progress every 10 files
                 if (i + 1) % 10 == 0 or i == 0:
-                    debug_log(f"[RAG] reindex_all: Python [{i+1}/{len(entities_by_file)}] {in_file} ({len(entities)} entities)")
+                    logger.debug(f"[RAG] reindex_all: Python [{i+1}/{len(entities_by_file)}] {in_file} ({len(entities)} entities)")
 
                 added = self._index_python_entities(entities, source_id, project_root)
                 stats["python_vectors"] += added
@@ -3794,32 +3786,32 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                     progress_callback(stats["python_vectors"], total_entities, "python")
 
             except Exception as e:
-                debug_log(f"[RAG] reindex_all: ERROR indexing {in_file}: {e}")
+                logger.debug(f"[RAG] reindex_all: ERROR indexing {in_file}: {e}")
                 stats["errors"].append(f"Python: {in_file}: {e}")
 
         py_elapsed = time.time() - py_start
-        debug_log(f"[RAG] reindex_all: Python indexing complete: {stats['python_vectors']} vectors in {py_elapsed:.2f}s")
+        logger.debug(f"[RAG] reindex_all: Python indexing complete: {stats['python_vectors']} vectors in {py_elapsed:.2f}s")
 
         # Bulk index all string literals (much faster than per-file)
-        debug_log("[RAG] reindex_all: Bulk indexing string literals...")
+        logger.debug("[RAG] reindex_all: Bulk indexing string literals...")
         literal_added = self._index_all_python_literals_bulk(reter, project_root)
         stats["python_vectors"] += literal_added
 
         # Index Markdown files if enabled
         if self._config.get("rag_index_markdown", True):
-            debug_log("[RAG] reindex_all: Scanning for Markdown files...")
+            logger.debug("[RAG] reindex_all: Scanning for Markdown files...")
             md_files = self._scan_markdown_files(project_root)
             stats["markdown_files"] = len(md_files)
-            debug_log(f"[RAG] reindex_all: Found {len(md_files)} Markdown files")
+            logger.debug(f"[RAG] reindex_all: Found {len(md_files)} Markdown files")
 
             if md_files:
-                debug_log(f"[RAG] reindex_all: Indexing {len(md_files)} Markdown files...")
+                logger.debug(f"[RAG] reindex_all: Indexing {len(md_files)} Markdown files...")
                 md_start = time.time()
                 for i, rel_path in enumerate(md_files):
                     try:
                         # Log progress every 5 files or at key milestones
                         if (i + 1) % 5 == 0 or i == 0 or i == len(md_files) - 1:
-                            debug_log(f"[RAG] reindex_all: Markdown [{i+1}/{len(md_files)}] {rel_path}")
+                            logger.debug(f"[RAG] reindex_all: Markdown [{i+1}/{len(md_files)}] {rel_path}")
 
                         abs_path = project_root / rel_path
                         chunks = self._markdown_indexer.parse_file(str(abs_path))
@@ -3832,22 +3824,22 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                             progress_callback(total_current, total_entities + len(md_files) * 3, "markdown")
 
                     except Exception as e:
-                        debug_log(f"[RAG] reindex_all: ERROR indexing {rel_path}: {e}")
+                        logger.debug(f"[RAG] reindex_all: ERROR indexing {rel_path}: {e}")
                         stats["errors"].append(f"Markdown: {rel_path}: {e}")
 
                 md_elapsed = time.time() - md_start
-                debug_log(f"[RAG] reindex_all: Markdown indexing complete: {stats['markdown_vectors']} vectors in {md_elapsed:.2f}s")
+                logger.debug(f"[RAG] reindex_all: Markdown indexing complete: {stats['markdown_vectors']} vectors in {md_elapsed:.2f}s")
 
         # Save index
-        debug_log("[RAG] reindex_all: Saving index to disk...")
+        logger.debug("[RAG] reindex_all: Saving index to disk...")
         save_start = time.time()
         self._save_index()
-        debug_log(f"[RAG] reindex_all: Index saved in {time.time() - save_start:.2f}s")
+        logger.debug(f"[RAG] reindex_all: Index saved in {time.time() - save_start:.2f}s")
 
         stats["time_ms"] = int((time.time() - start_time) * 1000)
         stats["total_vectors"] = self._faiss_wrapper.total_vectors
 
-        debug_log(
+        logger.debug(
             f"[RAG] reindex_all: COMPLETE - {stats['python_vectors']} Python + "
             f"{stats['markdown_vectors']} Markdown = {stats['total_vectors']} total vectors "
             f"in {stats['time_ms']}ms"

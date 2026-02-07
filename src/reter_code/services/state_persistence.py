@@ -10,16 +10,14 @@ Handles all RETER state persistence operations including:
 Extracted from LogicalThinkingServer as part of God Class refactoring.
 """
 
-import sys
-import logging
 import os
 from pathlib import Path
 from typing import Dict, Any, Optional
 
 from .instance_manager import InstanceManager
-from ..logging_config import is_stderr_suppressed
+from ..logging_config import configure_logger_for_debug_trace
 
-logger = logging.getLogger(__name__)
+logger = configure_logger_for_debug_trace(__name__)
 
 
 class StatePersistenceService:
@@ -88,8 +86,7 @@ class StatePersistenceService:
 
             instances = self.instance_manager.get_all_instances()
             if not instances:
-                if not is_stderr_suppressed():
-                    print("  ℹ️  No instances to save", file=sys.stderr)
+                logger.info("No instances to save")
                 return
 
             # Save each instance to a file (atomic write: .tmp then rename)
@@ -113,19 +110,16 @@ class StatePersistenceService:
                                 try:
                                     reter.compact()
                                 except Exception as compact_err:
-                                    if not is_stderr_suppressed():
-                                        print(f"  ⚠️  Compact failed for '{instance_name}': {compact_err}", file=sys.stderr)
+                                    logger.info(f"Compact failed for '{instance_name}': {compact_err}")
 
                             success, delta_path, time_ms = reter.save_incremental()
                             if success:
                                 stats = reter.get_hybrid_stats()
-                                if not is_stderr_suppressed():
-                                    print(f"  ✅ Saved '{instance_name}' (incremental) delta={stats['delta_facts']} facts ({time_ms:.2f}ms)", file=sys.stderr)
+                                logger.info(f"Saved '{instance_name}' (incremental) delta={stats['delta_facts']} facts ({time_ms:.2f}ms)")
                                 saved_count += 1
                                 incremental_count += 1
                             else:
-                                if not is_stderr_suppressed():
-                                    print(f"  ⚠️  Incremental save failed for '{instance_name}'", file=sys.stderr)
+                                logger.info(f"Incremental save failed for '{instance_name}'")
                         else:
                             # Fall back to full save
                             success, filename, time_ms = reter.save_network(str(temp_path))
@@ -133,12 +127,10 @@ class StatePersistenceService:
                             if success:
                                 # Atomic rename: .tmp → .reter
                                 temp_path.replace(snapshot_path)
-                                if not is_stderr_suppressed():
-                                    print(f"  ✅ Saved '{instance_name}' → {snapshot_path} ({time_ms:.2f}ms)", file=sys.stderr)
+                                logger.info(f"Saved '{instance_name}' -> {snapshot_path} ({time_ms:.2f}ms)")
                                 saved_count += 1
                             else:
-                                if not is_stderr_suppressed():
-                                    print(f"  ⚠️  Failed to save '{instance_name}': Unknown error", file=sys.stderr)
+                                logger.info(f"Failed to save '{instance_name}': Unknown error")
                                 # Clean up temp file on failure
                                 if temp_path.exists():
                                     temp_path.unlink()
@@ -149,28 +141,24 @@ class StatePersistenceService:
                             reter.close_hybrid()
                         reter.shutdown()
                     except Exception as shutdown_err:
-                        if not is_stderr_suppressed():
-                            print(f"  ⚠️  Error shutting down '{instance_name}': {shutdown_err}", file=sys.stderr)
+                        logger.info(f"Error shutting down '{instance_name}': {shutdown_err}")
 
                 except Exception as e:
-                    if not is_stderr_suppressed():
-                        print(f"  ❌ Error saving '{instance_name}': {e}", file=sys.stderr)
+                    logger.info(f"Error saving '{instance_name}': {e}")
                     # Clean up temp file on error
                     if temp_path.exists():
                         temp_path.unlink()
 
-            if not is_stderr_suppressed():
-                details = []
-                if skipped_count > 0:
-                    details.append(f"{skipped_count} unchanged")
-                if incremental_count > 0:
-                    details.append(f"{incremental_count} incremental")
-                detail_str = f" ({', '.join(details)})" if details else ""
-                print(f"  📊 Saved {saved_count}/{len(instances)} instances{detail_str}", file=sys.stderr)
+            details = []
+            if skipped_count > 0:
+                details.append(f"{skipped_count} unchanged")
+            if incremental_count > 0:
+                details.append(f"{incremental_count} incremental")
+            detail_str = f" ({', '.join(details)})" if details else ""
+            logger.info(f"Saved {saved_count}/{len(instances)} instances{detail_str}")
 
         except Exception as e:
-            if not is_stderr_suppressed():
-                print(f"  ❌ Error during save_all_instances: {e}", file=sys.stderr)
+            logger.info(f"Error during save_all_instances: {e}")
 
     def discover_snapshots(self) -> None:
         """
@@ -182,21 +170,17 @@ class StatePersistenceService:
             self._scan_snapshot_directory()
 
             if not self.snapshots_dir.exists():
-                if not is_stderr_suppressed():
-                    print(f"  ℹ️  No snapshots directory found (will be created on first save)", file=sys.stderr)
+                logger.info("No snapshots directory found (will be created on first save)")
                 return
 
             if not self._available_snapshots:
-                if not is_stderr_suppressed():
-                    print(f"  ℹ️  No snapshots found in {self.snapshots_dir}", file=sys.stderr)
+                logger.info(f"No snapshots found in {self.snapshots_dir}")
                 return
 
-            if not is_stderr_suppressed():
-                print(f"  📊 Discovered {len(self._available_snapshots)} snapshot(s) (will load on first use)", file=sys.stderr)
+            logger.info(f"Discovered {len(self._available_snapshots)} snapshot(s) (will load on first use)")
 
         except Exception as e:
-            if not is_stderr_suppressed():
-                print(f"  ❌ Error during discover_snapshots: {e}", file=sys.stderr)
+            logger.info(f"Error during discover_snapshots: {e}")
 
     def _scan_snapshot_directory(self) -> None:
         """
@@ -288,16 +272,14 @@ class StatePersistenceService:
         Returns:
             True if snapshot was loaded, False otherwise
         """
-        from reter_code.reter_wrapper import debug_log
-
         # Rescan directory to ensure we have the latest snapshots
-        debug_log(f"[persistence] load_snapshot_if_available({instance_name}): scanning directory...")
+        logger.debug(f"[persistence] load_snapshot_if_available({instance_name}): scanning directory...")
         self._scan_snapshot_directory()
-        debug_log(f"[persistence] Found snapshots: {list(self._available_snapshots.keys())}")
+        logger.debug(f"[persistence] Found snapshots: {list(self._available_snapshots.keys())}")
 
         # Check if snapshot is available
         if instance_name not in self._available_snapshots:
-            debug_log(f"[persistence] Snapshot '{instance_name}' NOT in available snapshots, returning False")
+            logger.debug(f"[persistence] Snapshot '{instance_name}' NOT in available snapshots, returning False")
             return False
 
         snapshot_path = self._available_snapshots[instance_name]
@@ -317,14 +299,13 @@ class StatePersistenceService:
                     reter = ReterWrapper(load_ontology=False)
                     self.instance_manager._instances[instance_name] = reter
             except Exception as inst_error:
-                if not is_stderr_suppressed():
-                    print(f"  ❌ Error creating instance '{instance_name}': {inst_error}", file=sys.stderr, flush=True)
-                    print(f"  Traceback:\n{traceback.format_exc()}", file=sys.stderr, flush=True)
+                logger.info(f"Error creating instance '{instance_name}': {inst_error}")
+                logger.debug(f"Traceback:\n{traceback.format_exc()}")
                 return False
 
             # Load the snapshot - try hybrid mode first for incremental saves
             try:
-                debug_log(f"[persistence] Loading snapshot from {snapshot_path} (hybrid={use_hybrid})...")
+                logger.debug(f"[persistence] Loading snapshot from {snapshot_path} (hybrid={use_hybrid})...")
 
                 if use_hybrid:
                     try:
@@ -333,15 +314,15 @@ class StatePersistenceService:
                         hybrid_path = str(snapshot_path)
                         import re
                         hybrid_path = re.sub(r'\.v\d+$', '', hybrid_path)
-                        debug_log(f"[persistence] Hybrid base path: {hybrid_path}")
+                        logger.debug(f"[persistence] Hybrid base path: {hybrid_path}")
 
                         success, filename, time_ms = reter.open_hybrid(hybrid_path)
                         load_mode = "hybrid"
                         stats = reter.get_hybrid_stats()
-                        debug_log(f"[persistence] Hybrid load: base={stats['base_facts']}, delta={stats['delta_facts']}")
+                        logger.debug(f"[persistence] Hybrid load: base={stats['base_facts']}, delta={stats['delta_facts']}")
                     except Exception as hybrid_err:
                         # Fall back to regular load if hybrid fails
-                        debug_log(f"[persistence] Hybrid load failed ({hybrid_err}), falling back to regular load")
+                        logger.debug(f"[persistence] Hybrid load failed ({hybrid_err}), falling back to regular load")
                         success, filename, time_ms = reter.load_network(str(snapshot_path))
                         load_mode = "regular"
                 else:
@@ -351,32 +332,28 @@ class StatePersistenceService:
                 if success:
                     # Check what sources are in the loaded snapshot
                     sources, _ = reter.get_all_sources()
-                    debug_log(f"[persistence] Snapshot loaded: {len(sources)} sources found")
+                    logger.debug(f"[persistence] Snapshot loaded: {len(sources)} sources found")
                     if sources:
-                        debug_log(f"[persistence] First 3 sources: {sources[:3]}")
+                        logger.debug(f"[persistence] First 3 sources: {sources[:3]}")
 
                     mode_indicator = " (hybrid)" if load_mode == "hybrid" else ""
-                    if not is_stderr_suppressed():
-                        print(f"  ✅ Lazy-loaded '{instance_name}'{mode_indicator} ← {snapshot_path} ({time_ms:.2f}ms)", file=sys.stderr, flush=True)
+                    logger.info(f"Lazy-loaded '{instance_name}'{mode_indicator} <- {snapshot_path} ({time_ms:.2f}ms)")
                     # Remove from available snapshots (now loaded)
                     del self._available_snapshots[instance_name]
                     return True
                 else:
-                    if not is_stderr_suppressed():
-                        print(f"  ⚠️  Failed to lazy-load '{instance_name}': load returned False", file=sys.stderr, flush=True)
+                    logger.info(f"Failed to lazy-load '{instance_name}': load returned False")
                     return False
 
             except Exception as load_error:
-                if not is_stderr_suppressed():
-                    print(f"  ❌ Error loading network for '{instance_name}': {load_error}", file=sys.stderr, flush=True)
-                    print(f"  Traceback:\n{traceback.format_exc()}", file=sys.stderr, flush=True)
+                logger.info(f"Error loading network for '{instance_name}': {load_error}")
+                logger.debug(f"Traceback:\n{traceback.format_exc()}")
                 return False
 
         except Exception as e:
             import traceback
-            if not is_stderr_suppressed():
-                print(f"  ❌ Unexpected error lazy-loading '{instance_name}': {e}", file=sys.stderr, flush=True)
-                print(f"  Traceback:\n{traceback.format_exc()}", file=sys.stderr, flush=True)
+            logger.info(f"Unexpected error lazy-loading '{instance_name}': {e}")
+            logger.debug(f"Traceback:\n{traceback.format_exc()}")
             return False
 
     def load_all_instances(self) -> None:
@@ -388,8 +365,7 @@ class StatePersistenceService:
         try:
             # Check if snapshots directory exists
             if not self.snapshots_dir.exists():
-                if not is_stderr_suppressed():
-                    print(f"  ℹ️  No snapshots directory found (will be created on first save)", file=sys.stderr)
+                logger.info("No snapshots directory found (will be created on first save)")
                 return
 
             # Find all .reter snapshot files (with leading dot: .{instance_name}.reter or .reter.v1)
@@ -397,8 +373,7 @@ class StatePersistenceService:
             snapshot_files.extend(self.snapshots_dir.glob(".*.reter.v1"))
 
             if not snapshot_files:
-                if not is_stderr_suppressed():
-                    print(f"  ℹ️  No snapshots found in {self.snapshots_dir}", file=sys.stderr)
+                logger.info(f"No snapshots found in {self.snapshots_dir}")
                 return
 
             # Load each snapshot
@@ -420,23 +395,18 @@ class StatePersistenceService:
                     success, filename, time_ms = reter.load_network(str(snapshot_path))
 
                     if success:
-                        if not is_stderr_suppressed():
-                            print(f"  ✅ Loaded '{instance_name}' ← {snapshot_path}", file=sys.stderr)
+                        logger.info(f"Loaded '{instance_name}' <- {snapshot_path}")
                         loaded_count += 1
                     else:
-                        if not is_stderr_suppressed():
-                            print(f"  ⚠️  Failed to load '{instance_name}': Unknown error", file=sys.stderr)
+                        logger.info(f"Failed to load '{instance_name}': Unknown error")
 
                 except Exception as e:
-                    if not is_stderr_suppressed():
-                        print(f"  ❌ Error loading '{instance_name}': {e}", file=sys.stderr)
+                    logger.info(f"Error loading '{instance_name}': {e}")
 
-            if not is_stderr_suppressed():
-                print(f"  📊 Loaded {loaded_count}/{len(snapshot_files)} instances", file=sys.stderr)
+            logger.info(f"Loaded {loaded_count}/{len(snapshot_files)} instances")
 
         except Exception as e:
-            if not is_stderr_suppressed():
-                print(f"  ❌ Error during load_all_instances: {e}", file=sys.stderr)
+            logger.info(f"Error during load_all_instances: {e}")
 
     def save_state(self, instance_name: str, filename: str) -> Dict[str, Any]:
         """

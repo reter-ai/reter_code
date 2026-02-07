@@ -18,7 +18,9 @@ from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
 from enum import Enum
 
-from ..logging_config import nlq_debug_logger as debug_log
+from ..logging_config import configure_logger_for_nlq_debug
+
+logger = configure_logger_for_nlq_debug(__name__)
 
 # Check if Agent SDK is available
 _agent_sdk_available = None
@@ -472,8 +474,8 @@ def _parse_requests(text: str) -> List[Dict[str, str]]:
 def _extract_query(text: str, query_type: QueryType) -> Optional[str]:
     """Extract query from code block."""
     lang = "cadsl" if query_type == QueryType.CADSL else "reql|sparql|sql"
-    debug_log.debug(f"[NLQ_EXTRACT] Extracting {query_type.value} query from text ({len(text)} chars)")
-    debug_log.debug(f"[NLQ_EXTRACT] Looking for code blocks with pattern: ```{lang}")
+    logger.debug(f"[NLQ_EXTRACT] Extracting {query_type.value} query from text ({len(text)} chars)")
+    logger.debug(f"[NLQ_EXTRACT] Looking for code blocks with pattern: ```{lang}")
 
     # Try to find query in code blocks
     code_block_match = re.search(
@@ -484,19 +486,19 @@ def _extract_query(text: str, query_type: QueryType) -> Optional[str]:
     if code_block_match:
         query = code_block_match.group(1).strip()
         if query:
-            debug_log.debug(f"[NLQ_EXTRACT] Found query in code block ({len(query)} chars)")
-            debug_log.debug(f"[NLQ_EXTRACT] Query preview: {query[:300]}...")
+            logger.debug(f"[NLQ_EXTRACT] Found query in code block ({len(query)} chars)")
+            logger.debug(f"[NLQ_EXTRACT] Query preview: {query[:300]}...")
             return query
         else:
-            debug_log.debug("[NLQ_EXTRACT] Code block found but empty")
+            logger.debug("[NLQ_EXTRACT] Code block found but empty")
 
-    debug_log.debug("[NLQ_EXTRACT] No query found in text")
+    logger.debug("[NLQ_EXTRACT] No query found in text")
     # Log where we looked
     if "```" in text:
         blocks = re.findall(r'```(\w*)', text)
-        debug_log.debug(f"[NLQ_EXTRACT] Found code blocks with languages: {blocks}")
+        logger.debug(f"[NLQ_EXTRACT] Found code blocks with languages: {blocks}")
     else:
-        debug_log.debug("[NLQ_EXTRACT] No code blocks (```) found in text at all")
+        logger.debug("[NLQ_EXTRACT] No code blocks (```) found in text at all")
 
     return None
 
@@ -561,16 +563,16 @@ def _create_query_tools(reter_client=None):
 
     @tool("run_reql", "Execute a REQL query and return results (use to test queries)", {"query": str, "limit": int})
     async def run_reql_tool(args):
-        debug_log.debug(f"run_reql called with args: {args}")
+        logger.debug(f"run_reql called with args: {args}")
         if reter_client is None:
-            debug_log.debug("run_reql: RETER client not available")
+            logger.debug("run_reql: RETER client not available")
             return {"content": [{"type": "text", "text": "Error: RETER server not connected"}], "is_error": True}
 
         query = args.get("query", "")
         limit = args.get("limit", 10)
 
         try:
-            debug_log.debug(f"run_reql executing: {query[:200]}...")
+            logger.debug(f"run_reql executing: {query[:200]}...")
             # Use asyncio.to_thread to avoid blocking the event loop with synchronous ZeroMQ
             result = await asyncio.to_thread(reter_client.reql, query)
 
@@ -578,7 +580,7 @@ def _create_query_tools(reter_client=None):
             rows = result.get("rows", [])[:limit]
             row_count = result.get("count", len(rows))
 
-            debug_log.debug(f"run_reql result: {row_count} rows")
+            logger.debug(f"run_reql result: {row_count} rows")
 
             content = f"Query executed successfully. {row_count} total rows.\n\nFirst {min(limit, row_count)} results:\n"
             for i, row in enumerate(rows):
@@ -586,15 +588,15 @@ def _create_query_tools(reter_client=None):
 
             return {"content": [{"type": "text", "text": content}]}
         except Exception as e:
-            debug_log.debug(f"run_reql error: {e}")
+            logger.debug(f"run_reql error: {e}")
             return {"content": [{"type": "text", "text": f"Query error: {str(e)}"}], "is_error": True}
 
     @tool("run_rag_search", "Semantic search - find code/docs by meaning (query: str, top_k: int, entity_types: list)", {"query": str, "top_k": int, "entity_types": str})
     async def run_rag_search_tool(args):
-        debug_log.debug(f"run_rag_search called with args: {args}")
+        logger.debug(f"run_rag_search called with args: {args}")
 
         if reter_client is None:
-            debug_log.debug("run_rag_search: RETER client not available")
+            logger.debug("run_rag_search: RETER client not available")
             return {"content": [{"type": "text", "text": "Error: RETER server not connected"}], "is_error": True}
 
         query = args.get("query", "")
@@ -603,7 +605,7 @@ def _create_query_tools(reter_client=None):
         entity_types = [t.strip() for t in entity_types_str.split(",")] if entity_types_str else None
 
         try:
-            debug_log.debug(f"run_rag_search searching: '{query}' (top_k={top_k}, types={entity_types})")
+            logger.debug(f"run_rag_search searching: '{query}' (top_k={top_k}, types={entity_types})")
 
             # Use asyncio.to_thread to avoid blocking the event loop with synchronous ZeroMQ
             result = await asyncio.to_thread(
@@ -613,7 +615,7 @@ def _create_query_tools(reter_client=None):
                 entity_types=entity_types
             )
             results = result.get("results", [])
-            debug_log.debug(f"run_rag_search result: {len(results)} matches")
+            logger.debug(f"run_rag_search result: {len(results)} matches")
 
             content = f"Semantic search for: '{query}'\nFound {len(results)} results:\n\n"
             for i, r in enumerate(results[:top_k]):
@@ -626,15 +628,15 @@ def _create_query_tools(reter_client=None):
 
             return {"content": [{"type": "text", "text": content}]}
         except Exception as e:
-            debug_log.debug(f"run_rag_search error: {e}")
+            logger.debug(f"run_rag_search error: {e}")
             return {"content": [{"type": "text", "text": f"RAG search error: {str(e)}"}], "is_error": True}
 
     @tool("run_rag_duplicates", "Find duplicate code pairs using semantic similarity (similarity: float 0-1, limit: int, entity_types: str)", {"similarity": float, "limit": int, "entity_types": str})
     async def run_rag_duplicates_tool(args):
-        debug_log.debug(f"run_rag_duplicates called with args: {args}")
+        logger.debug(f"run_rag_duplicates called with args: {args}")
 
         if reter_client is None:
-            debug_log.debug("run_rag_duplicates: RETER client not available")
+            logger.debug("run_rag_duplicates: RETER client not available")
             return {"content": [{"type": "text", "text": "Error: RETER server not connected"}], "is_error": True}
 
         similarity = args.get("similarity", 0.85)
@@ -643,7 +645,7 @@ def _create_query_tools(reter_client=None):
         entity_types = [t.strip() for t in entity_types_str.split(",")] if entity_types_str else ["method", "function"]
 
         try:
-            debug_log.debug(f"run_rag_duplicates: similarity={similarity}, limit={limit}, types={entity_types}")
+            logger.debug(f"run_rag_duplicates: similarity={similarity}, limit={limit}, types={entity_types}")
 
             # Use asyncio.to_thread to avoid blocking the event loop with synchronous ZeroMQ
             result = await asyncio.to_thread(
@@ -654,7 +656,7 @@ def _create_query_tools(reter_client=None):
             )
             pairs = result.get("duplicates", [])
 
-            debug_log.debug(f"run_rag_duplicates result: {len(pairs)} pairs found")
+            logger.debug(f"run_rag_duplicates result: {len(pairs)} pairs found")
 
             content = f"Found {len(pairs)} duplicate code pairs (similarity >= {similarity}):\n\n"
             for i, pair in enumerate(pairs[:limit]):
@@ -665,15 +667,15 @@ def _create_query_tools(reter_client=None):
 
             return {"content": [{"type": "text", "text": content}]}
         except Exception as e:
-            debug_log.debug(f"run_rag_duplicates error: {e}")
+            logger.debug(f"run_rag_duplicates error: {e}")
             return {"content": [{"type": "text", "text": f"RAG duplicates error: {str(e)}"}], "is_error": True}
 
     @tool("run_rag_clusters", "Find clusters of semantically similar code using K-means (n_clusters: int, min_size: int, entity_types: str)", {"n_clusters": int, "min_size": int, "entity_types": str})
     async def run_rag_clusters_tool(args):
-        debug_log.debug(f"run_rag_clusters called with args: {args}")
+        logger.debug(f"run_rag_clusters called with args: {args}")
 
         if reter_client is None:
-            debug_log.debug("run_rag_clusters: RETER client not available")
+            logger.debug("run_rag_clusters: RETER client not available")
             return {"content": [{"type": "text", "text": "Error: RETER server not connected"}], "is_error": True}
 
         n_clusters = args.get("n_clusters", 50)
@@ -682,7 +684,7 @@ def _create_query_tools(reter_client=None):
         entity_types = [t.strip() for t in entity_types_str.split(",")] if entity_types_str else ["method", "function"]
 
         try:
-            debug_log.debug(f"run_rag_clusters: n_clusters={n_clusters}, min_size={min_size}, types={entity_types}")
+            logger.debug(f"run_rag_clusters: n_clusters={n_clusters}, min_size={min_size}, types={entity_types}")
 
             # Use asyncio.to_thread to avoid blocking the event loop with synchronous ZeroMQ
             result = await asyncio.to_thread(
@@ -692,7 +694,7 @@ def _create_query_tools(reter_client=None):
             )
             clusters = result.get("clusters", [])
 
-            debug_log.debug(f"run_rag_clusters result: {len(clusters)} clusters found")
+            logger.debug(f"run_rag_clusters result: {len(clusters)} clusters found")
 
             content = f"Found {len(clusters)} code clusters (min_size >= {min_size}):\n\n"
             for cluster in clusters[:20]:  # Show first 20 clusters
@@ -709,16 +711,16 @@ def _create_query_tools(reter_client=None):
 
             return {"content": [{"type": "text", "text": content}]}
         except Exception as e:
-            debug_log.debug(f"run_rag_clusters error: {e}")
+            logger.debug(f"run_rag_clusters error: {e}")
             return {"content": [{"type": "text", "text": f"RAG clusters error: {str(e)}"}], "is_error": True}
 
     @tool("run_cadsl", "Execute a CADSL script and return results. Use to test CADSL pipelines before final output. Returns parsed results or error messages.", {"script": str, "limit": int})
     async def run_cadsl_tool(args):
         """Execute a CADSL script and return results."""
-        debug_log.debug(f"run_cadsl called with args: {args}")
+        logger.debug(f"run_cadsl called with args: {args}")
 
         if reter_client is None:
-            debug_log.debug("run_cadsl: RETER client not available")
+            logger.debug("run_cadsl: RETER client not available")
             return {"content": [{"type": "text", "text": "Error: RETER server not connected"}], "is_error": True}
 
         script = args.get("script", "")
@@ -728,7 +730,7 @@ def _create_query_tools(reter_client=None):
             return {"content": [{"type": "text", "text": "Error: Empty CADSL script"}], "is_error": True}
 
         try:
-            debug_log.debug(f"run_cadsl executing: {script[:200]}...")
+            logger.debug(f"run_cadsl executing: {script[:200]}...")
 
             # Execute CADSL via ReterClient
             # Use asyncio.to_thread to avoid blocking the event loop with synchronous ZeroMQ
@@ -745,7 +747,7 @@ def _create_query_tools(reter_client=None):
                 results = [result]
                 count = 1
 
-            debug_log.debug(f"run_cadsl result: {count} items")
+            logger.debug(f"run_cadsl result: {count} items")
 
             # Build output
             content = f"CADSL executed successfully. {count} total results.\n\n"
@@ -771,16 +773,16 @@ def _create_query_tools(reter_client=None):
 
         except Exception as e:
             error_msg = f"CADSL execution error: {str(e)}"
-            debug_log.debug(f"run_cadsl error: {e}", exc_info=True)
+            logger.debug(f"run_cadsl error: {e}", exc_info=True)
             return {"content": [{"type": "text", "text": error_msg}], "is_error": True}
 
     @tool("run_file_scan", "Test file_scan CADSL source block. Scans RETER-tracked sources with glob/content patterns. Use to verify file_scan parameters before using in CADSL pipelines.", {"glob": str, "contains": str, "exclude": str, "include_matches": bool, "context_lines": int, "limit": int})
     async def run_file_scan_tool(args):
         """Execute a file scan over RETER sources and return results."""
-        debug_log.debug(f"run_file_scan called with args: {args}")
+        logger.debug(f"run_file_scan called with args: {args}")
 
         if reter_client is None:
-            debug_log.debug("run_file_scan: RETER client not available")
+            logger.debug("run_file_scan: RETER client not available")
             return {"content": [{"type": "text", "text": "Error: RETER server not connected"}], "is_error": True}
 
         # Extract parameters
@@ -792,7 +794,7 @@ def _create_query_tools(reter_client=None):
         limit = args.get("limit", 50)
 
         try:
-            debug_log.debug(f"run_file_scan: glob={glob_pattern}, contains={contains}, exclude={exclude_str}")
+            logger.debug(f"run_file_scan: glob={glob_pattern}, contains={contains}, exclude={exclude_str}")
 
             # Use asyncio.to_thread to avoid blocking the event loop with synchronous ZeroMQ
             result = await asyncio.to_thread(
@@ -807,7 +809,7 @@ def _create_query_tools(reter_client=None):
             )
             files = result.get("files", [])
 
-            debug_log.debug(f"run_file_scan result: {len(files)} files")
+            logger.debug(f"run_file_scan result: {len(files)} files")
 
             # Build output
             total_files = len(files)
@@ -847,7 +849,7 @@ def _create_query_tools(reter_client=None):
 
         except Exception as e:
             error_msg = f"File scan error: {str(e)}"
-            debug_log.debug(f"run_file_scan error: {e}", exc_info=True)
+            logger.debug(f"run_file_scan error: {e}", exc_info=True)
             return {"content": [{"type": "text", "text": error_msg}], "is_error": True}
 
     # Build tools list - all tools require reter_client
@@ -878,10 +880,10 @@ def _build_agent_options(system_prompt: str, max_turns: int, reter_client=None):
     """
     from claude_agent_sdk import ClaudeAgentOptions
 
-    debug_log.debug("[BUILD_OPTIONS] Creating MCP tools server...")
+    logger.debug("[BUILD_OPTIONS] Creating MCP tools server...")
     # Create custom MCP server with query helper tools
     query_tools_server = _create_query_tools(reter_client)
-    debug_log.debug("[BUILD_OPTIONS] MCP tools server created")
+    logger.debug("[BUILD_OPTIONS] MCP tools server created")
 
     # Configure tools - include both built-in and custom tools
     base_tools = [
@@ -905,7 +907,7 @@ def _build_agent_options(system_prompt: str, max_turns: int, reter_client=None):
     disallowed_tools = ["Glob", "Bash", "Edit", "Write", "WebSearch", "WebFetch"]
     permission_mode = "bypassPermissions"
 
-    debug_log.debug("[BUILD_OPTIONS] Creating ClaudeAgentOptions...")
+    logger.debug("[BUILD_OPTIONS] Creating ClaudeAgentOptions...")
     options = ClaudeAgentOptions(
         system_prompt=system_prompt,
         allowed_tools=allowed_tools,
@@ -915,7 +917,7 @@ def _build_agent_options(system_prompt: str, max_turns: int, reter_client=None):
         mcp_servers={"query_helpers": query_tools_server}
     )
 
-    debug_log.debug(f"[BUILD_OPTIONS] Done. allowed_tools: {allowed_tools}")
+    logger.debug(f"[BUILD_OPTIONS] Done. allowed_tools: {allowed_tools}")
     return options
 
 
@@ -923,37 +925,37 @@ async def _process_agent_response(client, tools_used: List[str]) -> str:
     """Process agent response and return the final text output."""
     from claude_agent_sdk import AssistantMessage, TextBlock, ToolUseBlock, ToolResultBlock
 
-    debug_log.debug("[NLQ_PROCESS] Starting to process agent response...")
+    logger.debug("[NLQ_PROCESS] Starting to process agent response...")
     result_text = ""
     message_count = 0
     block_count = 0
 
     async for message in client.receive_response():
         message_count += 1
-        debug_log.debug(f"[NLQ_PROCESS] Received message #{message_count}: {type(message).__name__}")
+        logger.debug(f"[NLQ_PROCESS] Received message #{message_count}: {type(message).__name__}")
 
         if isinstance(message, AssistantMessage):
-            debug_log.debug(f"[NLQ_PROCESS] AssistantMessage has {len(message.content)} content blocks")
+            logger.debug(f"[NLQ_PROCESS] AssistantMessage has {len(message.content)} content blocks")
             for block in message.content:
                 block_count += 1
                 block_type = type(block).__name__
-                debug_log.debug(f"[NLQ_PROCESS] Processing block #{block_count}: {block_type}")
+                logger.debug(f"[NLQ_PROCESS] Processing block #{block_count}: {block_type}")
 
                 if isinstance(block, TextBlock):
                     result_text = block.text
                     text_preview = result_text[:300] if len(result_text) > 300 else result_text
-                    debug_log.debug(f"[NLQ_PROCESS] TextBlock content ({len(result_text)} chars): {text_preview}...")
+                    logger.debug(f"[NLQ_PROCESS] TextBlock content ({len(result_text)} chars): {text_preview}...")
                 elif isinstance(block, ToolUseBlock):
                     tool_name = block.name
                     tool_input = block.input
                     tools_used.append(tool_name)
-                    debug_log.debug(f"[NLQ_PROCESS] TOOL CALL: {tool_name}")
-                    debug_log.debug(f"[NLQ_PROCESS] TOOL INPUT: {str(tool_input)[:500]}")
+                    logger.debug(f"[NLQ_PROCESS] TOOL CALL: {tool_name}")
+                    logger.debug(f"[NLQ_PROCESS] TOOL INPUT: {str(tool_input)[:500]}")
                 elif isinstance(block, ToolResultBlock):
                     result_preview = str(block.content)[:500] if block.content else "(empty)"
-                    debug_log.debug(f"[NLQ_PROCESS] TOOL RESULT ({len(str(block.content)) if block.content else 0} chars): {result_preview}")
+                    logger.debug(f"[NLQ_PROCESS] TOOL RESULT ({len(str(block.content)) if block.content else 0} chars): {result_preview}")
 
-    debug_log.debug(f"[NLQ_PROCESS] Finished processing. Messages: {message_count}, Blocks: {block_count}, Result length: {len(result_text)}")
+    logger.debug(f"[NLQ_PROCESS] Finished processing. Messages: {message_count}, Blocks: {block_count}, Result length: {len(result_text)}")
     return result_text
 
 
@@ -977,13 +979,13 @@ async def _call_agent(prompt: str, system_prompt: str, max_turns: int = 15, rete
     tools_used = []
     options = _build_agent_options(system_prompt, max_turns, reter_client)
 
-    debug_log.debug(f"Starting single-turn agent session")
+    logger.debug(f"Starting single-turn agent session")
 
     async with ClaudeSDKClient(options=options) as client:
         await client.query(prompt)
         result_text = await _process_agent_response(client, tools_used)
 
-    debug_log.debug(f"Agent finished. Tools used: {tools_used}")
+    logger.debug(f"Agent finished. Tools used: {tools_used}")
     return result_text
 
 
@@ -1045,7 +1047,7 @@ async def generate_reql_query(
     # Build agent options once for the session
     options = _build_agent_options(system_prompt, max_iterations * 3, reter_client)
 
-    debug_log.debug(f"Starting REQL generation session with max_iterations={max_iterations}")
+    logger.debug(f"Starting REQL generation session with max_iterations={max_iterations}")
 
     try:
         async with ClaudeSDKClient(options=options) as client:
@@ -1053,8 +1055,8 @@ async def generate_reql_query(
             await client.query(initial_prompt)
             response_text = await _process_agent_response(client, tools_used)
             attempts += 1
-            debug_log.debug(f"\n{'='*60}\nREQL ITERATION {attempts}/{max_iterations}\n{'='*60}")
-            debug_log.debug(f"Agent response: {response_text[:500]}...")
+            logger.debug(f"\n{'='*60}\nREQL ITERATION {attempts}/{max_iterations}\n{'='*60}")
+            logger.debug(f"Agent response: {response_text[:500]}...")
 
             for iteration in range(max_iterations):
                 # Try to extract query from response
@@ -1062,22 +1064,22 @@ async def generate_reql_query(
 
                 if not query:
                     # No query found, ask again within same session
-                    debug_log.debug("No query found in response, asking again")
+                    logger.debug("No query found in response, asking again")
                     await client.query("Please output the REQL query in a ```reql code block.")
                     response_text = await _process_agent_response(client, tools_used)
                     attempts += 1
-                    debug_log.debug(f"Retry response: {response_text[:500]}...")
+                    logger.debug(f"Retry response: {response_text[:500]}...")
                     continue
 
                 last_query = query
-                debug_log.debug(f"Generated query: {query}")
+                logger.debug(f"Generated query: {query}")
 
                 # Execute and validate via ReterClient
                 try:
                     # Use asyncio.to_thread to avoid blocking the event loop with synchronous ZeroMQ
                     result = await asyncio.to_thread(reter_client.reql, query)
                     row_count = result.get("count", len(result.get("rows", [])))
-                    debug_log.debug(f"Query executed successfully: {row_count} rows")
+                    logger.debug(f"Query executed successfully: {row_count} rows")
 
                     return QueryGenerationResult(
                         success=True,
@@ -1088,7 +1090,7 @@ async def generate_reql_query(
 
                 except Exception as e:
                     last_error = str(e)
-                    debug_log.debug(f"Query execution error: {last_error}")
+                    logger.debug(f"Query execution error: {last_error}")
 
                     # Send error feedback within same session
                     error_feedback = f"""Your query failed with error:
@@ -1104,8 +1106,8 @@ Please fix the query and output the corrected version in a ```reql code block.""
                     await client.query(error_feedback)
                     response_text = await _process_agent_response(client, tools_used)
                     attempts += 1
-                    debug_log.debug(f"\n{'='*60}\nREQL RETRY {attempts}/{max_iterations}\n{'='*60}")
-                    debug_log.debug(f"Retry response: {response_text[:500]}...")
+                    logger.debug(f"\n{'='*60}\nREQL RETRY {attempts}/{max_iterations}\n{'='*60}")
+                    logger.debug(f"Retry response: {response_text[:500]}...")
 
             # Max iterations reached
             return QueryGenerationResult(
@@ -1117,7 +1119,7 @@ Please fix the query and output the corrected version in a ```reql code block.""
             )
 
     except Exception as e:
-        debug_log.debug(f"Agent SDK error: {e}")
+        logger.debug(f"Agent SDK error: {e}")
         return QueryGenerationResult(
             success=False,
             query=last_query,
@@ -1189,79 +1191,79 @@ async def generate_cadsl_query(
     # Build agent options once for the session
     options = _build_agent_options(system_prompt, max_iterations * 3, reter_client)
 
-    debug_log.debug(f"\n{'#'*70}")
-    debug_log.debug(f"[NLQ_GEN] STARTING CADSL GENERATION")
-    debug_log.debug(f"[NLQ_GEN] Question: {question}")
-    debug_log.debug(f"[NLQ_GEN] Schema info: {schema_info}")
-    debug_log.debug(f"[NLQ_GEN] Max iterations: {max_iterations}")
-    debug_log.debug(f"[NLQ_GEN] Has similar tools context: {similar_tools_context is not None}")
+    logger.debug(f"\n{'#'*70}")
+    logger.debug(f"[NLQ_GEN] STARTING CADSL GENERATION")
+    logger.debug(f"[NLQ_GEN] Question: {question}")
+    logger.debug(f"[NLQ_GEN] Schema info: {schema_info}")
+    logger.debug(f"[NLQ_GEN] Max iterations: {max_iterations}")
+    logger.debug(f"[NLQ_GEN] Has similar tools context: {similar_tools_context is not None}")
     if similar_tools_context:
-        debug_log.debug(f"[NLQ_GEN] Similar tools context preview: {similar_tools_context[:500]}...")
-    debug_log.debug(f"[NLQ_GEN] Initial prompt: {initial_prompt[:500]}...")
-    debug_log.debug(f"{'#'*70}")
+        logger.debug(f"[NLQ_GEN] Similar tools context preview: {similar_tools_context[:500]}...")
+    logger.debug(f"[NLQ_GEN] Initial prompt: {initial_prompt[:500]}...")
+    logger.debug(f"{'#'*70}")
 
     client = None
     try:
-        debug_log.debug("[NLQ_GEN] Creating ClaudeSDKClient instance...")
+        logger.debug("[NLQ_GEN] Creating ClaudeSDKClient instance...")
         client = ClaudeSDKClient(options=options)
-        debug_log.debug("[NLQ_GEN] ClaudeSDKClient created successfully")
+        logger.debug("[NLQ_GEN] ClaudeSDKClient created successfully")
 
-        debug_log.debug("[NLQ_GEN] Calling __aenter__ to start session...")
+        logger.debug("[NLQ_GEN] Calling __aenter__ to start session...")
         await client.__aenter__()
-        debug_log.debug("[NLQ_GEN] Session started, client ready")
+        logger.debug("[NLQ_GEN] Session started, client ready")
 
         # Send initial query
-        debug_log.debug("[NLQ_GEN] Sending initial query to agent...")
+        logger.debug("[NLQ_GEN] Sending initial query to agent...")
         await client.query(initial_prompt)
-        debug_log.debug("[NLQ_GEN] Initial query sent, waiting for response...")
+        logger.debug("[NLQ_GEN] Initial query sent, waiting for response...")
 
         response_text = await _process_agent_response(client, tools_used)
-        debug_log.debug("[NLQ_GEN] Initial response received and processed")
+        logger.debug("[NLQ_GEN] Initial response received and processed")
         attempts += 1
 
-        debug_log.debug(f"\n{'='*60}")
-        debug_log.debug(f"[NLQ_GEN] ITERATION {attempts}/{max_iterations}")
-        debug_log.debug(f"[NLQ_GEN] Tools used so far: {tools_used}")
-        debug_log.debug(f"[NLQ_GEN] Response length: {len(response_text)} chars")
-        debug_log.debug(f"[NLQ_GEN] Response preview: {response_text[:800]}...")
-        debug_log.debug(f"{'='*60}")
+        logger.debug(f"\n{'='*60}")
+        logger.debug(f"[NLQ_GEN] ITERATION {attempts}/{max_iterations}")
+        logger.debug(f"[NLQ_GEN] Tools used so far: {tools_used}")
+        logger.debug(f"[NLQ_GEN] Response length: {len(response_text)} chars")
+        logger.debug(f"[NLQ_GEN] Response preview: {response_text[:800]}...")
+        logger.debug(f"{'='*60}")
 
         for iteration in range(max_iterations):
-            debug_log.debug(f"\n[NLQ_GEN] --- Loop iteration {iteration + 1}/{max_iterations} ---")
+            logger.debug(f"\n[NLQ_GEN] --- Loop iteration {iteration + 1}/{max_iterations} ---")
 
             # Check for resource requests (legacy pattern - now handled by tools)
             requests = _parse_requests(response_text)
             if requests:
-                debug_log.debug(f"[NLQ_GEN] Agent requested resources: {requests}")
+                logger.debug(f"[NLQ_GEN] Agent requested resources: {requests}")
                 tools_used.extend([r["type"] for r in requests])
 
                 resources = _handle_requests(requests)
-                debug_log.debug(f"[NLQ_GEN] Providing resources ({len(resources)} chars)...")
+                logger.debug(f"[NLQ_GEN] Providing resources ({len(resources)} chars)...")
                 await client.query(f"Here are the requested resources:\n\n{resources}\n\nNow generate the CADSL query for: {question}")
                 response_text = await _process_agent_response(client, tools_used)
                 attempts += 1
-                debug_log.debug(f"[NLQ_GEN] Resource response: {response_text[:500]}...")
+                logger.debug(f"[NLQ_GEN] Resource response: {response_text[:500]}...")
                 continue
 
             # Try to extract query
-            debug_log.debug("[NLQ_GEN] Attempting to extract CADSL query from response...")
+            logger.debug("[NLQ_GEN] Attempting to extract CADSL query from response...")
             query = _extract_query(response_text, QueryType.CADSL)
 
             if not query:
                 # No query found, ask again within same session
-                debug_log.debug("[NLQ_GEN] No CADSL query found in response, prompting agent again...")
+                logger.debug("[NLQ_GEN] No CADSL query found in response, prompting agent again...")
                 await client.query("Please output the CADSL query in a ```cadsl code block.")
                 response_text = await _process_agent_response(client, tools_used)
                 attempts += 1
-                debug_log.debug(f"[NLQ_GEN] Retry response ({len(response_text)} chars): {response_text[:500]}...")
+                logger.debug(f"[NLQ_GEN] Retry response ({len(response_text)} chars): {response_text[:500]}...")
                 continue
 
-            debug_log.debug(f"[NLQ_GEN] SUCCESS! Extracted CADSL query ({len(query)} chars):")
-            debug_log.debug(f"[NLQ_GEN] Query:\n{query}")
+            logger.debug(f"[NLQ_GEN] SUCCESS! Extracted CADSL query ({len(query)} chars):")
+            logger.debug(f"[NLQ_GEN] Query:\n{query}")
 
             # For CADSL, we return the query and let the caller execute/validate
-            debug_log.debug(f"[NLQ_GEN] Returning successful result after {attempts} attempts")
-            debug_log.debug(f"[NLQ_GEN] Tools used: {tools_used}")
+            logger.debug(f"[NLQ_GEN] Returning successful result after {attempts} attempts")
+            logger.debug(f"[NLQ_GEN] Tools used: {tools_used}")
             return QueryGenerationResult(
                 success=True,
                 query=query,
@@ -1270,9 +1272,9 @@ async def generate_cadsl_query(
             )
 
         # Max iterations reached
-        debug_log.debug(f"[NLQ_GEN] FAILED: Max iterations ({max_iterations}) reached without generating query")
-        debug_log.debug(f"[NLQ_GEN] Tools used: {tools_used}")
-        debug_log.debug(f"[NLQ_GEN] Last response: {response_text[:500]}...")
+        logger.debug(f"[NLQ_GEN] FAILED: Max iterations ({max_iterations}) reached without generating query")
+        logger.debug(f"[NLQ_GEN] Tools used: {tools_used}")
+        logger.debug(f"[NLQ_GEN] Last response: {response_text[:500]}...")
         return QueryGenerationResult(
             success=False,
             query=None,
@@ -1283,8 +1285,8 @@ async def generate_cadsl_query(
 
     except Exception as e:
         import traceback
-        debug_log.debug(f"[NLQ_GEN] EXCEPTION: {type(e).__name__}: {e}")
-        debug_log.debug(f"[NLQ_GEN] Traceback:\n{traceback.format_exc()}")
+        logger.debug(f"[NLQ_GEN] EXCEPTION: {type(e).__name__}: {e}")
+        logger.debug(f"[NLQ_GEN] Traceback:\n{traceback.format_exc()}")
         return QueryGenerationResult(
             success=False,
             query=None,
@@ -1295,11 +1297,11 @@ async def generate_cadsl_query(
     finally:
         if client is not None:
             try:
-                debug_log.debug("[NLQ_GEN] Closing client session...")
+                logger.debug("[NLQ_GEN] Closing client session...")
                 await client.__aexit__(None, None, None)
-                debug_log.debug("[NLQ_GEN] Client session closed successfully")
+                logger.debug("[NLQ_GEN] Client session closed successfully")
             except Exception as close_err:
-                debug_log.debug(f"[NLQ_GEN] Error closing client: {close_err}")
+                logger.debug(f"[NLQ_GEN] Error closing client: {close_err}")
 
 
 async def retry_cadsl_query(
@@ -1349,15 +1351,15 @@ async def retry_cadsl_query(
     )
     prompt = f"Original question: {question}\n\n{prompt}"
 
-    debug_log.debug(f"\n{'#'*70}")
-    debug_log.debug(f"[NLQ_RETRY] CADSL RETRY REQUEST")
-    debug_log.debug(f"[NLQ_RETRY] Original question: {question}")
-    debug_log.debug(f"[NLQ_RETRY] Previous query returned: {result_status}")
-    debug_log.debug(f"[NLQ_RETRY] Result count: {result_count}")
-    debug_log.debug(f"[NLQ_RETRY] Error message: {error_message}")
-    debug_log.debug(f"[NLQ_RETRY] Previous query:\n{previous_query}")
-    debug_log.debug(f"[NLQ_RETRY] Retry prompt:\n{prompt[:800]}...")
-    debug_log.debug(f"{'#'*70}")
+    logger.debug(f"\n{'#'*70}")
+    logger.debug(f"[NLQ_RETRY] CADSL RETRY REQUEST")
+    logger.debug(f"[NLQ_RETRY] Original question: {question}")
+    logger.debug(f"[NLQ_RETRY] Previous query returned: {result_status}")
+    logger.debug(f"[NLQ_RETRY] Result count: {result_count}")
+    logger.debug(f"[NLQ_RETRY] Error message: {error_message}")
+    logger.debug(f"[NLQ_RETRY] Previous query:\n{previous_query}")
+    logger.debug(f"[NLQ_RETRY] Retry prompt:\n{prompt[:800]}...")
+    logger.debug(f"{'#'*70}")
 
     # Format system prompt with project root (same as main function)
     import os
@@ -1365,13 +1367,13 @@ async def retry_cadsl_query(
     system_prompt = CADSL_SYSTEM_PROMPT_TEMPLATE.format(project_root=project_root)
 
     try:
-        debug_log.debug("[NLQ_RETRY] Calling agent for retry...")
+        logger.debug("[NLQ_RETRY] Calling agent for retry...")
         response_text = await _call_agent(prompt, system_prompt, reter_client=reter_client)
-        debug_log.debug(f"[NLQ_RETRY] Agent response ({len(response_text)} chars): {response_text[:800]}...")
+        logger.debug(f"[NLQ_RETRY] Agent response ({len(response_text)} chars): {response_text[:800]}...")
 
         # Check if agent confirms empty is correct
         if "CONFIRM_EMPTY" in response_text.upper():
-            debug_log.debug("[NLQ_RETRY] Agent confirmed empty results are correct (CONFIRM_EMPTY)")
+            logger.debug("[NLQ_RETRY] Agent confirmed empty results are correct (CONFIRM_EMPTY)")
             return QueryGenerationResult(
                 success=True,
                 query=None,
@@ -1381,11 +1383,11 @@ async def retry_cadsl_query(
             )
 
         # Try to extract new query
-        debug_log.debug("[NLQ_RETRY] Attempting to extract new CADSL query...")
+        logger.debug("[NLQ_RETRY] Attempting to extract new CADSL query...")
         query = _extract_query(response_text, QueryType.CADSL)
         if query:
-            debug_log.debug(f"[NLQ_RETRY] SUCCESS! Agent provided new query ({len(query)} chars):")
-            debug_log.debug(f"[NLQ_RETRY] New query:\n{query}")
+            logger.debug(f"[NLQ_RETRY] SUCCESS! Agent provided new query ({len(query)} chars):")
+            logger.debug(f"[NLQ_RETRY] New query:\n{query}")
             return QueryGenerationResult(
                 success=True,
                 query=query,
@@ -1394,7 +1396,7 @@ async def retry_cadsl_query(
             )
 
         # No query extracted
-        debug_log.debug("[NLQ_RETRY] FAILED: Agent did not provide a new query or CONFIRM_EMPTY")
+        logger.debug("[NLQ_RETRY] FAILED: Agent did not provide a new query or CONFIRM_EMPTY")
         return QueryGenerationResult(
             success=False,
             query=None,
@@ -1405,8 +1407,8 @@ async def retry_cadsl_query(
 
     except Exception as e:
         import traceback
-        debug_log.debug(f"[NLQ_RETRY] EXCEPTION: {type(e).__name__}: {e}")
-        debug_log.debug(f"[NLQ_RETRY] Traceback:\n{traceback.format_exc()}")
+        logger.debug(f"[NLQ_RETRY] EXCEPTION: {type(e).__name__}: {e}")
+        logger.debug(f"[NLQ_RETRY] Traceback:\n{traceback.format_exc()}")
         return QueryGenerationResult(
             success=False,
             query=None,
@@ -1436,5 +1438,5 @@ async def classify_query(question: str) -> Dict[str, Any]:
         return {"type": "reql", "confidence": 0.5, "reasoning": "Could not parse classification"}
 
     except Exception as e:
-        debug_log.debug(f"Classification error: {e}")
+        logger.debug(f"Classification error: {e}")
         return {"type": "reql", "confidence": 0.5, "reasoning": f"Error: {e}"}

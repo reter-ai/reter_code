@@ -37,8 +37,10 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Set, NamedTuple
 from dataclasses import dataclass, field
 
-from ..reter_wrapper import debug_log
+from ..logging_config import configure_logger_for_debug_trace
 from .utils import matches_pattern
+
+logger = configure_logger_for_debug_trace(__name__)
 
 
 @dataclass
@@ -393,11 +395,11 @@ class SourceStateManager:
                     changes.to_delete.append(cached)
 
         elapsed = time.time() - start
-        debug_log(
+        logger.debug(
             f"[SourceState] scan_and_diff: +{len(changes.to_add)} ~{len(changes.to_modify)} "
             f"-{len(changes.to_delete)} in {elapsed:.2f}s"
         )
-        debug_log(f"[SourceState] JS/TS files: found={js_ts_found_count}, excluded={js_ts_excluded_count}")
+        logger.debug(f"[SourceState] JS/TS files: found={js_ts_found_count}, excluded={js_ts_excluded_count}")
 
         return changes
 
@@ -468,7 +470,7 @@ class SourceStateManager:
         Args:
             all_sources: List of source IDs from reter.get_all_sources()
         """
-        debug_log(f"[SourceState] Building initial state from {len(all_sources)} RETER sources")
+        logger.debug(f"[SourceState] Building initial state from {len(all_sources)} RETER sources")
 
         for source_id in all_sources:
             if "|" not in source_id:
@@ -502,4 +504,4 @@ class SourceStateManager:
             )
             self.set_file(file_info)
 
-        debug_log(f"[SourceState] Built state with {len(self._state.get('files', {}))} files")
+        logger.debug(f"[SourceState] Built state with {len(self._state.get('files', {}))} files")

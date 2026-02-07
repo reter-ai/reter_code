@@ -10,12 +10,11 @@ Contains utility functions for the RETER integration layer:
 
 import hashlib
 import os
-import sys
 import time
 import traceback
 from typing import Any, Callable, TypeVar
 
-from .logging_config import configure_logger_for_debug_trace, is_stderr_suppressed
+from .logging_config import configure_logger_for_debug_trace
 from .reter_exceptions import DefaultInstanceNotInitialised
 
 # Configure module logger to also write to debug_trace.log
@@ -41,14 +40,14 @@ def set_initialization_in_progress(value: bool) -> None:
     """Set whether initialization is currently in progress."""
     global _initialization_in_progress
     _initialization_in_progress = value
-    debug_log(f"[InitState] _initialization_in_progress = {value}")
+    logger.debug(f"[InitState] _initialization_in_progress = {value}")
 
 
 def set_initialization_complete(value: bool) -> None:
     """Set whether initialization is complete."""
     global _initialization_complete
     _initialization_complete = value
-    debug_log(f"[InitState] _initialization_complete = {value}")
+    logger.debug(f"[InitState] _initialization_complete = {value}")
 
 
 def is_initialization_complete() -> bool:
@@ -100,11 +99,6 @@ DEBUG_MAX_VALUE_LEN = int(os.getenv("RETER_DEBUG_MAX_VALUE_LEN", "200"))
 # REQL query timeout in milliseconds (default: 5 minutes = 300000ms)
 # Set RETER_REQL_TIMEOUT environment variable to override (in seconds)
 RETER_REQL_TIMEOUT_MS = int(os.getenv("RETER_REQL_TIMEOUT", "300")) * 1000
-
-
-def debug_log(msg: str):
-    """Write debug message via standard logger (configured to write to debug_trace.log)."""
-    logger.debug(msg)
 
 
 def _shorten_value(value: Any, max_len: int = None) -> str:
@@ -219,52 +213,42 @@ def safe_cpp_call(func: Callable[..., T], *args, **kwargs) -> T:
     """
     func_name = func.__name__ if hasattr(func, '__name__') else str(func)
     args_str = _format_args(args, kwargs)
-    debug_log(f"safe_cpp_call ENTER: {func_name}({args_str})")
+    logger.debug(f"safe_cpp_call ENTER: {func_name}({args_str})")
     start_time = time.perf_counter()
     try:
         result = func(*args, **kwargs)
         elapsed_ms = (time.perf_counter() - start_time) * 1000
         result_str = _shorten_value(result)
-        debug_log(f"safe_cpp_call EXIT: {func_name} [{elapsed_ms:.1f}ms] -> {result_str}")
+        logger.debug(f"safe_cpp_call EXIT: {func_name} [{elapsed_ms:.1f}ms] -> {result_str}")
         return result
     except SystemError as e:
         elapsed_ms = (time.perf_counter() - start_time) * 1000
         # SystemError typically indicates C extension problems
         error_msg = f"C++ SystemError in {func_name}: {e}"
-        debug_log(f"safe_cpp_call EXIT: {func_name} [{elapsed_ms:.1f}ms] FAILED - SystemError: {e}")
-        debug_log(f"  Args were: {args_str}")
-        debug_log(f"  Traceback: {traceback.format_exc()}")
-        if not is_stderr_suppressed():
-            print(f"ERROR: {error_msg}", file=sys.stderr)
-            traceback.print_exc()
+        logger.debug(f"safe_cpp_call EXIT: {func_name} [{elapsed_ms:.1f}ms] FAILED - SystemError: {e}")
+        logger.debug(f"  Args were: {args_str}")
+        logger.debug(f"  Traceback: {traceback.format_exc()}")
         raise RuntimeError(error_msg) from e
     except MemoryError as e:
         elapsed_ms = (time.perf_counter() - start_time) * 1000
         error_msg = f"Memory error in C++ call {func_name}: {e}"
-        debug_log(f"safe_cpp_call EXIT: {func_name} [{elapsed_ms:.1f}ms] FAILED - MemoryError: {e}")
-        debug_log(f"  Args were: {args_str}")
-        if not is_stderr_suppressed():
-            print(f"ERROR: {error_msg}", file=sys.stderr)
+        logger.debug(f"safe_cpp_call EXIT: {func_name} [{elapsed_ms:.1f}ms] FAILED - MemoryError: {e}")
+        logger.debug(f"  Args were: {args_str}")
         raise RuntimeError(error_msg) from e
     except OSError as e:
         elapsed_ms = (time.perf_counter() - start_time) * 1000
         # OSError can occur with file operations in C++
         error_msg = f"OS error in C++ call {func_name}: {e}"
-        debug_log(f"safe_cpp_call EXIT: {func_name} [{elapsed_ms:.1f}ms] FAILED - OSError: {e}")
-        debug_log(f"  Args were: {args_str}")
-        if not is_stderr_suppressed():
-            print(f"ERROR: {error_msg}", file=sys.stderr)
+        logger.debug(f"safe_cpp_call EXIT: {func_name} [{elapsed_ms:.1f}ms] FAILED - OSError: {e}")
+        logger.debug(f"  Args were: {args_str}")
         raise RuntimeError(error_msg) from e
     except Exception as e:
         elapsed_ms = (time.perf_counter() - start_time) * 1000
         # Catch any other exceptions
         error_msg = f"Error in C++ call {func_name}: {type(e).__name__}: {e}"
-        debug_log(f"safe_cpp_call EXIT: {func_name} [{elapsed_ms:.1f}ms] FAILED - {type(e).__name__}: {e}")
-        debug_log(f"  Args were: {args_str}")
-        debug_log(f"  Traceback: {traceback.format_exc()}")
-        if not is_stderr_suppressed():
-            print(f"ERROR: {error_msg}", file=sys.stderr)
-            traceback.print_exc()
+        logger.debug(f"safe_cpp_call EXIT: {func_name} [{elapsed_ms:.1f}ms] FAILED - {type(e).__name__}: {e}")
+        logger.debug(f"  Args were: {args_str}")
+        logger.debug(f"  Traceback: {traceback.format_exc()}")
         raise
 
 
@@ -355,7 +339,6 @@ __all__ = [
     # Debug utilities
     "DEBUG_MAX_VALUE_LEN",
     "RETER_REQL_TIMEOUT_MS",
-    "debug_log",
     "_shorten_value",
     "_format_args",
     # Safe C++ call

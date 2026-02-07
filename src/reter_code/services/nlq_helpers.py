@@ -11,7 +11,9 @@ from typing import Dict, Any, List, Optional
 from .nlq_constants import REQL_SYNTAX_HELP
 
 # Debug logger - use centralized configuration
-from ..logging_config import nlq_debug_logger as debug_log
+from ..logging_config import configure_logger_for_nlq_debug
+
+logger = configure_logger_for_nlq_debug(__name__)
 
 
 def query_instance_schema(reter) -> str:
@@ -55,10 +57,10 @@ def query_instance_schema(reter) -> str:
                 schema_lines.append(f"Predicates: {', '.join(preds[:15])}")  # Top 15 predicates
                 schema_lines.append("")
             schema_info = "\n".join(schema_lines)
-            debug_log.debug(f"SCHEMA INFO:\n{schema_info}")
+            logger.debug(f"SCHEMA INFO:\n{schema_info}")
             return schema_info
     except Exception as e:
-        debug_log.debug(f"Failed to query schema: {e}")
+        logger.debug(f"Failed to query schema: {e}")
     return ""
 
 

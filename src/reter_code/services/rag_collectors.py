@@ -11,7 +11,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
-from ..reter_utils import debug_log
+from ..logging_config import configure_logger_for_debug_trace
+
+logger = configure_logger_for_debug_trace(__name__)
 
 if TYPE_CHECKING:
     from ..reter_wrapper import ReterWrapper
@@ -211,7 +213,7 @@ class RAGCollectorMixin:
                         rel_path = parts[1]  # Take part after /src/
                 module_name = rel_path.replace("/", ".")
                 changed_modules.add(module_name)
-            debug_log(f"[RAG] _collect_all_python_literals_bulk: filtering by {len(changed_modules)} modules: {list(changed_modules)[:5]}...")
+            logger.debug(f"[RAG] _collect_all_python_literals_bulk: filtering by {len(changed_modules)} modules: {list(changed_modules)[:5]}...")
 
         try:
             query = """
@@ -311,7 +313,7 @@ class RAGCollectorMixin:
                 rel_path = rel_path.replace("\\", "/")
                 # For JavaScript, use the file path directly as the "module"
                 changed_modules.add(rel_path)
-            debug_log(f"[RAG] _collect_all_javascript_literals_bulk: filtering by {len(changed_modules)} modules: {list(changed_modules)[:5]}...")
+            logger.debug(f"[RAG] _collect_all_javascript_literals_bulk: filtering by {len(changed_modules)} modules: {list(changed_modules)[:5]}...")
 
         try:
             query = """

@@ -32,13 +32,13 @@ Supported settings in reter_code.json:
 }
 """
 
-import sys
+import logging
 import os
 import json
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from ..logging_config import is_stderr_suppressed
+logger = logging.getLogger(__name__)
 
 
 class ConfigLoader:
@@ -131,15 +131,12 @@ class ConfigLoader:
                 with open(config_path, 'r', encoding='utf-8') as f:
                     self._config = json.load(f)
                 self._config_path = config_path
-                if not is_stderr_suppressed():
-                    print(f"📋 Loaded config from: {config_path}", file=sys.stderr, flush=True)
+                logger.info("Loaded config from: %s", config_path)
                 self._apply_config()
             except json.JSONDecodeError as e:
-                if not is_stderr_suppressed():
-                    print(f"⚠️  Invalid JSON in {config_path}: {e}", file=sys.stderr, flush=True)
+                logger.info("Invalid JSON in %s: %s", config_path, e)
             except Exception as e:
-                if not is_stderr_suppressed():
-                    print(f"⚠️  Error loading {config_path}: {e}", file=sys.stderr, flush=True)
+                logger.info("Error loading %s: %s", config_path, e)
 
         self._loaded = True
         return self._config_path is not None
@@ -163,8 +160,7 @@ class ConfigLoader:
                         value = ",".join(str(v) for v in value)
 
                     os.environ[env_var] = value
-                    if not is_stderr_suppressed():
-                        print(f"   {env_var}={value} (from reter_code.json)", file=sys.stderr, flush=True)
+                    logger.debug("%s=%s (from reter_code.json)", env_var, value)
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get a config value."""

@@ -20,7 +20,9 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from ..logging_config import nlq_debug_logger as debug_log
+from ..logging_config import configure_logger_for_nlq_debug
+
+logger = configure_logger_for_nlq_debug(__name__)
 from .agent_sdk_client import (
     is_agent_sdk_available,
     generate_reql_query,
@@ -97,7 +99,7 @@ class CADSLToolIndex:
             return
 
         if not self.tools_dir.exists():
-            debug_log.warning(f"CADSL tools directory not found: {self.tools_dir}")
+            logger.warning(f"CADSL tools directory not found: {self.tools_dir}")
             return
 
         # First pass: extract metadata
@@ -108,7 +110,7 @@ class CADSLToolIndex:
                     self._tools[metadata.name] = metadata
                     self._tool_names.append(metadata.name)
             except Exception as e:
-                debug_log.debug(f"Failed to index {cadsl_file}: {e}")
+                logger.debug(f"Failed to index {cadsl_file}: {e}")
 
         if not self._tools:
             self._indexed = True
@@ -119,13 +121,13 @@ class CADSLToolIndex:
             embedding_service = self._get_embedding_service()
             texts = [self._tools[name].embedding_text for name in self._tool_names]
             self._embeddings = embedding_service.generate_embeddings_batch(texts)
-            debug_log.debug(f"Generated embeddings for {len(self._tools)} CADSL tools")
+            logger.debug(f"Generated embeddings for {len(self._tools)} CADSL tools")
         except Exception as e:
-            debug_log.warning(f"Failed to generate embeddings, falling back to keyword matching: {e}")
+            logger.warning(f"Failed to generate embeddings, falling back to keyword matching: {e}")
             self._embeddings = None
 
         self._indexed = True
-        debug_log.debug(f"Indexed {len(self._tools)} CADSL tools with semantic embeddings")
+        logger.debug(f"Indexed {len(self._tools)} CADSL tools with semantic embeddings")
 
     def _extract_metadata(self, file_path: Path) -> Optional[CADSLToolMetadata]:
         """Extract metadata from a CADSL file."""
@@ -266,7 +268,7 @@ class CADSLToolIndex:
             # Sort by score descending
             results.sort(key=lambda x: x[1], reverse=True)
 
-            debug_log.debug(
+            logger.debug(
                 f"Semantic search for '{question[:50]}...': "
                 f"found {len(results)} matches, top={results[0][0].name if results else 'none'}"
             )
@@ -274,7 +276,7 @@ class CADSLToolIndex:
             return results[:max_results]
 
         except Exception as e:
-            debug_log.warning(f"Semantic search failed, falling back to keywords: {e}")
+            logger.warning(f"Semantic search failed, falling back to keywords: {e}")
             return self._find_similar_keyword(question, max_results, min_score)
 
     def _find_similar_keyword(
@@ -760,7 +762,7 @@ def _check_keyword_rag_routing(question: str) -> Optional[QueryClassification]:
 
     for keyword in rag_keywords:
         if keyword in question_lower:
-            debug_log.debug(f"KEYWORD RAG ROUTING: '{keyword}' detected, forcing RAG")
+            logger.debug(f"KEYWORD RAG ROUTING: '{keyword}' detected, forcing RAG")
             return QueryClassification(
                 query_type=QueryType.RAG,
                 confidence=1.0,
@@ -795,11 +797,11 @@ async def classify_query_with_llm(question: str, ctx) -> QueryClassification:
     similar_tools = find_similar_cadsl_tools(question, max_results=5)
     if similar_tools:
         tool_names = [t.name for t in similar_tools]
-        debug_log.debug(f"CASE-BASED REASONING: Found similar tools: {tool_names}")
+        logger.debug(f"CASE-BASED REASONING: Found similar tools: {tool_names}")
 
     # Use Agent SDK for classification
     if not is_agent_sdk_available():
-        debug_log.debug("Agent SDK not available, defaulting to REQL")
+        logger.debug("Agent SDK not available, defaulting to REQL")
         return QueryClassification(
             query_type=QueryType.REQL,
             confidence=0.5,
@@ -808,7 +810,7 @@ async def classify_query_with_llm(question: str, ctx) -> QueryClassification:
         )
 
     try:
-        debug_log.debug("Using Agent SDK for classification")
+        logger.debug("Using Agent SDK for classification")
         result = await classify_query_sdk(question)
         query_type = QueryType(result.get("type", "reql"))
         return QueryClassification(
@@ -819,7 +821,7 @@ async def classify_query_with_llm(question: str, ctx) -> QueryClassification:
             similar_tools=similar_tools,
         )
     except Exception as e:
-        debug_log.debug(f"Agent SDK classification failed: {e}, defaulting to REQL")
+        logger.debug(f"Agent SDK classification failed: {e}, defaulting to REQL")
         return QueryClassification(
             query_type=QueryType.REQL,
             confidence=0.5,
@@ -1072,9 +1074,9 @@ async def generate_query_with_tools(
     similar_tools_context = None
     if similar_tools:
         similar_tools_context = build_similar_tools_section(similar_tools)
-        debug_log.debug(f"Including {len(similar_tools)} similar tools as templates")
+        logger.debug(f"Including {len(similar_tools)} similar tools as templates")
 
-    debug_log.debug(f"Using Agent SDK for {query_type.value} generation")
+    logger.debug(f"Using Agent SDK for {query_type.value} generation")
 
     if query_type == QueryType.REQL:
         result = await generate_reql_query(
@@ -1096,7 +1098,7 @@ async def generate_query_with_tools(
         )
 
     if result.success and result.query:
-        debug_log.debug(f"Agent SDK generated query: {result.query[:200]}...")
+        logger.debug(f"Agent SDK generated query: {result.query[:200]}...")
         return result.query
     else:
         raise RuntimeError(f"Query generation failed: {result.error}")
