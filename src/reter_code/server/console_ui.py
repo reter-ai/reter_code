@@ -352,6 +352,9 @@ class ConsoleUI:
             content.append("  Add MCP to Claude Code:\n  ", style="dim")
             project_root = str(self.server.config.project_root) if self.server.config.project_root else ""
             content.append(self._get_mcp_command(project_root), style="bold white")
+            content.append("\n\n  ", style="dim")
+            content.append("[C]", style="bold")
+            content.append("opy to clipboard", style="dim")
         else:
             content.append("Starting up...", style="bold yellow")
 
@@ -397,8 +400,6 @@ class ConsoleUI:
     def _build_footer(self) -> Panel:
         """Build footer panel."""
         text = Text()
-        text.append("[C]", style="bold")
-        text.append("opy MCP command  ", style="dim")
         text.append("[K]", style="bold")
         text.append("ompact  ", style="dim")
         text.append("[D]", style="bold")
