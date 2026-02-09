@@ -252,6 +252,17 @@ def is_test_name(name: str) -> bool:
             '_test_' in name_lower)
 
 
+def is_test_file(path: str) -> bool:
+    """Check if file path indicates a test file.
+
+    Supports conventions for Python (test_*.py, *_test.py),
+    C++ (*_test.cpp, *_tests.cpp, test_*.cpp),
+    Go (*_test.go), Rust (*_test.rs), and test directories.
+    """
+    import re
+    return bool(re.search(r'test_|_tests?\.|/tests?/', path))
+
+
 def is_constant(name: str) -> bool:
     """Check if name follows constant naming (ALL_CAPS)."""
     return name.isupper() and '_' in name or name.isupper()

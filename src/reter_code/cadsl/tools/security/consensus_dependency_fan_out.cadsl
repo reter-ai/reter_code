@@ -1,0 +1,80 @@
+# consensus_dependency_fan_out - Find consensus methods with many outgoing dependencies
+#
+# Consensus-critical code must be deterministic and stable. Methods in
+# validation/script with many outgoing calls (callees) are fragile because:
+# 1. Any dependency change could subtly alter consensus behavior
+# 2. More dependencies = more potential for non-determinism
+# 3. Hard to audit code with many call targets
+#
+# Security rationale: A consensus bug can fork the network, potentially
+# enabling double-spend attacks worth millions. Consensus code should
+# have minimal, well-audited dependencies.
+
+detector consensus_dependency_fan_out(category="security", severity="high") {
+    """Find consensus-critical methods with many outgoing dependencies."""
+
+    param min_callees: int = 5;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?name ?file ?line ?line_count (COUNT(?callee) AS ?callee_count)
+        WHERE {
+            ?m type method .
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?m has-line-count ?line_count .
+            ?m maybe-calls ?callee .
+            FILTER (REGEX(?file, "validation|script/interpreter|consensus|pow\\.cpp|signet"))
+            FILTER (!REGEX(?file, "test|leveldb"))
+        }
+        GROUP BY ?name ?file ?line ?line_count
+        HAVING (?callee_count >= {min_callees})
+        ORDER BY DESC(?callee_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, line_count, callee_count }
+    | map {
+        ...row,
+        issue: "consensus_dependency_fan_out",
+        message: "Consensus method '{name}' ({file}:{line}, {line_count} lines) calls {callee_count} other methods",
+        suggestion: "Audit all callees for determinism. Consider reducing dependencies or inlining critical logic."
+    }
+    | emit { findings }
+}
+
+# Cross-module variant: count callees in DIFFERENT files (worse coupling)
+detector consensus_cross_module_deps(category="security", severity="high") {
+    """Find consensus methods that depend on code in many different files."""
+
+    param min_dep_files: int = 3;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?name ?file ?line ?line_count (COUNT(DISTINCT ?callee_file) AS ?dep_file_count)
+        WHERE {
+            ?m type method .
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?m has-line-count ?line_count .
+            ?m maybe-calls ?callee .
+            ?callee is-in-file ?callee_file .
+            FILTER (REGEX(?file, "validation|script/interpreter|consensus|pow\\.cpp"))
+            FILTER (!REGEX(?file, "test|leveldb"))
+            FILTER (?callee_file != ?file)
+        }
+        GROUP BY ?name ?file ?line ?line_count
+        HAVING (?dep_file_count >= {min_dep_files})
+        ORDER BY DESC(?dep_file_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, line_count, dep_file_count }
+    | map {
+        ...row,
+        issue: "consensus_cross_module_deps",
+        message: "Consensus method '{name}' ({file}:{line}) depends on code in {dep_file_count} different files",
+        suggestion: "High coupling in consensus code increases fork risk. Audit cross-module dependencies carefully."
+    }
+    | emit { findings }
+}

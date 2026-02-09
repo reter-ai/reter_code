@@ -20,11 +20,11 @@ detector complex_untested(category="test_coverage", severity="high") {
             ?e has-line-count ?line_count .
             OPTIONAL { ?e is-defined-in ?c . ?c has-name ?class_name }
             FILTER ( ?line_count >= {min_lines} )
-            FILTER ( !REGEX(?file, "test") )
+            FILTER ( !REGEX(?file, "test_|_tests?\\.|/tests?/") )
             FILTER NOT EXISTS {
                 ?test calls ?e .
                 ?test is-in-file ?test_file .
-                FILTER ( REGEX(?test_file, "test") )
+                FILTER ( REGEX(?test_file, "test_|_tests?\\.|/tests?/") )
             }
         }
         ORDER BY DESC(?line_count)
@@ -69,11 +69,11 @@ detector complex_untested_fast(category="test_coverage", severity="high") {
             ?e has-line-count ?line_count .
             OPTIONAL { ?e is-defined-in ?c . ?c has-name ?class_name }
             FILTER ( ?line_count >= {min_lines} )
-            FILTER ( !REGEX(?file, "test") )
+            FILTER ( !REGEX(?file, "test_|_tests?\\.|/tests?/") )
             FILTER NOT EXISTS {
                 ?test calls ?e .
                 ?test is-in-file ?test_file .
-                FILTER ( REGEX(?test_file, "test") )
+                FILTER ( REGEX(?test_file, "test_|_tests?\\.|/tests?/") )
             }
         }
         ORDER BY DESC(?line_count)

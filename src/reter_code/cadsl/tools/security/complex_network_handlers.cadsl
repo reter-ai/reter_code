@@ -1,0 +1,81 @@
+# complex_network_handlers - Find complex methods in P2P message processing
+#
+# The P2P layer handles untrusted input from the network. Complex methods
+# in this layer are high-value targets for attackers because:
+# 1. They parse data from untrusted peers
+# 2. Bugs can lead to remote crashes, memory corruption, or consensus issues
+# 3. Complex code is harder to audit and more likely to contain bugs
+#
+# This detector finds long methods/functions in network-facing code.
+
+detector complex_network_handlers(category="security", severity="high") {
+    """Find complex methods in P2P/network processing code."""
+
+    param min_lines: int = 40;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?m ?name ?file ?line ?line_count ?class_name
+        WHERE {
+            { ?m type method } UNION { ?m type function }
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?m has-line-count ?line_count .
+            OPTIONAL { ?m is-defined-in ?c . ?c has-name ?class_name }
+            FILTER (REGEX(?file, "net_processing|net\\.cpp|net\\.h|torcontrol|i2p\\.cpp|connman"))
+            FILTER (?line_count >= {min_lines})
+            FILTER (!REGEX(?file, "test|leveldb"))
+        }
+        ORDER BY DESC(?line_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, line_count, class_name }
+    | map {
+        ...row,
+        issue: "complex_network_handler",
+        message: "Complex network handler '{name}' ({line_count} lines) in {file}:{line}",
+        suggestion: "Review for: input validation, DoS vectors, resource exhaustion, malformed message handling"
+    }
+    | emit { findings }
+}
+
+# RAG-enriched version: find similar well-factored network handlers as examples
+detector complex_network_handlers_enriched(category="security", severity="high") {
+    """Find complex P2P handlers with similar well-designed patterns as examples."""
+
+    param min_lines: int = 40;
+    param limit: int = 30;
+
+    reql {
+        SELECT ?m ?name ?file ?line ?line_count ?class_name
+        WHERE {
+            { ?m type method } UNION { ?m type function }
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?m has-line-count ?line_count .
+            OPTIONAL { ?m is-defined-in ?c . ?c has-name ?class_name }
+            FILTER (REGEX(?file, "net_processing|net\\.cpp|net\\.h|torcontrol|i2p\\.cpp|connman"))
+            FILTER (?line_count >= {min_lines})
+            FILTER (!REGEX(?file, "test|leveldb"))
+        }
+        ORDER BY DESC(?line_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, line_count, class_name }
+    | rag_enrich {
+        query: "{name} network message handler validation",
+        top_k: 3,
+        threshold: 0.4,
+        mode: all
+    }
+    | map {
+        ...row,
+        issue: "complex_network_handler",
+        message: "Complex network handler '{name}' ({line_count} lines) in {file}:{line}",
+        suggestion: "Review for: input validation, DoS vectors, resource exhaustion, malformed message handling",
+        similar_patterns: rag_matches
+    }
+    | emit { findings }
+}

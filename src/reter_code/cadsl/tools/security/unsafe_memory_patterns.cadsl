@@ -1,0 +1,90 @@
+# unsafe_memory_patterns - Find methods semantically similar to unsafe memory operations
+#
+# Uses RAG semantic search to find code entities across the codebase
+# that involve raw memory operations (memcpy, malloc, pointer arithmetic),
+# then joins with REQL for security-sensitive file context.
+#
+# Security rationale:
+# 1. Raw memory operations in crypto/wallet code can lead to buffer overflows
+# 2. Manual memory management risks use-after-free and double-free
+# 3. Pointer arithmetic can cause out-of-bounds access
+#
+# Note: This is a RAG-based heuristic detector. Expect some false positives
+# from methods that mention memory concepts in docs but use them safely.
+
+detector unsafe_memory_patterns(category="security", severity="high") {
+    """Find methods in security-sensitive code that involve raw memory operations."""
+
+    param similarity: float = 0.55;
+    param limit: int = 50;
+
+    # Get all methods in security-sensitive files
+    reql {
+        SELECT ?m ?name ?file ?line ?line_count ?class_name
+        WHERE {
+            ?m type method .
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            OPTIONAL { ?m is-defined-in ?c . ?c has-name ?class_name }
+            OPTIONAL { ?m has-line-count ?line_count }
+            FILTER (REGEX(?file, "crypto/|key\\.cpp|key\\.h|wallet/|script/|pubkey|hash|sign"))
+            FILTER (!REGEX(?file, "test|leveldb|crc32c|minisketch|secp256k1"))
+        }
+    }
+    | rag_enrich {
+        query: "memory copy buffer pointer allocation free cleanse wipe secure erase",
+        top_k: 3,
+        threshold: {similarity},
+        mode: best
+    }
+    | filter { rag_similarity >= {similarity} }
+    | select { name, file, line, line_count, class_name, rag_similarity }
+    | map {
+        ...row,
+        issue: "unsafe_memory_pattern",
+        message: "'{name}' in {file}:{line} matches unsafe memory patterns (similarity: {rag_similarity})",
+        suggestion: "Review for: buffer overflows, use-after-free, uninitialized reads, integer overflow in size calculations"
+    }
+    | order_by { -rag_similarity }
+    | limit { {limit} }
+    | emit { findings }
+}
+
+# Broader variant: search across ALL production code
+detector unsafe_memory_patterns_broad(category="security", severity="medium") {
+    """Find methods anywhere in the codebase that involve raw memory operations."""
+
+    param similarity: float = 0.60;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?m ?name ?file ?line ?line_count ?class_name
+        WHERE {
+            ?m type method .
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            OPTIONAL { ?m is-defined-in ?c . ?c has-name ?class_name }
+            OPTIONAL { ?m has-line-count ?line_count }
+            FILTER (!REGEX(?file, "test|leveldb|crc32c|minisketch|secp256k1"))
+        }
+    }
+    | rag_enrich {
+        query: "memory copy buffer pointer allocation free cleanse wipe secure erase",
+        top_k: 3,
+        threshold: {similarity},
+        mode: best
+    }
+    | filter { rag_similarity >= {similarity} }
+    | select { name, file, line, line_count, class_name, rag_similarity }
+    | map {
+        ...row,
+        issue: "unsafe_memory_pattern",
+        message: "'{name}' in {file}:{line} matches unsafe memory patterns (similarity: {rag_similarity})",
+        suggestion: "Review for: buffer overflows, use-after-free, uninitialized reads, integer overflow in size calculations"
+    }
+    | order_by { -rag_similarity }
+    | limit { {limit} }
+    | emit { findings }
+}

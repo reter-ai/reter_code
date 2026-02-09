@@ -17,8 +17,8 @@ detector untested_methods(category="test_coverage", severity="medium") {
             ?m is-defined-in ?c .
             ?c has-name ?class_name .
             OPTIONAL { ?m has-line-count ?line_count }
-            FILTER ( !REGEX(?name, "^_") && !REGEX(?file, "test_|_test\\.py") )
-            MINUS { ?test calls ?m . ?test is-in-file ?test_file . FILTER ( REGEX(?test_file, "test_") ) }
+            FILTER ( !REGEX(?name, "^_") && !REGEX(?file, "test_|_tests?\\.|/tests?/") )
+            MINUS { ?test calls ?m . ?test is-in-file ?test_file . FILTER ( REGEX(?test_file, "test_|_tests?\\.|/tests?/") ) }
         }
         ORDER BY DESC(?line_count)
         LIMIT {limit}

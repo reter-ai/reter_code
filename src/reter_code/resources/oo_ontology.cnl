@@ -52,12 +52,10 @@ Every translation-unit is a source-unit.
 
 % Exception handling statements
 Every catch-clause is a statement.
-Every except-handler is a catch-clause.
 Every finally-clause is a statement.
 Every try-block is a statement.
 Every try-else-block is a statement.
 Every throw-statement is a statement.
-Every raise-statement is a throw-statement.
 
 % Control flow statements
 Every return-statement is a statement.

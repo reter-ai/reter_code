@@ -657,7 +657,7 @@ class TestExceptionToolsQueries:
             ?t type oo:TryBlock .
             ?t inFile ?file .
             ?t atLine ?line .
-            OPTIONAL { ?h type oo:ExceptHandler . ?h definedIn ?t . ?h handlerType ?handler_type }
+            OPTIONAL { ?h type oo:CatchClause . ?h definedIn ?t . ?h handlerType ?handler_type }
         }
         """
         result = real_reter.reql(query)
@@ -669,7 +669,7 @@ class TestExceptionToolsQueries:
         query = """
         SELECT ?r ?exception_type ?file ?line
         WHERE {
-            ?r type oo:RaiseStatement .
+            ?r type oo:ThrowStatement .
             ?r inFile ?file .
             ?r atLine ?line .
             OPTIONAL { ?r exceptionType ?exception_type }

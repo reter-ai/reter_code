@@ -1,0 +1,40 @@
+# complex_input_parsers - Find complex parsing/deserialization functions
+#
+# OpenClaw processes external input from many channels: user messages, webhook
+# payloads, configuration commands, and file uploads. Complex parser functions
+# are high-risk because they operate on untrusted data and bugs can lead to
+# injection, denial of service, or unexpected behavior.
+#
+# CWE-502: Deserialization of Untrusted Data
+# CWE-20: Improper Input Validation
+
+detector complex_input_parsers(category="security", severity="high") {
+    """Find complex parsing/deserialization functions that process external input."""
+
+    param min_lines: int = 20;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?m ?name ?file ?line ?line_count
+        WHERE {
+            { ?m type method } UNION { ?m type function }
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?m has-line-count ?line_count .
+            FILTER (REGEX(?name, "parse|decode|unmarshal|deserialize"))
+            FILTER (?line_count >= {min_lines})
+            FILTER (!REGEX(?file, "test|spec|mock|node_modules|vendor"))
+        }
+        ORDER BY DESC(?line_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, line_count }
+    | map {
+        ...row,
+        issue: "complex_input_parser",
+        message: "Complex parser '{name}' ({line_count} lines) in {file}:{line}",
+        suggestion: "Review for: bounds checking, input length limits, injection via crafted payloads, recursive parsing DoS"
+    }
+    | emit { findings }
+}

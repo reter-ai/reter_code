@@ -1,0 +1,39 @@
+# command_injection_surface - Find functions that execute shell commands
+#
+# OpenClaw spawns external processes for various integrations (Gog, scheduled
+# tasks, shell environments). Functions that construct or execute shell commands
+# are prime injection targets, especially when arguments come from user input,
+# channel messages, or configuration values.
+#
+# CWE-78: OS Command Injection
+
+detector command_injection_surface(category="security", severity="high") {
+    """Find functions that execute shell commands or spawn external processes."""
+
+    param min_lines: int = 10;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?m ?name ?file ?line ?line_count
+        WHERE {
+            { ?m type method } UNION { ?m type function }
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?m has-line-count ?line_count .
+            FILTER (REGEX(?name, "exec|spawn|shell|runCommand|splitShellArgs|[Cc]ommand[Rr]un|launchProcess"))
+            FILTER (?line_count >= {min_lines})
+            FILTER (!REGEX(?file, "test|spec|mock|node_modules|vendor"))
+        }
+        ORDER BY DESC(?line_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, line_count }
+    | map {
+        ...row,
+        issue: "command_injection_surface",
+        message: "Shell execution function '{name}' ({line_count} lines) in {file}:{line}",
+        suggestion: "Review for: unsanitized user input in command args, shell metacharacter injection, argument splitting vulnerabilities"
+    }
+    | emit { findings }
+}

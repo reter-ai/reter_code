@@ -720,10 +720,10 @@ After loading, you can query:
 
 ✅ **Exception Handling Facts**:
 - `try-block` - Try statement blocks with metadata
-- `except-handler` - Exception handlers with detection flags
+- `catch-clause` - Exception handlers with detection flags
 - `try-else-block` - Try-else blocks
 - `finally-block` - Finally blocks with RAII detection
-- `raise-statement` - Raise statements with exception info
+- `throw-statement` - Raise/throw statements with exception info
 - `return-statement` - Return statements with error code detection
 - `with-statement` - Context manager (with) statements
 - `context-manager` - Individual context managers in with statements
@@ -737,14 +737,14 @@ After loading, you can query:
 | | `has-except-handlers` | `str` | Number of except handlers |
 | | `has-else` | `bool` | Has else block |
 | | `has-finally` | `bool` | Has finally block |
-| `except-handler` | `is-in-try-block` | `str` | Parent try block |
+| `catch-clause` | `is-in-try-block` | `str` | Parent try block |
 | | `has-exception-type` | `str` | Caught exception type |
 | | `has-alias-name` | `str` | Exception alias (e.g., `as e`) |
 | | `is-at-line` | `str` | Line number |
 | | `is-silent-swallow` | `bool` | Empty/pass handler (code smell!) |
 | | `is-general-except` | `bool` | Catches broad exception type |
 | | `is-bare-except` | `bool` | Bare except clause |
-| `raise-statement` | `is-in-function` | `str` | Function containing raise |
+| `throw-statement` | `is-in-function` | `str` | Function containing raise |
 | | `has-exception-type` | `str` | Raised exception type |
 | | `is-at-line` | `str` | Line number |
 | | `is-general-exception` | `bool` | Raises broad exception type |
@@ -752,7 +752,7 @@ After loading, you can query:
 | `return-statement` | `is-in-function` | `str` | Function containing return |
 | | `is-at-line` | `str` | Line number |
 | | `has-return-value` | `str` | Returned value |
-| | `looks-like-error-code` | `bool` | Returns -1, None, False (smell!) |
+| | `is-looks-like-error-code` | `bool` | Returns -1, None, False (smell!) |
 | `with-statement` | `is-in-function` | `str` | Function containing with |
 | | `is-at-line` | `str` | Line number |
 | `context-manager` | `is-in-with-statement` | `str` | Parent with statement |
@@ -770,7 +770,7 @@ Find dangerous `except: pass` patterns that hide errors:
 result = reasoner.reql("""
     SELECT ?handler ?try_block ?exception_type ?line
     WHERE {
-        ?handler type except-handler .
+        ?handler type catch-clause .
         ?handler is-silent-swallow "true" .
         ?handler is-in-try-block ?try_block .
         ?handler is-at-line ?line .
@@ -792,7 +792,7 @@ Find code catching overly broad exceptions:
 result = reasoner.reql("""
     SELECT ?handler ?exception_type ?line ?function
     WHERE {
-        ?handler type except-handler .
+        ?handler type catch-clause .
         ?handler is-general-except "true" .
         ?handler has-exception-type ?exception_type .
         ?handler is-at-line ?line .
@@ -814,7 +814,7 @@ Find code that raises Exception, BaseException, etc:
 result = reasoner.reql("""
     SELECT ?raise ?exception_type ?line ?function
     WHERE {
-        ?raise type raise-statement .
+        ?raise type throw-statement .
         ?raise is-general-exception "true" .
         ?raise has-exception-type ?exception_type .
         ?raise is-in-function ?function .
@@ -836,7 +836,7 @@ result = reasoner.reql("""
     SELECT ?return ?value ?line ?function
     WHERE {
         ?return type return-statement .
-        ?return looks-like-error-code "true" .
+        ?return is-looks-like-error-code "true" .
         ?return has-return-value ?value .
         ?return is-in-function ?function .
         ?return is-at-line ?line
@@ -896,7 +896,7 @@ Find `except:` without specifying exception type:
 result = reasoner.reql("""
     SELECT ?handler ?line ?function
     WHERE {
-        ?handler type except-handler .
+        ?handler type catch-clause .
         ?handler is-bare-except "true" .
         ?handler is-at-line ?line .
         ?handler is-in-try-block ?try .
@@ -933,7 +933,7 @@ try_result = reasoner.reql(f"""
 raise_result = reasoner.reql(f"""
     SELECT ?raise ?exception_type ?line
     WHERE {{
-        ?raise type raise-statement .
+        ?raise type throw-statement .
         ?raise is-in-function "{function_name}" .
         ?raise is-at-line ?line .
         OPTIONAL {{ ?raise has-exception-type ?exception_type }}
@@ -959,7 +959,7 @@ Find `raise` without arguments (re-raising caught exception):
 result = reasoner.reql("""
     SELECT ?raise ?line ?function
     WHERE {
-        ?raise type raise-statement .
+        ?raise type throw-statement .
         ?raise is-reraise "true" .
         ?raise is-in-function ?function .
         ?raise is-at-line ?line
@@ -1003,7 +1003,7 @@ reasoner.load_python_code(code, "fileproc")
 # Find all issues
 silent_swallows = reasoner.reql("""
     SELECT ?line WHERE {
-        ?h type except-handler .
+        ?h type catch-clause .
         ?h is-silent-swallow "true" .
         ?h is-at-line ?line
     }
@@ -1012,7 +1012,7 @@ silent_swallows = reasoner.reql("""
 error_codes = reasoner.reql("""
     SELECT ?line ?value WHERE {
         ?r type return-statement .
-        ?r looks-like-error-code "true" .
+        ?r is-looks-like-error-code "true" .
         ?r is-at-line ?line .
         ?r has-return-value ?value
     }
@@ -1020,7 +1020,7 @@ error_codes = reasoner.reql("""
 
 bare_excepts = reasoner.reql("""
     SELECT ?line WHERE {
-        ?h type except-handler .
+        ?h type catch-clause .
         ?h is-bare-except "true" .
         ?h is-at-line ?line
     }

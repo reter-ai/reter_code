@@ -19,8 +19,8 @@ detector high_fanout_untested(category="test_coverage", severity="high") {
             ?e is-at-line ?line .
             ?e calls ?callee .
             OPTIONAL { ?e is-defined-in ?c . ?c has-name ?class_name }
-            FILTER ( !REGEX(?file, "test_") )
-            MINUS { ?test calls ?e . ?test is-in-file ?test_file . FILTER ( REGEX(?test_file, "test_") ) }
+            FILTER ( !REGEX(?file, "test_|_tests?\\.|/tests?/") )
+            MINUS { ?test calls ?e . ?test is-in-file ?test_file . FILTER ( REGEX(?test_file, "test_|_tests?\\.|/tests?/") ) }
         }
         GROUP BY ?e ?name ?class_name ?file ?line
         HAVING (?fanout >= {min_fanout})
@@ -65,8 +65,8 @@ detector high_fanout_untested_fast(category="test_coverage", severity="high") {
             ?e is-at-line ?line .
             ?e calls ?callee .
             OPTIONAL { ?e is-defined-in ?c . ?c has-name ?class_name }
-            FILTER ( !REGEX(?file, "test_") )
-            MINUS { ?test calls ?e . ?test is-in-file ?test_file . FILTER ( REGEX(?test_file, "test_") ) }
+            FILTER ( !REGEX(?file, "test_|_tests?\\.|/tests?/") )
+            MINUS { ?test calls ?e . ?test is-in-file ?test_file . FILTER ( REGEX(?test_file, "test_|_tests?\\.|/tests?/") ) }
         }
         GROUP BY ?e ?name ?class_name ?file ?line
         HAVING (?fanout >= {min_fanout})

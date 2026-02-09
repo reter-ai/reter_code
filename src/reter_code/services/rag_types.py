@@ -158,6 +158,7 @@ class RAGSearchResult:
             "line": self.line,
             "end_line": self.end_line,
             "score": round(self.score, 4),
+            "similarity": round(self.score, 4),
             "source_type": self.source_type,
         }
 

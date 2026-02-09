@@ -18,7 +18,7 @@ detector shallow_tests(category="test_coverage", severity="low") {
             ?c is-at-line ?line .
             ?method type method .
             ?method is-defined-in ?c
-            FILTER ( REGEX(?file, "test") )
+            FILTER ( REGEX(?file, "test_|_tests?\\.|/tests?/") )
             FILTER ( REGEX(?name, "Test") )
         }
         GROUP BY ?c ?name ?file ?line

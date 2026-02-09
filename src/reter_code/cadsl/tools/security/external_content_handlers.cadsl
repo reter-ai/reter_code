@@ -1,0 +1,72 @@
+# external_content_handlers - Find functions that process untrusted external content
+#
+# OpenClaw processes messages from external channels (Telegram, Slack, Discord,
+# etc.), web content, file uploads, and plugin outputs. These functions are
+# vectors for prompt injection, XSS, and code injection because they transform
+# untrusted content before passing it to AI models or rendering it in UIs.
+#
+# CWE-79: Cross-site Scripting (XSS)
+# CWE-94: Code Injection (Prompt Injection)
+
+detector external_content_handlers(category="security", severity="medium") {
+    """Find functions that process external/untrusted content - prompt injection and XSS vectors."""
+
+    param min_lines: int = 15;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?m ?name ?file ?line ?line_count
+        WHERE {
+            { ?m type method } UNION { ?m type function }
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?m has-line-count ?line_count .
+            FILTER (REGEX(?file, "security/external|media/|auto-reply|channel.*plugin|content.*handl"))
+            FILTER (?line_count >= {min_lines})
+            FILTER (!REGEX(?file, "test|spec|mock|node_modules|vendor"))
+        }
+        ORDER BY DESC(?line_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, line_count }
+    | map {
+        ...row,
+        issue: "external_content_handler",
+        message: "External content handler '{name}' ({line_count} lines) in {file}:{line}",
+        suggestion: "Review for: prompt injection via crafted messages, HTML/script injection in rendered output, unsanitized file content"
+    }
+    | emit { findings }
+}
+
+# Name-based variant: catch content processing functions by name pattern
+detector external_content_by_name(category="security", severity="medium") {
+    """Find functions named for content processing that may handle untrusted input."""
+
+    param min_lines: int = 15;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?m ?name ?file ?line ?line_count
+        WHERE {
+            { ?m type method } UNION { ?m type function }
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?m has-line-count ?line_count .
+            FILTER (REGEX(?name, "replaceMarker|buildSafe.*[Pp]rompt|render.*[Tt]ext|parseMessage.*[Aa]ttach|sanitize.*[Cc]ontent|filterExternal"))
+            FILTER (?line_count >= {min_lines})
+            FILTER (!REGEX(?file, "test|spec|mock|node_modules|vendor"))
+        }
+        ORDER BY DESC(?line_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, line_count }
+    | map {
+        ...row,
+        issue: "external_content_by_name",
+        message: "Content processing function '{name}' ({line_count} lines) in {file}:{line}",
+        suggestion: "Review for: prompt injection markers, HTML entity encoding, content boundary enforcement"
+    }
+    | emit { findings }
+}

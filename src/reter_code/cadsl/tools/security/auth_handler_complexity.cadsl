@@ -1,0 +1,40 @@
+# auth_handler_complexity - Find complex auth/credential handling functions
+#
+# OpenClaw manages API keys, OAuth tokens, and credentials for 10+ AI providers
+# and channel integrations. Complex authentication functions are prime targets
+# for logic bugs that lead to auth bypass, credential leakage, or privilege
+# escalation. Functions with high cyclomatic complexity in auth paths are
+# especially dangerous because each branch is a potential bypass path.
+#
+# CWE-287: Improper Authentication
+
+detector auth_handler_complexity(category="security", severity="high") {
+    """Find complex auth/credential handling functions that could have bypass logic bugs."""
+
+    param min_lines: int = 30;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?m ?name ?file ?line ?line_count
+        WHERE {
+            { ?m type method } UNION { ?m type function }
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?m has-line-count ?line_count .
+            FILTER (REGEX(?name, "auth|Auth|verify|login|credential|apiKey|token|Token|oauth|OAuth|refresh.*[Tt]oken"))
+            FILTER (?line_count >= {min_lines})
+            FILTER (!REGEX(?file, "test|spec|mock|node_modules|vendor"))
+        }
+        ORDER BY DESC(?line_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, line_count }
+    | map {
+        ...row,
+        issue: "auth_handler_complexity",
+        message: "Complex auth handler '{name}' ({line_count} lines) in {file}:{line}",
+        suggestion: "Review for: authentication bypass paths, missing credential validation, token expiry handling, privilege escalation"
+    }
+    | emit { findings }
+}

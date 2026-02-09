@@ -13,7 +13,7 @@ detector large_untested_modules(category="test_coverage", severity="medium") {
         WHERE {
             ?class type class .
             ?class is-in-file ?file .
-            FILTER ( !REGEX(?file, "test_|tests/|_test\\.py") )
+            FILTER ( !REGEX(?file, "test_|_tests?\\.|/tests?/") )
         }
         GROUP BY ?file
         HAVING ( ?class_count >= {min_classes} )

@@ -1,0 +1,71 @@
+# virtual_dispatch_in_consensus - Find virtual methods in consensus-critical code
+#
+# Virtual dispatch in consensus-critical paths is a security concern because:
+# 1. Different implementations could produce different results, causing forks
+# 2. Virtual calls can be redirected if an attacker controls the vtable
+# 3. Adding new overrides could silently change consensus behavior
+#
+# This detector finds virtual methods in script interpretation, validation,
+# and consensus code paths.
+
+detector virtual_dispatch_in_consensus(category="security", severity="high") {
+    """Find virtual methods in consensus-critical code paths."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?name ?file ?line ?class_name
+        WHERE {
+            ?m type method .
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?m is-virtual true .
+            OPTIONAL { ?m is-defined-in ?c . ?c has-name ?class_name }
+            FILTER (REGEX(?file, "script/|validation|consensus|signet|pow"))
+            FILTER (!REGEX(?file, "test|leveldb"))
+        }
+        ORDER BY ?file ?line
+        LIMIT {limit}
+    }
+    | select { name, file, line, class_name }
+    | map {
+        ...row,
+        issue: "virtual_dispatch_in_consensus",
+        message: "Virtual method '{name}' in consensus path {file}:{line}",
+        suggestion: "Verify: all overrides produce identical consensus results, virtual dispatch is necessary here"
+    }
+    | emit { findings }
+}
+
+# Extended version: also find pure virtual (abstract) methods in consensus code
+detector virtual_dispatch_in_consensus_extended(category="security", severity="high") {
+    """Find virtual and pure virtual methods in consensus-critical code paths."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?name ?file ?line ?class_name ?is_pure
+        WHERE {
+            ?m type method .
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?m is-virtual true .
+            OPTIONAL { ?m is-defined-in ?c . ?c has-name ?class_name }
+            OPTIONAL { ?m is-pure ?is_pure }
+            FILTER (REGEX(?file, "script/|validation|consensus|signet|pow|txmempool|coins"))
+            FILTER (!REGEX(?file, "test|leveldb"))
+        }
+        ORDER BY ?file ?line
+        LIMIT {limit}
+    }
+    | select { name, file, line, class_name, is_pure }
+    | map {
+        ...row,
+        issue: "virtual_dispatch_in_consensus",
+        message: "Virtual method '{name}' in consensus path {file}:{line}",
+        suggestion: "Verify: all overrides produce identical consensus results, virtual dispatch is necessary here"
+    }
+    | emit { findings }
+}

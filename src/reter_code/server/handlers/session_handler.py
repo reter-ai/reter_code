@@ -261,8 +261,12 @@ class SessionHandler(BaseHandler):
                 "FP-INTERFACE", "FP-LAYERS", "FP-STRUCTURAL", "FP-TRIVIAL"
             ]
             if classification not in valid_classifications:
-                raise ValueError(f"Invalid classification: {classification}. "
-                               f"Valid values: {valid_classifications}")
+                raise ValueError(
+                    f"Invalid classification: '{classification}'. "
+                    f"Valid values: "
+                    f"TP-EXTRACT, TP-PARAMETERIZE, PARTIAL-TP, "
+                    f"FP-INTERFACE, FP-LAYERS, FP-STRUCTURAL, FP-TRIVIAL"
+                )
 
             # Get existing item
             item = store.get_item(item_id)

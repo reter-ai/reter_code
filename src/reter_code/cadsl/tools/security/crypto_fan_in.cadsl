@@ -1,0 +1,81 @@
+# crypto_fan_in - Find crypto primitives with excessive callers
+#
+# Cryptographic code with many callers from diverse modules has a large
+# blast radius: any bug or API change affects many subsystems.
+#
+# Security rationale:
+# 1. High fan-in to crypto = large attack surface (many paths to trigger crypto bugs)
+# 2. Side-channel vulnerabilities in widely-called crypto affect more code paths
+# 3. API changes to highly-coupled crypto methods risk introducing subtle bugs
+#
+# This detector finds crypto/key methods with the most callers from
+# non-crypto, non-test code.
+
+detector crypto_fan_in(category="security", severity="medium") {
+    """Find crypto primitives with excessive callers from diverse modules."""
+
+    param min_callers: int = 10;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?name ?file ?line (COUNT(?caller) AS ?caller_count)
+        WHERE {
+            ?m type method .
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?caller maybe-calls ?m .
+            ?caller is-in-file ?caller_file .
+            FILTER (REGEX(?file, "crypto/|key\\.h|key\\.cpp|pubkey"))
+            FILTER (!REGEX(?file, "test|leveldb|crc32c"))
+            FILTER (!REGEX(?caller_file, "test|leveldb|crc32c"))
+        }
+        GROUP BY ?name ?file ?line
+        HAVING (?caller_count >= {min_callers})
+        ORDER BY DESC(?caller_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, caller_count }
+    | map {
+        ...row,
+        issue: "crypto_fan_in",
+        message: "Crypto method '{name}' ({file}:{line}) has {caller_count} callers from production code",
+        suggestion: "Verify: constant-time implementation, side-channel resistance, API stability"
+    }
+    | emit { findings }
+}
+
+# Extended version: also counts distinct caller FILES for coupling analysis
+detector crypto_fan_in_by_module(category="security", severity="medium") {
+    """Find crypto primitives called from many distinct files."""
+
+    param min_caller_files: int = 5;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?name ?file ?line (COUNT(DISTINCT ?caller_file) AS ?caller_file_count)
+        WHERE {
+            ?m type method .
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?caller maybe-calls ?m .
+            ?caller is-in-file ?caller_file .
+            FILTER (REGEX(?file, "crypto/|key\\.h|key\\.cpp|pubkey"))
+            FILTER (!REGEX(?file, "test|leveldb|crc32c"))
+            FILTER (!REGEX(?caller_file, "test|leveldb|crc32c"))
+        }
+        GROUP BY ?name ?file ?line
+        HAVING (?caller_file_count >= {min_caller_files})
+        ORDER BY DESC(?caller_file_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, caller_file_count }
+    | map {
+        ...row,
+        issue: "crypto_fan_in_by_module",
+        message: "Crypto method '{name}' ({file}:{line}) called from {caller_file_count} distinct files",
+        suggestion: "Consider: wrapper/facade to reduce direct coupling, audit all call sites for misuse"
+    }
+    | emit { findings }
+}

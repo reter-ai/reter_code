@@ -24,10 +24,10 @@ Every python-from-import is a python-import.
 
 % Exception handling
 Every python-try-block is a try-block.
-Every python-except-handler is an except-handler.
+Every python-except-handler is a catch-clause.
 Every python-finally-block is a finally-clause.
 Every python-try-else-block is a try-else-block.
-Every python-raise-statement is a raise-statement.
+Every python-raise-statement is a throw-statement.
 
 % Control flow
 Every python-return-statement is a return-statement.
@@ -69,13 +69,13 @@ Every coroutine is a function.
 % ============================================================================
 
 % Bare except - catches everything (antipattern)
-Every bare-except is an except-handler.
+Every bare-except is a catch-clause.
 
 % General except - catches Exception or BaseException
-Every general-except is an except-handler.
+Every general-except is a catch-clause.
 
 % Silent swallow - catches and ignores (antipattern)
-Every silent-swallow-except is an except-handler.
+Every silent-swallow-except is a catch-clause.
 
 % ============================================================================
 % Python Code Smells

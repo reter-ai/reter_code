@@ -21,7 +21,7 @@ detector partial_class_coverage(category="test_coverage", severity="low") {
             OPTIONAL {
                 ?test calls ?method .
                 ?test is-in-file ?test_file .
-                FILTER ( REGEX(?test_file, "test_") )
+                FILTER ( REGEX(?test_file, "test_|_tests?\\.|/tests?/") )
             }
         }
         GROUP BY ?c ?name ?file ?line

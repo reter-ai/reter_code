@@ -1,0 +1,82 @@
+# boundary_violation - Detect cross-layer calls bypassing interface boundaries
+#
+# Bitcoin Core uses an interface layer (src/interfaces/) to separate
+# subsystems (wallet, node, chain, mining). Direct calls from RPC/REST
+# handlers to wallet/validation internals bypass this security boundary.
+#
+# Security rationale: The interface layer provides access control,
+# thread safety, and abstraction. Bypassing it can lead to:
+# 1. Race conditions from unsynchronized access
+# 2. Privilege escalation from RPC to internal operations
+# 3. Tight coupling that makes security auditing harder
+
+detector boundary_violation(category="security", severity="high") {
+    """Detect RPC/REST methods that directly call wallet internals, bypassing interfaces."""
+
+    param limit: int = 100;
+
+    # Find methods in RPC code that call wallet internal methods
+    # Exclude wallet/rpc/ which is the legitimate RPC-wallet bridge
+    reql {
+        SELECT ?caller_name ?caller_file ?caller_line ?callee_name ?callee_file ?callee_line
+        WHERE {
+            ?caller type method .
+            ?caller has-name ?caller_name .
+            ?caller is-in-file ?caller_file .
+            ?caller is-at-line ?caller_line .
+            ?caller maybe-calls ?callee .
+            ?callee has-name ?callee_name .
+            ?callee is-in-file ?callee_file .
+            ?callee is-at-line ?callee_line .
+            FILTER (REGEX(?caller_file, "rpc/"))
+            FILTER (!REGEX(?caller_file, "wallet/rpc/"))
+            FILTER (REGEX(?callee_file, "wallet/") )
+            FILTER (!REGEX(?callee_file, "wallet/rpc/|interfaces|test"))
+            FILTER (!REGEX(?caller_file, "test"))
+        }
+        ORDER BY ?caller_file ?caller_line
+        LIMIT {limit}
+    }
+    | select { caller_name, caller_file, caller_line, callee_name, callee_file, callee_line }
+    | map {
+        ...row,
+        issue: "boundary_violation",
+        message: "RPC '{caller_name}' ({caller_file}:{caller_line}) directly calls wallet '{callee_name}' ({callee_file}:{callee_line})",
+        suggestion: "Route through interfaces/ layer for proper access control and thread safety"
+    }
+    | emit { findings }
+}
+
+# Broader variant: any non-wallet code calling wallet internals directly
+detector boundary_violation_broad(category="security", severity="medium") {
+    """Detect any non-wallet code calling wallet internals directly."""
+
+    param limit: int = 100;
+
+    reql {
+        SELECT ?caller_name ?caller_file ?caller_line ?callee_name ?callee_file ?callee_line
+        WHERE {
+            ?caller type method .
+            ?caller has-name ?caller_name .
+            ?caller is-in-file ?caller_file .
+            ?caller is-at-line ?caller_line .
+            ?caller maybe-calls ?callee .
+            ?callee has-name ?callee_name .
+            ?callee is-in-file ?callee_file .
+            ?callee is-at-line ?callee_line .
+            FILTER (!REGEX(?caller_file, "wallet/|interfaces/|test"))
+            FILTER (REGEX(?callee_file, "wallet/"))
+            FILTER (!REGEX(?callee_file, "wallet/rpc/|interfaces|test"))
+        }
+        ORDER BY ?caller_file ?caller_line
+        LIMIT {limit}
+    }
+    | select { caller_name, caller_file, caller_line, callee_name, callee_file, callee_line }
+    | map {
+        ...row,
+        issue: "boundary_violation_broad",
+        message: "Non-wallet '{caller_name}' ({caller_file}:{caller_line}) directly calls wallet '{callee_name}' ({callee_file}:{callee_line})",
+        suggestion: "Route through interfaces/ layer for proper subsystem isolation"
+    }
+    | emit { findings }
+}

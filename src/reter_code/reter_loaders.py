@@ -874,12 +874,504 @@ class ReterCPPLoaderMixin:
         )
 
 
+class ReterJavaLoaderMixin:
+    """
+    Mixin providing Java file/code loading methods.
+
+    Requires:
+        - self.reasoner: Reter instance
+        - self._dirty: bool flag
+        - self._load_directory_generic: directory loading helper
+
+    ::: This is-in-layer Infrastructure-Layer.
+    ::: This is a loader.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
+    """
+
+    def load_java_file(
+        self,
+        filepath: str,
+        base_path: Optional[str] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """
+        Load Java source file and add semantic facts to RETER
+
+        Args:
+            filepath: Path to Java file to load
+            base_path: Optional base path for calculating relative path (defaults to filepath's parent)
+
+        Returns:
+            Tuple[int, str, float, list]: (wme_count, source_id, time_ms, errors)
+
+        Raises:
+            Exception: If loading fails
+
+        Extracts and adds facts about:
+        - Classes, interfaces, enums, records
+        - Methods, constructors
+        - Inheritance and interface implementation
+        - Function calls
+        - Imports (single, demand, static)
+        - Annotations
+        - Parameters and return types
+        - Try/catch/throw blocks
+        - Package declarations
+
+        Source ID is generated as MD5 hash of content | relative path.
+        INCREMENTAL: Adds to existing knowledge, doesn't replace.
+        """
+        check_initialization()
+        start_time = time.time()
+
+        # Read file content
+        filepath_obj = Path(filepath)
+        with open(filepath_obj, 'r', encoding='utf-8') as f:
+            code = f.read()
+
+        # Calculate relative path
+        if base_path:
+            try:
+                rel_path = filepath_obj.relative_to(Path(base_path))
+            except ValueError:
+                rel_path = filepath_obj
+        else:
+            rel_path = filepath_obj.name
+
+        # Generate MD5-based source ID
+        source_id = generate_source_id(code, str(rel_path))
+
+        # Use relative path with forward slashes for inFile
+        in_file = str(rel_path).replace('\\', '/')
+
+        # Load Java code
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(
+            owl_rete_cpp.load_java_from_string,
+            self.reasoner.network,
+            code,
+            in_file,
+            source_id
+        )
+
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+
+        error_list: List[str] = []
+        return wme_count, source_id, time_ms, error_list
+
+    def load_java_code(
+        self,
+        code: str,
+        source: str = "module",
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """
+        Load Java code string and add semantic facts to RETER
+
+        Args:
+            code: Java source code as string
+            source: Source ID for tracking (can be module name, path, or path@timestamp)
+            progress_callback: Optional callback function(items_processed, total_items, message)
+
+        Returns:
+            Tuple[int, str, float, list]: (wme_count, source, time_ms, errors)
+
+        Raises:
+            Exception: If loading fails
+
+        Same as load_java_file() but takes code as string.
+        INCREMENTAL: Adds to existing knowledge.
+        """
+        check_initialization()
+        start_time = time.time()
+
+        # Extract normalized file path from source
+        in_file = extract_in_file_path(source)
+
+        # Load Java code
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(
+            owl_rete_cpp.load_java_from_string,
+            self.reasoner.network,
+            code,
+            in_file,
+            source
+        )
+
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+
+        return wme_count, source, time_ms, []
+
+    def load_java_directory(
+        self,
+        directory: str,
+        recursive: bool = True,
+        exclude_patterns: Optional[List[str]] = None,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, Dict[str, List[str]], float]:
+        """
+        Load all Java files from a directory with optional exclusion patterns
+
+        Args:
+            directory: Path to directory containing Java files
+            recursive: If True, recursively scan subdirectories
+            exclude_patterns: List of patterns to exclude
+            progress_callback: Optional callback function(items_processed, total_items, message)
+
+        Returns:
+            Tuple[int, dict, float]: (total_wmes, all_errors, time_ms)
+            where all_errors is a dict mapping filepath -> list of errors
+
+        Raises:
+            Exception: If loading fails
+
+        INCREMENTAL: Adds to existing knowledge.
+        """
+        return self._load_directory_generic(
+            directory=directory,
+            extensions=["*.java"],
+            default_excludes=["build", "target", ".gradle", "out"],
+            load_file_func=self.load_java_file,
+            recursive=recursive,
+            exclude_patterns=exclude_patterns,
+            progress_callback=progress_callback
+        )
+
+
+class ReterGoLoaderMixin:
+    """
+    Mixin providing Go file/code loading methods.
+
+    Requires:
+        - self.reasoner: Reter instance
+        - self._dirty: bool flag
+        - self._load_directory_generic: directory loading helper
+
+    ::: This is-in-layer Infrastructure-Layer.
+    ::: This is a loader.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
+    """
+
+    def load_go_file(
+        self,
+        filepath: str,
+        base_path: Optional[str] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """
+        Load Go source file and add semantic facts to RETER
+
+        Args:
+            filepath: Path to Go file to load
+            base_path: Optional base path for calculating relative path (defaults to filepath's parent)
+
+        Returns:
+            Tuple[int, str, float, list]: (wme_count, source_id, time_ms, errors)
+
+        Raises:
+            Exception: If loading fails
+
+        Extracts and adds facts about:
+        - Structs, interfaces, type definitions, type aliases
+        - Functions, methods with receivers
+        - Fields (named and embedded)
+        - Function calls
+        - Imports
+        - Parameters and return types
+        - Constants and variables
+        - Goroutines and defer statements
+        - Package declarations
+
+        Source ID is generated as MD5 hash of content | relative path.
+        INCREMENTAL: Adds to existing knowledge, doesn't replace.
+        """
+        check_initialization()
+        start_time = time.time()
+
+        # Read file content
+        filepath_obj = Path(filepath)
+        with open(filepath_obj, 'r', encoding='utf-8') as f:
+            code = f.read()
+
+        # Calculate relative path
+        if base_path:
+            try:
+                rel_path = filepath_obj.relative_to(Path(base_path))
+            except ValueError:
+                rel_path = filepath_obj
+        else:
+            rel_path = filepath_obj.name
+
+        # Generate MD5-based source ID
+        source_id = generate_source_id(code, str(rel_path))
+
+        # Use relative path with forward slashes for inFile
+        in_file = str(rel_path).replace('\\', '/')
+
+        # Load Go code
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(
+            owl_rete_cpp.load_go_from_string,
+            self.reasoner.network,
+            code,
+            in_file,
+            source_id
+        )
+
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+
+        error_list: List[str] = []
+        return wme_count, source_id, time_ms, error_list
+
+    def load_go_code(
+        self,
+        code: str,
+        source: str = "module",
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """
+        Load Go code string and add semantic facts to RETER
+
+        Args:
+            code: Go source code as string
+            source: Source ID for tracking (can be module name, path, or path@timestamp)
+            progress_callback: Optional callback function(items_processed, total_items, message)
+
+        Returns:
+            Tuple[int, str, float, list]: (wme_count, source, time_ms, errors)
+
+        Raises:
+            Exception: If loading fails
+
+        Same as load_go_file() but takes code as string.
+        INCREMENTAL: Adds to existing knowledge.
+        """
+        check_initialization()
+        start_time = time.time()
+
+        # Extract normalized file path from source
+        in_file = extract_in_file_path(source)
+
+        # Load Go code
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(
+            owl_rete_cpp.load_go_from_string,
+            self.reasoner.network,
+            code,
+            in_file,
+            source
+        )
+
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+
+        return wme_count, source, time_ms, []
+
+    def load_go_directory(
+        self,
+        directory: str,
+        recursive: bool = True,
+        exclude_patterns: Optional[List[str]] = None,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, Dict[str, List[str]], float]:
+        """
+        Load all Go files from a directory with optional exclusion patterns
+
+        Args:
+            directory: Path to directory containing Go files
+            recursive: If True, recursively scan subdirectories
+            exclude_patterns: List of patterns to exclude
+            progress_callback: Optional callback function(items_processed, total_items, message)
+
+        Returns:
+            Tuple[int, dict, float]: (total_wmes, all_errors, time_ms)
+            where all_errors is a dict mapping filepath -> list of errors
+
+        Raises:
+            Exception: If loading fails
+
+        INCREMENTAL: Adds to existing knowledge.
+        """
+        return self._load_directory_generic(
+            directory=directory,
+            extensions=["*.go"],
+            default_excludes=["vendor", "testdata", ".git"],
+            load_file_func=self.load_go_file,
+            recursive=recursive,
+            exclude_patterns=exclude_patterns,
+            progress_callback=progress_callback
+        )
+
+
+class ReterRustLoaderMixin:
+    """
+    Mixin providing Rust file/code loading methods.
+
+    Requires:
+        - self.reasoner: Reter instance
+        - self._dirty: bool flag
+        - self._load_directory_generic: directory loading helper
+
+    ::: This is-in-layer Infrastructure-Layer.
+    ::: This is a loader.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
+    """
+
+    def load_rust_file(
+        self,
+        filepath: str,
+        base_path: Optional[str] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """
+        Load Rust source file and add semantic facts to RETER
+
+        Args:
+            filepath: Path to Rust file to load
+            base_path: Optional base path for calculating relative path (defaults to filepath's parent)
+
+        Returns:
+            Tuple[int, str, float, list]: (wme_count, source_id, time_ms, errors)
+
+        Extracts and adds facts about:
+        - Structs, enums, traits, unions, type aliases
+        - Functions, methods (in impl blocks)
+        - Fields (named and tuple)
+        - Function calls and method calls
+        - Use declarations and extern crates
+        - Parameters and return types
+        - Constants, statics, and local variables
+        - Closures, match expressions, loops
+        - Module declarations
+
+        Source ID is generated as MD5 hash of content | relative path.
+        INCREMENTAL: Adds to existing knowledge, doesn't replace.
+        """
+        check_initialization()
+        start_time = time.time()
+
+        # Read file content
+        filepath_obj = Path(filepath)
+        with open(filepath_obj, 'r', encoding='utf-8') as f:
+            code = f.read()
+
+        # Calculate relative path
+        if base_path:
+            try:
+                rel_path = filepath_obj.relative_to(Path(base_path))
+            except ValueError:
+                rel_path = filepath_obj
+        else:
+            rel_path = filepath_obj.name
+
+        # Generate MD5-based source ID
+        source_id = generate_source_id(code, str(rel_path))
+
+        # Use relative path with forward slashes for inFile
+        in_file = str(rel_path).replace('\\', '/')
+
+        # Load Rust code
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(
+            owl_rete_cpp.load_rust_from_string,
+            self.reasoner.network,
+            code,
+            in_file,
+            source_id
+        )
+
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+
+        error_list: List[str] = []
+        return wme_count, source_id, time_ms, error_list
+
+    def load_rust_code(
+        self,
+        code: str,
+        source: str = "module",
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """
+        Load Rust code string and add semantic facts to RETER
+
+        Args:
+            code: Rust source code as string
+            source: Source ID for tracking (can be module name, path, or path@timestamp)
+            progress_callback: Optional callback function(items_processed, total_items, message)
+
+        Returns:
+            Tuple[int, str, float, list]: (wme_count, source, time_ms, errors)
+
+        Same as load_rust_file() but takes code as string.
+        INCREMENTAL: Adds to existing knowledge.
+        """
+        check_initialization()
+        start_time = time.time()
+
+        # Extract normalized file path from source
+        in_file = extract_in_file_path(source)
+
+        # Load Rust code
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(
+            owl_rete_cpp.load_rust_from_string,
+            self.reasoner.network,
+            code,
+            in_file,
+            source
+        )
+
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+
+        return wme_count, source, time_ms, []
+
+    def load_rust_directory(
+        self,
+        directory: str,
+        recursive: bool = True,
+        exclude_patterns: Optional[List[str]] = None,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, Dict[str, List[str]], float]:
+        """
+        Load all Rust files from a directory with optional exclusion patterns
+
+        Args:
+            directory: Path to directory containing Rust files
+            recursive: If True, recursively scan subdirectories
+            exclude_patterns: List of patterns to exclude
+            progress_callback: Optional callback function(items_processed, total_items, message)
+
+        Returns:
+            Tuple[int, dict, float]: (total_wmes, all_errors, time_ms)
+            where all_errors is a dict mapping filepath -> list of errors
+
+        INCREMENTAL: Adds to existing knowledge.
+        """
+        return self._load_directory_generic(
+            directory=directory,
+            extensions=["*.rs"],
+            default_excludes=["target", ".git"],
+            load_file_func=self.load_rust_file,
+            recursive=recursive,
+            exclude_patterns=exclude_patterns,
+            progress_callback=progress_callback
+        )
+
+
 class ReterLoaderMixin(
     ReterPythonLoaderMixin,
     ReterJavaScriptLoaderMixin,
     ReterHTMLLoaderMixin,
     ReterCSharpLoaderMixin,
-    ReterCPPLoaderMixin
+    ReterCPPLoaderMixin,
+    ReterJavaLoaderMixin,
+    ReterGoLoaderMixin,
+    ReterRustLoaderMixin
 ):
     """
     Combined mixin providing all language loader methods.
@@ -900,5 +1392,8 @@ __all__ = [
     "ReterHTMLLoaderMixin",
     "ReterCSharpLoaderMixin",
     "ReterCPPLoaderMixin",
+    "ReterJavaLoaderMixin",
+    "ReterGoLoaderMixin",
+    "ReterRustLoaderMixin",
     "ReterLoaderMixin",
 ]

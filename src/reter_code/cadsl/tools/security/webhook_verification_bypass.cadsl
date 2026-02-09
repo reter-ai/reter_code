@@ -1,0 +1,41 @@
+# webhook_verification_bypass - Find webhook verification functions with bypass risk
+#
+# OpenClaw integrates 10+ channel platforms (Twilio, Telegram, Slack, etc.)
+# that deliver events via webhooks. Each channel has its own signature
+# verification scheme. Complex verification functions may contain bypass
+# paths (e.g. skipVerification parameters, early returns, URL reconstruction
+# issues) that allow forged webhook payloads.
+#
+# CWE-347: Improper Verification of Cryptographic Signature
+
+detector webhook_verification_bypass(category="security", severity="critical") {
+    """Find webhook verification functions that may have bypass paths."""
+
+    param min_lines: int = 10;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?m ?name ?file ?line ?line_count
+        WHERE {
+            { ?m type method } UNION { ?m type function }
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?m has-line-count ?line_count .
+            FILTER (REGEX(?name, "verify|validate.*[Ww]ebhook|[Ss]ignature|reconstruct.*[Ww]ebhook"))
+            FILTER (REGEX(?file, "webhook|hook|channel|integration"))
+            FILTER (?line_count >= {min_lines})
+            FILTER (!REGEX(?file, "test|spec|mock|node_modules|vendor"))
+        }
+        ORDER BY DESC(?line_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, line_count }
+    | map {
+        ...row,
+        issue: "webhook_verification_bypass",
+        message: "Webhook verifier '{name}' ({line_count} lines) in {file}:{line}",
+        suggestion: "Review for: skipVerification params, missing HMAC constant-time comparison, URL reconstruction bugs, early return bypasses"
+    }
+    | emit { findings }
+}

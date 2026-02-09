@@ -15,8 +15,8 @@ detector untested_functions(category="test_coverage", severity="medium") {
             ?f is-in-file ?file .
             ?f is-at-line ?line .
             OPTIONAL { ?f has-line-count ?line_count }
-            FILTER ( !REGEX(?name, "^_") && !REGEX(?file, "test_|_test\\.py") )
-            MINUS { ?test calls ?f . ?test is-in-file ?test_file . FILTER ( REGEX(?test_file, "test_") ) }
+            FILTER ( !REGEX(?name, "^_") && !REGEX(?file, "test_|_tests?\\.|/tests?/") )
+            MINUS { ?test calls ?f . ?test is-in-file ?test_file . FILTER ( REGEX(?test_file, "test_|_tests?\\.|/tests?/") ) }
         }
         ORDER BY DESC(?line_count)
         LIMIT {limit}

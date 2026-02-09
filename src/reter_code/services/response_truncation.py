@@ -84,18 +84,38 @@ def estimate_json_size(obj: Any) -> int:
         return len(str(obj))
 
 
+def _compute_distribution(items: List[Dict[str, Any]], field: str, top_n: int = 5) -> Optional[Dict[str, int]]:
+    """Compute a frequency distribution for a field across items."""
+    counts: Dict[str, int] = {}
+    for item in items:
+        if isinstance(item, dict):
+            val = item.get(field)
+            if val is not None:
+                key = str(val)
+                counts[key] = counts.get(key, 0) + 1
+    if not counts:
+        return None
+    # Return top N by frequency
+    sorted_counts = dict(sorted(counts.items(), key=lambda x: -x[1])[:top_n])
+    return sorted_counts
+
+
 def create_summary(response: Dict[str, Any], truncatable_fields: List[str]) -> Dict[str, Any]:
     """
-    Create a summary of the response showing counts and first few items.
+    Create a summary of the response showing counts, distributions, and first few items.
 
     Args:
         response: The full response
         truncatable_fields: List of field names that contain result lists
 
     Returns:
-        A summary dictionary with counts and previews
+        A summary dictionary with counts, distributions, and previews
     """
     summary = {}
+
+    # Fields commonly used for distribution analysis
+    distribution_fields = ["file", "severity", "category", "type", "class_name",
+                          "module", "language", "access", "status", "priority"]
 
     for field in truncatable_fields:
         if field in response and isinstance(response[field], list):
@@ -119,11 +139,23 @@ def create_summary(response: Dict[str, Any], truncatable_fields: List[str]) -> D
 
                 preview = [truncate_strings(item) for item in preview]
 
-                summary[field] = {
+                field_summary: Dict[str, Any] = {
                     "count": count,
                     "preview": preview,
                     "showing": f"{preview_count} of {count}"
                 }
+
+                # Add distributions for common fields
+                if count >= 3:
+                    distributions = {}
+                    for dist_field in distribution_fields:
+                        dist = _compute_distribution(items, dist_field)
+                        if dist and len(dist) > 1:
+                            distributions[f"by_{dist_field}"] = dist
+                    if distributions:
+                        field_summary["distributions"] = distributions
+
+                summary[field] = field_summary
 
     return summary
 
@@ -167,33 +199,31 @@ def truncate_response(response: Dict[str, Any], query_hint: str = "") -> Dict[st
     # Build truncated response with file reference AT THE TOP
     result = {}
 
-    # FIRST: Add truncation info and file reference at the beginning
-    if full_results_file:
-        result["full_results_file"] = full_results_file
-        result["message"] = (
-            f"Response too large ({current_size} bytes > {max_size} limit). "
-            f"Full results saved to: {full_results_file}"
-        )
-    else:
-        result["message"] = (
-            f"Response too large ({current_size} bytes > {max_size} limit). "
-            f"Could not save full results. Use more specific filters."
-        )
-
-    result["truncated"] = True
-    result["response_size_bytes"] = current_size
-    result["max_response_size_bytes"] = max_size
-
-    # Create summary of truncatable fields
-    summary = create_summary(response, truncatable_fields)
-
-    # Calculate total counts
+    # Calculate total counts upfront for the message
     total_items = sum(
         len(response.get(field, []))
         for field in truncatable_fields
         if isinstance(response.get(field), list)
     )
 
+    # Create summary of truncatable fields (includes distributions)
+    summary = create_summary(response, truncatable_fields)
+
+    # FIRST: Add truncation info and file reference at the beginning
+    if full_results_file:
+        result["full_results_file"] = full_results_file
+        result["message"] = (
+            f"{total_items} results ({current_size} bytes > {max_size} limit). "
+            f"Showing summary with distributions below. "
+            f"Full results saved to: {full_results_file}"
+        )
+    else:
+        result["message"] = (
+            f"{total_items} results ({current_size} bytes > {max_size} limit). "
+            f"Could not save full results. Use more specific filters."
+        )
+
+    result["truncated"] = True
     result["total_results"] = total_items
     result["summary"] = summary
 

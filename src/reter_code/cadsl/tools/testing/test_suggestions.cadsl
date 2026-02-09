@@ -19,11 +19,11 @@ detector test_suggestions(category="test_coverage", severity="medium") {
             ?m is-in-file ?file .
             ?m is-at-line ?line .
             FILTER (!STRSTARTS(?name, "_"))
-            FILTER (!REGEX(?file, "test"))
+            FILTER (!REGEX(?file, "test_|_tests?\\.|/tests?/"))
             FILTER NOT EXISTS {
                 ?test calls ?m .
                 ?test is-in-file ?test_file .
-                FILTER (REGEX(?test_file, "test"))
+                FILTER (REGEX(?test_file, "test_|_tests?\\.|/tests?/"))
             }
         }
         ORDER BY ?file ?line
@@ -65,11 +65,11 @@ detector test_suggestions_fast(category="test_coverage", severity="medium") {
             ?m is-in-file ?file .
             ?m is-at-line ?line .
             FILTER (!STRSTARTS(?name, "_"))
-            FILTER (!REGEX(?file, "test"))
+            FILTER (!REGEX(?file, "test_|_tests?\\.|/tests?/"))
             FILTER NOT EXISTS {
                 ?test calls ?m .
                 ?test is-in-file ?test_file .
-                FILTER (REGEX(?test_file, "test"))
+                FILTER (REGEX(?test_file, "test_|_tests?\\.|/tests?/"))
             }
         }
         ORDER BY ?file ?line

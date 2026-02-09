@@ -1,0 +1,41 @@
+# complex_gateway_handlers - Find complex functions in gateway server code
+#
+# OpenClaw's gateway layer handles untrusted WebSocket and HTTP input from
+# external clients. Complex functions in this layer are high-value targets
+# because:
+# 1. They parse and route messages from untrusted WebSocket connections
+# 2. Bugs can lead to auth bypass, message injection, or denial of service
+# 3. Complex code is harder to audit and more likely to contain logic flaws
+#
+# CWE-20: Improper Input Validation
+
+detector complex_gateway_handlers(category="security", severity="critical") {
+    """Find complex functions in gateway server code handling untrusted WebSocket/HTTP input."""
+
+    param min_lines: int = 30;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?m ?name ?file ?line ?line_count
+        WHERE {
+            { ?m type method } UNION { ?m type function }
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?m has-line-count ?line_count .
+            FILTER (REGEX(?file, "gateway/server|gateway.*server"))
+            FILTER (?line_count >= {min_lines})
+            FILTER (!REGEX(?file, "test|spec|mock|node_modules|vendor"))
+        }
+        ORDER BY DESC(?line_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, line_count }
+    | map {
+        ...row,
+        issue: "complex_gateway_handler",
+        message: "Complex gateway handler '{name}' ({line_count} lines) in {file}:{line}",
+        suggestion: "Review for: input validation on WebSocket messages, authentication checks, rate limiting, malformed payload handling"
+    }
+    | emit { findings }
+}

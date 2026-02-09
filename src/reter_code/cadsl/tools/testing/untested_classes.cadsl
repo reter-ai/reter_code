@@ -15,7 +15,7 @@ detector untested_classes(category="test_coverage", severity="medium") {
             ?c is-in-file ?file .
             ?c is-at-line ?line .
             OPTIONAL { ?method type method . ?method is-defined-in ?c }
-            FILTER ( !REGEX(?name, "^Test|Test$|^_") && !REGEX(?file, "test_|_test\\.py") )
+            FILTER ( !REGEX(?name, "^Test|Test$|^_") && !REGEX(?file, "test_|_tests?\\.|/tests?/") )
             MINUS {
                 ?test type class .
                 ?test has-name ?test_name .

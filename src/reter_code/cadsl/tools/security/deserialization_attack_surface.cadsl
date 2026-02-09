@@ -1,0 +1,73 @@
+# deserialization_attack_surface - Find complex deserialization methods
+#
+# Deserialization of untrusted input is the #1 attack vector in Bitcoin Core.
+# This detector finds Unserialize/Decode methods with high complexity,
+# prioritizing those reachable from network-facing code (net_processing).
+#
+# Security rationale: A bug in deserialization of network data can lead to
+# remote code execution, denial of service, or consensus divergence.
+
+detector deserialization_attack_surface(category="security", severity="critical") {
+    """Find complex deserialization methods, especially those reachable from network code."""
+
+    param min_lines: int = 10;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?m ?name ?file ?line ?line_count ?class_name
+        WHERE {
+            { ?m type method } UNION { ?m type function }
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?m has-line-count ?line_count .
+            OPTIONAL { ?m is-defined-in ?c . ?c has-name ?class_name }
+            FILTER (REGEX(?name, "Unserialize|Deserialize|DecodeFrom|ReadFrom|Decode"))
+            FILTER (?line_count >= {min_lines})
+            FILTER (!REGEX(?file, "test|leveldb|crc32c|minisketch"))
+        }
+        ORDER BY DESC(?line_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, line_count, class_name }
+    | map {
+        ...row,
+        issue: "deserialization_attack_surface",
+        message: "Complex deserializer '{name}' ({line_count} lines) in {file}:{line}",
+        suggestion: "Review for: bounds checking, integer overflow, memory allocation limits, malformed input handling"
+    }
+    | emit { findings }
+}
+
+# Fast variant without RAG
+detector deserialization_attack_surface_fast(category="security", severity="critical") {
+    """Find complex deserialization methods (no RAG enrichment)."""
+
+    param min_lines: int = 5;
+    param limit: int = 100;
+
+    reql {
+        SELECT ?m ?name ?file ?line ?line_count ?class_name
+        WHERE {
+            { ?m type method } UNION { ?m type function }
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?m has-line-count ?line_count .
+            OPTIONAL { ?m is-defined-in ?c . ?c has-name ?class_name }
+            FILTER (REGEX(?name, "Unserialize|Deserialize|DecodeFrom|ReadFrom|Decode"))
+            FILTER (?line_count >= {min_lines})
+            FILTER (!REGEX(?file, "test|leveldb|crc32c|minisketch"))
+        }
+        ORDER BY DESC(?line_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, line_count, class_name }
+    | map {
+        ...row,
+        issue: "deserialization_attack_surface",
+        message: "Deserializer '{name}' ({line_count} lines) in {file}:{line}",
+        suggestion: "Review for: bounds checking, integer overflow, memory allocation limits, malformed input handling"
+    }
+    | emit { findings }
+}

@@ -15,8 +15,8 @@ detector public_api_untested(category="test_coverage", severity="high") {
             ?e is-in-file ?file .
             ?e is-at-line ?line .
             ?e isExported true .
-            FILTER ( !REGEX(?name, "^_") && !REGEX(?file, "test_") )
-            MINUS { ?test calls ?e . ?test is-in-file ?test_file . FILTER ( REGEX(?test_file, "test_") ) }
+            FILTER ( !REGEX(?name, "^_") && !REGEX(?file, "test_|_tests?\\.|/tests?/") )
+            MINUS { ?test calls ?e . ?test is-in-file ?test_file . FILTER ( REGEX(?test_file, "test_|_tests?\\.|/tests?/") ) }
         }
         ORDER BY ?entity_type ?name
         LIMIT {limit}

@@ -108,10 +108,10 @@ There are TWO ways to work with entity types:
 ### Exception Handling
 - `try-block` - Try block
 - `catch-clause` - Catch/except clause
-- `except-handler` - Exception handler (Python)
+- `except-handler` - Exception handler (Python, DEPRECATED → use catch-clause)
 - `finally-clause` - Finally clause
 - `throw-statement` - Throw statement
-- `raise-statement` - Raise statement (Python)
+- `raise-statement` - Raise statement (Python, DEPRECATED → use throw-statement)
 
 ### Other Types
 - `return-statement` - Return statement

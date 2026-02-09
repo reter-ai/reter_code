@@ -1,0 +1,39 @@
+# path_traversal_surface - Find functions that resolve file paths from external input
+#
+# OpenClaw resolves file paths for agent configurations, canvas content, media
+# files, and user uploads. Functions that construct or resolve paths from
+# user-controlled input can be exploited for directory traversal to read or
+# write arbitrary files on the server.
+#
+# CWE-22: Improper Limitation of a Pathname to a Restricted Directory (Path Traversal)
+
+detector path_traversal_surface(category="security", severity="medium") {
+    """Find functions that resolve file paths from user/external input."""
+
+    param min_lines: int = 10;
+    param limit: int = 50;
+
+    reql {
+        SELECT ?m ?name ?file ?line ?line_count
+        WHERE {
+            { ?m type method } UNION { ?m type function }
+            ?m has-name ?name .
+            ?m is-in-file ?file .
+            ?m is-at-line ?line .
+            ?m has-line-count ?line_count .
+            FILTER (REGEX(?name, "resolvePath|resolveFile|sanitizeFilename|listAgentFiles|resolveFilePath|normalizePath|safePath"))
+            FILTER (?line_count >= {min_lines})
+            FILTER (!REGEX(?file, "test|spec|mock|node_modules|vendor"))
+        }
+        ORDER BY DESC(?line_count)
+        LIMIT {limit}
+    }
+    | select { name, file, line, line_count }
+    | map {
+        ...row,
+        issue: "path_traversal_surface",
+        message: "Path resolution function '{name}' ({line_count} lines) in {file}:{line}",
+        suggestion: "Review for: directory traversal via ../ sequences, symlink following, path normalization before validation, chroot/jail enforcement"
+    }
+    | emit { findings }
+}

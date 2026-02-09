@@ -4032,13 +4032,16 @@ class RagEnrichStep:
                         if matches:
                             best = matches[0]
                             # RAG results use 'score', fallback to 'similarity' for compatibility
-                            new_row['similarity'] = best.get('score', best.get('similarity', 0))
+                            score = best.get('score', best.get('similarity', 0))
+                            new_row['similarity'] = score
+                            new_row['rag_similarity'] = score  # alias for filter compatibility
                             new_row['similar_entity'] = best.get('name', best.get('entity', ''))
                             new_row['similar_file'] = best.get('file', '')
                             new_row['similar_line'] = best.get('line', 0)
                             new_row['similar_type'] = best.get('entity_type', '')
                         else:
                             new_row['similarity'] = 0
+                            new_row['rag_similarity'] = 0
                             new_row['similar_entity'] = None
                             new_row['similar_file'] = None
                             new_row['similar_line'] = None
