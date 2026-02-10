@@ -242,8 +242,9 @@ class ConsoleUI:
     def _build_header(self) -> Panel:
         """Build header panel."""
         title = Text()
+        from reter_code import __version__
         title.append("RETER Server", style="bold blue")
-        title.append(" v0.1.0", style="dim")
+        title.append(f" v{__version__}", style="dim")
 
         # Show port (only if bound)
         port = self.server._actual_query_port
