@@ -1,0 +1,54 @@
+% Visual Basic 6 Language Ontology - CNL Format
+% Extends oo_ontology.cnl with VB6-specific concepts
+
+% File/Module types
+Every vb6-compilation-unit is a compilation-unit.
+Every vb6-module is a module.
+
+% Type definitions
+Every vb6-class is a class.
+Every vb6-enum is an enum.
+Every vb6-struct is a struct.
+
+% Members
+Every vb6-method is a method.
+Every vb6-function is a function.
+Every vb6-field is a field.
+Every vb6-property is a property.
+Every vb6-constructor is a constructor.
+Every vb6-event is an event.
+Every vb6-enum-member is an enum-member.
+
+% Parameters
+Every vb6-parameter is a parameter.
+
+% Import
+Every vb6-extern is an extern-method.
+
+% Exception handling
+Every vb6-error-handler is a try-block.
+
+% Control flow
+Every vb6-return-statement is a return-statement.
+
+% Other
+Every vb6-variable is a variable.
+Every vb6-constant is a field.
+Every vb6-reference is a reference.
+
+% VB6-Specific Concepts
+Every standard-module is a module.
+Every class-module is a class.
+Every form-module is a class.
+Every property-get is a property.
+Every property-let is a property.
+Every property-set is a property.
+
+% Access Modifiers
+Every public-member is a member.
+Every private-member is a member.
+Every friend-member is a member.
+
+% Code Smells
+Every vb6-god-class is a god-class.
+Every vb6-long-method is a long-method.

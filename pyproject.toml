@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "reter_code"
-version = "0.1.0"
+version = "0.1.3"
 description = "Reter Code - AI-powered code reasoning MCP server"
 readme = "README.md"
 license = {text = "MIT"}

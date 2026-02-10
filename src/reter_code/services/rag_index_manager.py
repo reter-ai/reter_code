@@ -50,6 +50,44 @@ from .rag_collectors import RAGCollectorMixin, ChunkConfig
 logger = configure_logger_for_debug_trace(__name__)
 
 
+# Language configuration for RAG indexing.
+# Each entry: (key, prefix, display_name, extensions)
+# - key: language key used in SyncChanges, stats, and JSON storage
+# - prefix: prefix used in _indexed_files dict (empty string = no prefix, i.e. Python)
+# - display_name: human-readable name for logging
+# - extensions: tuple of file extensions for this language
+RAG_LANGUAGE_CONFIG = [
+    ("python",     "",        "Python",       (".py",)),
+    ("javascript", "js:",     "JavaScript",   (".js", ".ts", ".jsx", ".tsx", ".mjs")),
+    ("html",       "html:",   "HTML",         (".html", ".htm")),
+    ("csharp",     "cs:",     "C#",           (".cs",)),
+    ("cpp",        "cpp:",    "C++",          (".cpp", ".cc", ".cxx", ".hpp", ".h")),
+    ("java",       "java:",   "Java",         (".java",)),
+    ("go",         "go:",     "Go",           (".go",)),
+    ("rust",       "rust:",   "Rust",         (".rs",)),
+    ("erlang",     "erlang:", "Erlang",       (".erl", ".hrl")),
+    ("php",        "php:",    "PHP",          (".php",)),
+    ("objc",       "objc:",   "Objective-C",  (".m", ".mm")),
+    ("swift",      "swift:",  "Swift",        (".swift",)),
+    ("vb6",        "vb6:",    "VB6",          (".bas", ".cls", ".frm")),
+    ("scala",      "scala:",  "Scala",        (".scala",)),
+    ("haskell",    "haskell:","Haskell",      (".hs", ".lhs")),
+]
+
+# Build derived data structures from config
+RAG_ALL_CODE_EXTENSIONS = tuple(
+    ext for _, _, _, exts in RAG_LANGUAGE_CONFIG for ext in exts
+)
+RAG_ALL_PREFIXES = tuple(
+    prefix for _, prefix, _, _ in RAG_LANGUAGE_CONFIG if prefix
+)
+# Map extension -> (key, prefix) for fast lookup
+RAG_EXT_TO_LANG = {}
+for _key, _prefix, _, _exts in RAG_LANGUAGE_CONFIG:
+    for _ext in _exts:
+        RAG_EXT_TO_LANG[_ext] = (_key, _prefix)
+
+
 class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
     """
     Manages the FAISS RAG index for semantic code search.
@@ -210,30 +248,22 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             # Get current sources from RETER (all supported code file types)
             all_sources, _ = reter.get_all_sources()
             current_code: Dict[str, str] = {}  # rel_path -> md5
-            # Must match extensions from sync_sources: JS_EXTENSIONS, HTML_EXTENSIONS, etc.
-            code_extensions = (
-                ".py",  # Python
-                ".js", ".ts", ".jsx", ".tsx", ".mjs",  # JavaScript/TypeScript
-                ".html", ".htm",  # HTML
-                ".cs",  # C#
-                ".cpp", ".cc", ".cxx", ".hpp", ".h",  # C++
-            )
             for source_id in all_sources:
                 if "|" in source_id:
                     md5_hash, rel_path = source_id.split("|", 1)
-                    if rel_path.endswith(code_extensions):
+                    if rel_path.endswith(RAG_ALL_CODE_EXTENSIONS):
                         rel_path_normalized = rel_path.replace("\\", "/")
                         current_code[rel_path_normalized] = md5_hash
 
             # Get indexed code files
-            # Must strip prefixes like js:, html:, cs:, cpp: to match RETER source paths
+            # Must strip language prefixes to match RETER source paths
             indexed_code: Dict[str, str] = {}  # rel_path -> md5
             for key, md5 in self._indexed_files.items():
                 if key.startswith("md:"):
                     continue  # Skip markdown
                 # Strip file type prefixes
                 clean_key = key
-                for prefix in ("js:", "html:", "cs:", "cpp:"):
+                for prefix in RAG_ALL_PREFIXES:
                     if key.startswith(prefix):
                         clean_key = key[len(prefix):]
                         break
@@ -474,7 +504,8 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
 
         Returns:
             Dict mapping rel_path -> md5_hash for all indexed files
-            Keys may have prefixes: js:, html:, cs:, cpp:, md:
+            Keys may have language prefixes (e.g. js:, java:, go:) or md: for markdown.
+            Python files have no prefix.
         """
         if not self._rag_files_path or not self._rag_files_path.exists():
             return {}
@@ -482,25 +513,23 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         try:
             with open(self._rag_files_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                # Format: {"python": {...}, "javascript": {...}, "html": {...}, etc.}
                 result = {}
-                # Python files have no prefix
-                result.update(data.get("python", {}))
-                # JavaScript files get js: prefix
-                result.update({f"js:{k}": v for k, v in data.get("javascript", {}).items()})
-                # HTML files get html: prefix
-                result.update({f"html:{k}": v for k, v in data.get("html", {}).items()})
-                # C# files get cs: prefix
-                result.update({f"cs:{k}": v for k, v in data.get("csharp", {}).items()})
-                # C++ files get cpp: prefix
-                result.update({f"cpp:{k}": v for k, v in data.get("cpp", {}).items()})
+                # Load all languages using config
+                for key, prefix, _, _ in RAG_LANGUAGE_CONFIG:
+                    lang_files = data.get(key, {})
+                    if prefix:
+                        result.update({f"{prefix}{k}": v for k, v in lang_files.items()})
+                    else:
+                        # Python has no prefix
+                        result.update(lang_files)
                 # Markdown files get md: prefix
                 result.update({f"md:{k}": v for k, v in data.get("markdown", {}).items()})
 
+                counts = ", ".join(
+                    f"{key}={len(data.get(key, {}))}" for key, _, _, _ in RAG_LANGUAGE_CONFIG
+                )
                 logger.debug(f"[RAG] _load_rag_files: Loaded {len(result)} indexed files "
-                         f"(py={len(data.get('python', {}))}, js={len(data.get('javascript', {}))}, "
-                         f"html={len(data.get('html', {}))}, cs={len(data.get('csharp', {}))}, "
-                         f"cpp={len(data.get('cpp', {}))}, md={len(data.get('markdown', {}))})")
+                         f"({counts}, md={len(data.get('markdown', {}))})")
                 return result
         except Exception as e:
             logger.debug(f"[RAG] _load_rag_files: Error loading: {e}")
@@ -514,40 +543,34 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             return
 
         # Split by type for cleaner JSON
-        python_files = {}
-        javascript_files = {}
-        html_files = {}
-        csharp_files = {}
-        cpp_files = {}
-        markdown_files = {}
+        # Build prefix->key lookup for splitting
+        lang_files: Dict[str, Dict[str, str]] = {key: {} for key, _, _, _ in RAG_LANGUAGE_CONFIG}
+        markdown_files: Dict[str, str] = {}
 
-        for key, md5 in self._indexed_files.items():
-            if key.startswith("md:"):
-                markdown_files[key[3:]] = md5  # Remove "md:" prefix
-            elif key.startswith("js:"):
-                javascript_files[key[3:]] = md5  # Remove "js:" prefix
-            elif key.startswith("html:"):
-                html_files[key[5:]] = md5  # Remove "html:" prefix
-            elif key.startswith("cs:"):
-                csharp_files[key[3:]] = md5  # Remove "cs:" prefix
-            elif key.startswith("cpp:"):
-                cpp_files[key[4:]] = md5  # Remove "cpp:" prefix
+        for file_key, md5 in self._indexed_files.items():
+            if file_key.startswith("md:"):
+                markdown_files[file_key[3:]] = md5
             else:
-                python_files[key] = md5  # Python has no prefix
+                matched = False
+                for lang_key, prefix, _, _ in RAG_LANGUAGE_CONFIG:
+                    if prefix and file_key.startswith(prefix):
+                        lang_files[lang_key][file_key[len(prefix):]] = md5
+                        matched = True
+                        break
+                if not matched:
+                    # Python has no prefix
+                    lang_files["python"][file_key] = md5
 
-        data = {
-            "version": "1.1",
+        data: Dict[str, Any] = {
+            "version": "1.2",
             "updated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-            "python": python_files,
-            "javascript": javascript_files,
-            "html": html_files,
-            "csharp": csharp_files,
-            "cpp": cpp_files,
-            "markdown": markdown_files,
         }
+        for lang_key, _, _, _ in RAG_LANGUAGE_CONFIG:
+            data[lang_key] = lang_files[lang_key]
+        data["markdown"] = markdown_files
 
-        logger.debug(f"[RAG] _save_rag_files: Saving py={len(python_files)}, js={len(javascript_files)}, "
-                 f"html={len(html_files)}, cs={len(csharp_files)}, cpp={len(cpp_files)}, md={len(markdown_files)}")
+        counts = ", ".join(f"{k}={len(lang_files[k])}" for k, _, _, _ in RAG_LANGUAGE_CONFIG)
+        logger.debug(f"[RAG] _save_rag_files: Saving {counts}, md={len(markdown_files)}")
 
         try:
             with open(self._rag_files_path, 'w', encoding='utf-8') as f:
@@ -649,65 +672,34 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             return {"status": "model_loading", "error": "Embedding model still loading in background"}
 
         start_time = time.time()
-        stats = {
-            "python_vectors_added": 0,
-            "python_vectors_removed": 0,
-            "javascript_vectors_added": 0,
-            "javascript_vectors_removed": 0,
-            "html_vectors_added": 0,
-            "html_vectors_removed": 0,
-            "csharp_vectors_added": 0,
-            "csharp_vectors_removed": 0,
-            "cpp_vectors_added": 0,
-            "cpp_vectors_removed": 0,
-            "markdown_vectors_added": 0,
-            "markdown_vectors_removed": 0,
-            "errors": [],
-        }
+        stats: Dict[str, Any] = {"errors": []}
+        for key, _, _, _ in RAG_LANGUAGE_CONFIG:
+            stats[f"{key}_vectors_added"] = 0
+            stats[f"{key}_vectors_removed"] = 0
+        stats["markdown_vectors_added"] = 0
+        stats["markdown_vectors_removed"] = 0
 
         # Update content extractor project root
         self._content_extractor.project_root = project_root
 
-        # 1. Remove vectors for deleted sources
-        for source_id in changes.python.deleted:
-            removed = self._remove_vectors_for_source(source_id)
-            stats["python_vectors_removed"] += removed
-
-        for source_id in changes.javascript.deleted:
-            removed = self._remove_vectors_for_source(source_id)
-            stats["javascript_vectors_removed"] += removed
-
-        for source_id in changes.html.deleted:
-            removed = self._remove_vectors_for_source(source_id)
-            stats["html_vectors_removed"] += removed
-
-        for source_id in changes.csharp.deleted:
-            removed = self._remove_vectors_for_source(source_id)
-            stats["csharp_vectors_removed"] += removed
-
-        for source_id in changes.cpp.deleted:
-            removed = self._remove_vectors_for_source(source_id)
-            stats["cpp_vectors_removed"] += removed
+        # 1. Remove vectors for deleted sources (all languages)
+        for key, _, _, _ in RAG_LANGUAGE_CONFIG:
+            lang_changes = getattr(changes, key, None)
+            if lang_changes:
+                for source_id in lang_changes.deleted:
+                    removed = self._remove_vectors_for_source(source_id)
+                    stats[f"{key}_vectors_removed"] += removed
 
         for rel_path in changes.markdown.deleted:
             removed = self._remove_vectors_for_markdown(rel_path)
             stats["markdown_vectors_removed"] += removed
 
         # 2. Re-remove vectors for changed sources (they'll be re-indexed)
-        for source_id in changes.python.changed:
-            self._remove_vectors_for_source(source_id)
-
-        for source_id in changes.javascript.changed:
-            self._remove_vectors_for_source(source_id)
-
-        for source_id in changes.html.changed:
-            self._remove_vectors_for_source(source_id)
-
-        for source_id in changes.csharp.changed:
-            self._remove_vectors_for_source(source_id)
-
-        for source_id in changes.cpp.changed:
-            self._remove_vectors_for_source(source_id)
+        for key, _, _, _ in RAG_LANGUAGE_CONFIG:
+            lang_changes = getattr(changes, key, None)
+            if lang_changes:
+                for source_id in lang_changes.changed:
+                    self._remove_vectors_for_source(source_id)
 
         for rel_path in changes.markdown.changed:
             self._remove_vectors_for_markdown(rel_path)
@@ -717,7 +709,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         all_metadata = []
         source_tracking = []  # (source_id, file_type, start_idx, count)
 
-        # 3a. Collect Python entities and comments
+        # 3a. Collect Python entities, comments, and literals (special handling)
         for source_id in changes.python.changed:
             try:
                 entities = self._query_entities_for_source(reter, source_id, language="python")
@@ -746,7 +738,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 all_texts.extend(literal_texts)
                 all_metadata.extend(literal_metadata)
 
-        # 3c. Collect JavaScript entities
+        # 3c. Collect JavaScript entities and literals (special handling)
         for source_id in changes.javascript.changed:
             try:
                 entities = self._query_entities_for_source(reter, source_id, language="javascript")
@@ -759,7 +751,6 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 logger.error(f"Error collecting JavaScript {source_id}: {e}")
                 stats["errors"].append(f"JavaScript: {source_id}: {e}")
 
-        # 3d. Collect JavaScript literals (bulk query - filtered by changed sources)
         if changes.javascript.changed:
             js_literal_texts, js_literal_metadata = self._collect_all_javascript_literals_bulk(
                 reter, project_root, changed_sources=changes.javascript.changed
@@ -769,7 +760,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 all_texts.extend(js_literal_texts)
                 all_metadata.extend(js_literal_metadata)
 
-        # 3e. Collect HTML entities
+        # 3d. Collect HTML entities (special query)
         for source_id in changes.html.changed:
             try:
                 entities = self._query_html_entities_for_source(reter, source_id)
@@ -782,33 +773,33 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 logger.error(f"Error collecting HTML {source_id}: {e}")
                 stats["errors"].append(f"HTML: {source_id}: {e}")
 
-        # 3f. Collect C# entities (uses similar pattern to Python)
-        for source_id in changes.csharp.changed:
-            try:
-                entities = self._query_entities_for_source(reter, source_id, language="csharp")
-                texts, metadata = self._collect_csharp_entities(entities, source_id, project_root, self._chunk_config)
-                if texts:
-                    source_tracking.append((source_id, "csharp", len(all_texts), len(texts)))
-                    all_texts.extend(texts)
-                    all_metadata.extend(metadata)
-            except Exception as e:
-                logger.error(f"Error collecting C# {source_id}: {e}")
-                stats["errors"].append(f"C#: {source_id}: {e}")
+        # 3e. Collect entities for all other code languages (generic pattern)
+        _generic_langs = [
+            ("csharp", "C#"), ("cpp", "C++"), ("java", "Java"), ("go", "Go"),
+            ("rust", "Rust"), ("erlang", "Erlang"), ("php", "PHP"),
+            ("objc", "Objective-C"), ("swift", "Swift"), ("vb6", "VB6"),
+            ("scala", "Scala"), ("haskell", "Haskell"),
+        ]
+        for lang_key, lang_display in _generic_langs:
+            lang_changes = getattr(changes, lang_key, None)
+            if not lang_changes or not lang_changes.changed:
+                continue
+            collect_fn = getattr(self, f"_collect_{lang_key}_entities", None)
+            if not collect_fn:
+                continue
+            for source_id in lang_changes.changed:
+                try:
+                    entities = self._query_entities_for_source(reter, source_id, language=lang_key)
+                    texts, metadata = collect_fn(entities, source_id, project_root, self._chunk_config)
+                    if texts:
+                        source_tracking.append((source_id, lang_key, len(all_texts), len(texts)))
+                        all_texts.extend(texts)
+                        all_metadata.extend(metadata)
+                except Exception as e:
+                    logger.error(f"Error collecting {lang_display} {source_id}: {e}")
+                    stats["errors"].append(f"{lang_display}: {source_id}: {e}")
 
-        # 3g. Collect C++ entities (uses similar pattern to C#)
-        for source_id in changes.cpp.changed:
-            try:
-                entities = self._query_entities_for_source(reter, source_id, language="cpp")
-                texts, metadata = self._collect_cpp_entities(entities, source_id, project_root, self._chunk_config)
-                if texts:
-                    source_tracking.append((source_id, "cpp", len(all_texts), len(texts)))
-                    all_texts.extend(texts)
-                    all_metadata.extend(metadata)
-            except Exception as e:
-                logger.error(f"Error collecting C++ {source_id}: {e}")
-                stats["errors"].append(f"C++: {source_id}: {e}")
-
-        # 3h. Collect Markdown chunks
+        # 3f. Collect Markdown chunks
         for rel_path in changes.markdown.changed:
             try:
                 abs_path = project_root / rel_path
@@ -858,32 +849,24 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 }
 
                 # Update _indexed_files to keep sync status accurate
-                # Use prefixes matching sync_sources() convention
-                if file_type in ("python", "python_comment", "python_literal") and md5_hash:
-                    self._indexed_files[rel_path] = md5_hash
-                elif file_type in ("javascript", "javascript_literal") and md5_hash:
-                    self._indexed_files[f"js:{rel_path}"] = md5_hash
-                elif file_type == "html" and md5_hash:
-                    self._indexed_files[f"html:{rel_path}"] = md5_hash
-                elif file_type == "csharp" and md5_hash:
-                    self._indexed_files[f"cs:{rel_path}"] = md5_hash
-                elif file_type == "cpp" and md5_hash:
-                    self._indexed_files[f"cpp:{rel_path}"] = md5_hash
-                elif file_type == "markdown":
-                    # Markdown uses rel_path as key with md: prefix
+                if file_type == "markdown":
                     self._indexed_files[f"md:{rel_path}"] = md5_hash
+                elif md5_hash:
+                    # Map file_type to its base language key
+                    base_type = file_type.split("_")[0]  # "python_comment" -> "python"
+                    # Find the prefix for this language
+                    matched_prefix = ""
+                    for lk, lp, _, _ in RAG_LANGUAGE_CONFIG:
+                        if lk == base_type:
+                            matched_prefix = lp
+                            break
+                    self._indexed_files[f"{matched_prefix}{rel_path}"] = md5_hash
 
                 # Update stats
-                if file_type in ("python", "python_comment", "python_literal"):
-                    stats["python_vectors_added"] += count
-                elif file_type in ("javascript", "javascript_literal"):
-                    stats["javascript_vectors_added"] += count
-                elif file_type == "html":
-                    stats["html_vectors_added"] += count
-                elif file_type == "csharp":
-                    stats["csharp_vectors_added"] += count
-                elif file_type == "cpp":
-                    stats["cpp_vectors_added"] += count
+                base_type = file_type.split("_")[0]  # "python_comment" -> "python"
+                stat_key = f"{base_type}_vectors_added"
+                if stat_key in stats:
+                    stats[stat_key] += count
                 elif file_type == "markdown":
                     stats["markdown_vectors_added"] += count
 
@@ -892,22 +875,20 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         self._save_rag_files()  # Also save _indexed_files to keep sync status accurate
 
         stats["time_ms"] = int((time.time() - start_time) * 1000)
-        total_removed = (
-            stats['python_vectors_removed'] +
-            stats['javascript_vectors_removed'] +
-            stats['html_vectors_removed'] +
-            stats['csharp_vectors_removed'] +
-            stats['cpp_vectors_removed'] +
-            stats['markdown_vectors_removed']
-        )
+        total_added = sum(stats.get(f"{k}_vectors_added", 0) for k, _, _, _ in RAG_LANGUAGE_CONFIG) + stats["markdown_vectors_added"]
+        total_removed = sum(stats.get(f"{k}_vectors_removed", 0) for k, _, _, _ in RAG_LANGUAGE_CONFIG) + stats["markdown_vectors_removed"]
+        # Log per-language stats for languages with activity
+        active_parts = []
+        for key, _, display, _ in RAG_LANGUAGE_CONFIG:
+            added = stats.get(f"{key}_vectors_added", 0)
+            if added > 0:
+                active_parts.append(f"+{added} {display}")
+        if stats["markdown_vectors_added"] > 0:
+            active_parts.append(f"+{stats['markdown_vectors_added']} Markdown")
+        if total_removed > 0:
+            active_parts.append(f"-{total_removed} removed")
         logger.info(
-            f"RAG sync: +{stats['python_vectors_added']} Python, "
-            f"+{stats['javascript_vectors_added']} JavaScript, "
-            f"+{stats['html_vectors_added']} HTML, "
-            f"+{stats['csharp_vectors_added']} C#, "
-            f"+{stats['cpp_vectors_added']} C++, "
-            f"+{stats['markdown_vectors_added']} Markdown, "
-            f"-{total_removed} removed "
+            f"RAG sync: {', '.join(active_parts) if active_parts else 'no changes'} "
             f"in {stats['time_ms']}ms"
         )
 
@@ -967,50 +948,27 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         # Load indexed files from JSON (fast, no model needed)
         self._indexed_files = self._load_rag_files()
         # Count by type for debugging
-        py_count = sum(1 for k in self._indexed_files if not k.startswith(("js:", "html:", "cs:", "cpp:", "md:")))
-        js_count = sum(1 for k in self._indexed_files if k.startswith("js:"))
-        html_count = sum(1 for k in self._indexed_files if k.startswith("html:"))
-        cs_count = sum(1 for k in self._indexed_files if k.startswith("cs:"))
-        cpp_count = sum(1 for k in self._indexed_files if k.startswith("cpp:"))
+        all_prefixes_plus_md = tuple(p for _, p, _, _ in RAG_LANGUAGE_CONFIG if p) + ("md:",)
+        py_count = sum(1 for k in self._indexed_files if not k.startswith(all_prefixes_plus_md))
         md_count = sum(1 for k in self._indexed_files if k.startswith("md:"))
         logger.debug(f"[RAG] sync_sources: Loaded {len(self._indexed_files)} indexed files from JSON "
-                 f"(py={py_count}, js={js_count}, html={html_count}, cs={cs_count}, cpp={cpp_count}, md={md_count})")
+                 f"(py={py_count}, other_code={len(self._indexed_files) - py_count - md_count}, md={md_count})")
 
-        stats = {
-            "python_added": 0,
-            "python_removed": 0,
-            "python_unchanged": 0,
-            "javascript_added": 0,
-            "javascript_removed": 0,
-            "javascript_unchanged": 0,
-            "html_added": 0,
-            "html_removed": 0,
-            "html_unchanged": 0,
-            "csharp_added": 0,
-            "csharp_removed": 0,
-            "csharp_unchanged": 0,
-            "cpp_added": 0,
-            "cpp_removed": 0,
-            "cpp_unchanged": 0,
-            "markdown_added": 0,
-            "markdown_removed": 0,
-            "markdown_unchanged": 0,
-            "errors": [],
-        }
-
-        # File extension patterns
-        JS_EXTENSIONS = ('.js', '.ts', '.jsx', '.tsx', '.mjs')
-        HTML_EXTENSIONS = ('.html', '.htm')
-        CSHARP_EXTENSIONS = ('.cs',)
-        CPP_EXTENSIONS = ('.cpp', '.cc', '.cxx', '.hpp', '.h')
+        stats: Dict[str, Any] = {"errors": []}
+        for key, _, _, _ in RAG_LANGUAGE_CONFIG:
+            stats[f"{key}_added"] = 0
+            stats[f"{key}_removed"] = 0
+            stats[f"{key}_unchanged"] = 0
+        stats["markdown_added"] = 0
+        stats["markdown_removed"] = 0
+        stats["markdown_unchanged"] = 0
 
         # Get current sources from RETER (already loaded by BackgroundInitializer)
         all_sources, _ = reter.get_all_sources()
-        current_python: Dict[str, Tuple[str, str]] = {}  # rel_path -> (source_id, md5)
-        current_javascript: Dict[str, Tuple[str, str]] = {}  # rel_path -> (source_id, md5)
-        current_html: Dict[str, Tuple[str, str]] = {}  # rel_path -> (source_id, md5)
-        current_csharp: Dict[str, Tuple[str, str]] = {}  # rel_path -> (source_id, md5)
-        current_cpp: Dict[str, Tuple[str, str]] = {}  # rel_path -> (source_id, md5)
+        # Per-language current file tracking: key -> {rel_path: (source_id, md5)}
+        current_by_lang: Dict[str, Dict[str, Tuple[str, str]]] = {
+            key: {} for key, _, _, _ in RAG_LANGUAGE_CONFIG
+        }
 
         # Helper to compute actual file MD5 (more reliable than RETER snapshot MD5s)
         def compute_file_md5(abs_path: Path) -> Optional[str]:
@@ -1030,201 +988,68 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             if "|" in source_id:
                 reter_md5, rel_path = source_id.split("|", 1)
                 rel_path_normalized = rel_path.replace("\\", "/")
-                rel_path_lower = rel_path.lower()
+
+                # Determine language from extension
+                ext = Path(rel_path_normalized).suffix.lower()
+                lang_info = RAG_EXT_TO_LANG.get(ext)
+                if not lang_info:
+                    continue
+                lang_key, lang_prefix = lang_info
 
                 # OPTIMIZATION: If targeted sync and file not in changed_files,
                 # use cached MD5 instead of computing (assume unchanged)
                 if changed_files and rel_path_normalized not in changed_files:
-                    # Use cached MD5 if available
-                    if rel_path_lower.endswith(".py"):
-                        cached_md5 = self._indexed_files.get(rel_path_normalized)
-                        if cached_md5:
-                            current_python[rel_path_normalized] = (source_id, cached_md5)
-                    elif rel_path_lower.endswith(JS_EXTENSIONS):
-                        cached_md5 = self._indexed_files.get(f"js:{rel_path_normalized}")
-                        if cached_md5:
-                            current_javascript[rel_path_normalized] = (source_id, cached_md5)
-                    elif rel_path_lower.endswith(HTML_EXTENSIONS):
-                        cached_md5 = self._indexed_files.get(f"html:{rel_path_normalized}")
-                        if cached_md5:
-                            current_html[rel_path_normalized] = (source_id, cached_md5)
-                    elif rel_path_lower.endswith(CSHARP_EXTENSIONS):
-                        cached_md5 = self._indexed_files.get(f"cs:{rel_path_normalized}")
-                        if cached_md5:
-                            current_csharp[rel_path_normalized] = (source_id, cached_md5)
-                    elif rel_path_lower.endswith(CPP_EXTENSIONS):
-                        cached_md5 = self._indexed_files.get(f"cpp:{rel_path_normalized}")
-                        if cached_md5:
-                            current_cpp[rel_path_normalized] = (source_id, cached_md5)
+                    cached_md5 = self._indexed_files.get(f"{lang_prefix}{rel_path_normalized}")
+                    if cached_md5:
+                        current_by_lang[lang_key][rel_path_normalized] = (source_id, cached_md5)
                     continue
 
                 # Compute actual MD5 for this file
-                if rel_path_lower.endswith(".py"):
-                    # Use actual file MD5 (RETER's MD5 is from parsed content, not stable across restarts)
-                    actual_md5 = compute_file_md5(project_root / rel_path_normalized)
-                    if actual_md5:
-                        current_python[rel_path_normalized] = (source_id, actual_md5)
-                elif rel_path_lower.endswith(JS_EXTENSIONS):
-                    # For non-Python files, compute actual file MD5 to avoid stale snapshot MD5s
-                    actual_md5 = compute_file_md5(project_root / rel_path_normalized)
-                    if actual_md5:
-                        current_javascript[rel_path_normalized] = (source_id, actual_md5)
-                elif rel_path_lower.endswith(HTML_EXTENSIONS):
-                    actual_md5 = compute_file_md5(project_root / rel_path_normalized)
-                    if actual_md5:
-                        current_html[rel_path_normalized] = (source_id, actual_md5)
-                elif rel_path_lower.endswith(CSHARP_EXTENSIONS):
-                    actual_md5 = compute_file_md5(project_root / rel_path_normalized)
-                    if actual_md5:
-                        current_csharp[rel_path_normalized] = (source_id, actual_md5)
-                elif rel_path_lower.endswith(CPP_EXTENSIONS):
-                    actual_md5 = compute_file_md5(project_root / rel_path_normalized)
-                    if actual_md5:
-                        current_cpp[rel_path_normalized] = (source_id, actual_md5)
+                actual_md5 = compute_file_md5(project_root / rel_path_normalized)
+                if actual_md5:
+                    current_by_lang[lang_key][rel_path_normalized] = (source_id, actual_md5)
 
-        # Get indexed files from _indexed_files (using prefixes: py:, js:, html:, cs:, cpp:, md:)
-        indexed_python: Dict[str, str] = {}  # rel_path -> md5
-        indexed_javascript: Dict[str, str] = {}  # rel_path -> md5
-        indexed_html: Dict[str, str] = {}  # rel_path -> md5
-        indexed_csharp: Dict[str, str] = {}  # rel_path -> md5
-        indexed_cpp: Dict[str, str] = {}  # rel_path -> md5
-        for key, md5 in self._indexed_files.items():
-            if key.startswith("js:"):
-                indexed_javascript[key[3:]] = md5
-            elif key.startswith("html:"):
-                indexed_html[key[5:]] = md5
-            elif key.startswith("cs:"):
-                indexed_csharp[key[3:]] = md5
-            elif key.startswith("cpp:"):
-                indexed_cpp[key[4:]] = md5
-            elif key.startswith("md:"):
+        # Get indexed files from _indexed_files (split by language prefix)
+        indexed_by_lang: Dict[str, Dict[str, str]] = {key: {} for key, _, _, _ in RAG_LANGUAGE_CONFIG}
+        for file_key, md5 in self._indexed_files.items():
+            if file_key.startswith("md:"):
                 pass  # Handled separately below
             else:
-                # Legacy: Python files without prefix
-                indexed_python[key] = md5
+                matched = False
+                for lang_key, prefix, _, _ in RAG_LANGUAGE_CONFIG:
+                    if prefix and file_key.startswith(prefix):
+                        indexed_by_lang[lang_key][file_key[len(prefix):]] = md5
+                        matched = True
+                        break
+                if not matched:
+                    # Legacy: Python files without prefix
+                    indexed_by_lang["python"][file_key] = md5
 
-        logger.debug(f"[RAG] sync_sources: Python - {len(current_python)} current, {len(indexed_python)} indexed")
+        # Find changes for all code languages
+        to_add_by_lang: Dict[str, List[Tuple[str, str, str]]] = {key: [] for key, _, _, _ in RAG_LANGUAGE_CONFIG}
+        to_remove_by_lang: Dict[str, List[str]] = {key: [] for key, _, _, _ in RAG_LANGUAGE_CONFIG}
 
-        # Find Python changes
-        python_to_add: List[Tuple[str, str, str]] = []  # (source_id, rel_path, md5) to add
-        python_to_remove: List[str] = []  # rel_paths to remove from _indexed_files
+        for lang_key, _, lang_display, _ in RAG_LANGUAGE_CONFIG:
+            current_lang = current_by_lang[lang_key]
+            indexed_lang = indexed_by_lang[lang_key]
+            logger.debug(f"[RAG] sync_sources: {lang_display} - {len(current_lang)} current, {len(indexed_lang)} indexed")
 
-        for rel_path, (source_id, current_md5) in current_python.items():
-            indexed_md5 = indexed_python.get(rel_path)
-            if indexed_md5 is None:
-                # New file
-                logger.debug(f"[RAG] sync_sources: Python NEW: {rel_path}")
-                python_to_add.append((source_id, rel_path, current_md5))
-            elif current_md5 != indexed_md5:
-                # Modified file
-                logger.debug(f"[RAG] sync_sources: Python MODIFIED: {rel_path} (indexed={indexed_md5[:8]}... vs current={current_md5[:8]}...)")
-                python_to_remove.append(rel_path)
-                python_to_add.append((source_id, rel_path, current_md5))
-            else:
-                stats["python_unchanged"] += 1
+            for rel_path, (source_id, current_md5) in current_lang.items():
+                indexed_md5 = indexed_lang.get(rel_path)
+                if indexed_md5 is None:
+                    to_add_by_lang[lang_key].append((source_id, rel_path, current_md5))
+                elif current_md5 != indexed_md5:
+                    to_remove_by_lang[lang_key].append(rel_path)
+                    to_add_by_lang[lang_key].append((source_id, rel_path, current_md5))
+                else:
+                    stats[f"{lang_key}_unchanged"] += 1
 
-        for rel_path in indexed_python:
-            if rel_path not in current_python:
-                # Deleted file
-                python_to_remove.append(rel_path)
+            for rel_path in indexed_lang:
+                if rel_path not in current_lang:
+                    to_remove_by_lang[lang_key].append(rel_path)
 
-        logger.debug(f"[RAG] sync_sources: Python changes - +{len(python_to_add)} -{len(python_to_remove)} ={stats['python_unchanged']}")
-
-        # Find JavaScript changes
-        logger.debug(f"[RAG] sync_sources: JavaScript - {len(current_javascript)} current, {len(indexed_javascript)} indexed")
-        javascript_to_add: List[Tuple[str, str, str]] = []  # (source_id, rel_path, md5) to add
-        javascript_to_remove: List[str] = []  # rel_paths to remove from _indexed_files
-
-        for rel_path, (source_id, current_md5) in current_javascript.items():
-            indexed_md5 = indexed_javascript.get(rel_path)
-            if indexed_md5 is None:
-                # New file
-                javascript_to_add.append((source_id, rel_path, current_md5))
-            elif current_md5 != indexed_md5:
-                # Modified file
-                javascript_to_remove.append(rel_path)
-                javascript_to_add.append((source_id, rel_path, current_md5))
-            else:
-                stats["javascript_unchanged"] += 1
-
-        for rel_path in indexed_javascript:
-            if rel_path not in current_javascript:
-                # Deleted file
-                javascript_to_remove.append(rel_path)
-
-        logger.debug(f"[RAG] sync_sources: JavaScript changes - +{len(javascript_to_add)} -{len(javascript_to_remove)} ={stats['javascript_unchanged']}")
-
-        # Find HTML changes
-        logger.debug(f"[RAG] sync_sources: HTML - {len(current_html)} current, {len(indexed_html)} indexed")
-        html_to_add: List[Tuple[str, str, str]] = []  # (source_id, rel_path, md5) to add
-        html_to_remove: List[str] = []  # rel_paths to remove from _indexed_files
-
-        for rel_path, (source_id, current_md5) in current_html.items():
-            indexed_md5 = indexed_html.get(rel_path)
-            if indexed_md5 is None:
-                # New file
-                html_to_add.append((source_id, rel_path, current_md5))
-            elif current_md5 != indexed_md5:
-                # Modified file
-                html_to_remove.append(rel_path)
-                html_to_add.append((source_id, rel_path, current_md5))
-            else:
-                stats["html_unchanged"] += 1
-
-        for rel_path in indexed_html:
-            if rel_path not in current_html:
-                # Deleted file
-                html_to_remove.append(rel_path)
-
-        logger.debug(f"[RAG] sync_sources: HTML changes - +{len(html_to_add)} -{len(html_to_remove)} ={stats['html_unchanged']}")
-
-        # Find C# changes
-        logger.debug(f"[RAG] sync_sources: C# - {len(current_csharp)} current, {len(indexed_csharp)} indexed")
-        csharp_to_add: List[Tuple[str, str, str]] = []  # (source_id, rel_path, md5) to add
-        csharp_to_remove: List[str] = []  # rel_paths to remove from _indexed_files
-
-        for rel_path, (source_id, current_md5) in current_csharp.items():
-            indexed_md5 = indexed_csharp.get(rel_path)
-            if indexed_md5 is None:
-                # New file
-                csharp_to_add.append((source_id, rel_path, current_md5))
-            elif current_md5 != indexed_md5:
-                # Modified file
-                csharp_to_remove.append(rel_path)
-                csharp_to_add.append((source_id, rel_path, current_md5))
-            else:
-                stats["csharp_unchanged"] += 1
-
-        for rel_path in indexed_csharp:
-            if rel_path not in current_csharp:
-                # Deleted file
-                csharp_to_remove.append(rel_path)
-
-        logger.debug(f"[RAG] sync_sources: C# changes - +{len(csharp_to_add)} -{len(csharp_to_remove)} ={stats['csharp_unchanged']}")
-
-        # Find C++ changes
-        logger.debug(f"[RAG] sync_sources: C++ - {len(current_cpp)} current, {len(indexed_cpp)} indexed")
-        cpp_to_add: List[Tuple[str, str, str]] = []  # (source_id, rel_path, md5) to add
-        cpp_to_remove: List[str] = []  # rel_paths to remove from _indexed_files
-
-        for rel_path, (source_id, current_md5) in current_cpp.items():
-            indexed_md5 = indexed_cpp.get(rel_path)
-            if indexed_md5 is None:
-                # New file
-                cpp_to_add.append((source_id, rel_path, current_md5))
-            elif current_md5 != indexed_md5:
-                # Modified file
-                cpp_to_remove.append(rel_path)
-                cpp_to_add.append((source_id, rel_path, current_md5))
-            else:
-                stats["cpp_unchanged"] += 1
-
-        for rel_path in indexed_cpp:
-            if rel_path not in current_cpp:
-                # Deleted file
-                cpp_to_remove.append(rel_path)
-
-        logger.debug(f"[RAG] sync_sources: C++ changes - +{len(cpp_to_add)} -{len(cpp_to_remove)} ={stats['cpp_unchanged']}")
+            if to_add_by_lang[lang_key] or to_remove_by_lang[lang_key]:
+                logger.debug(f"[RAG] sync_sources: {lang_display} changes - +{len(to_add_by_lang[lang_key])} -{len(to_remove_by_lang[lang_key])} ={stats[f'{lang_key}_unchanged']}")
 
         # Get current Markdown files and compute MD5s
         current_markdown: Dict[str, str] = {}  # rel_path -> md5
@@ -1279,22 +1104,16 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         logger.debug(f"[RAG] sync_sources: Markdown changes - +{len(markdown_to_add)} -{len(markdown_to_remove)} ={stats['markdown_unchanged']}")
 
         # Check if any changes
-        total_changes = (
-            len(python_to_add) + len(python_to_remove) +
-            len(javascript_to_add) + len(javascript_to_remove) +
-            len(html_to_add) + len(html_to_remove) +
-            len(csharp_to_add) + len(csharp_to_remove) +
-            len(cpp_to_add) + len(cpp_to_remove) +
-            len(markdown_to_add) + len(markdown_to_remove)
-        )
+        total_changes = sum(
+            len(to_add_by_lang[k]) + len(to_remove_by_lang[k]) for k, _, _, _ in RAG_LANGUAGE_CONFIG
+        ) + len(markdown_to_add) + len(markdown_to_remove)
 
         logger.debug(f"[RAG] sync_sources: {total_changes} changes detected")
 
         # Estimate total files to index for progress reporting
-        total_files_to_index = (
-            len(python_to_add) + len(javascript_to_add) + len(html_to_add) +
-            len(csharp_to_add) + len(cpp_to_add) + len(markdown_to_add)
-        )
+        total_files_to_index = sum(
+            len(to_add_by_lang[k]) for k, _, _, _ in RAG_LANGUAGE_CONFIG
+        ) + len(markdown_to_add)
         if progress_callback:
             progress_callback(0, total_files_to_index, "initializing")
         else:
@@ -1311,60 +1130,15 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             return stats
         logger.debug(f"[RAG] sync_sources: Initialized with {self._faiss_wrapper.total_vectors} existing vectors")
 
-        # Remove vectors for deleted/modified Python files
-        for rel_path in python_to_remove:
-            # Find the source_id in metadata that matches this rel_path
-            for source_id, info in list(self._metadata["sources"].items()):
-                if info.get("file_type") == "python" and info.get("rel_path", "").replace("\\", "/") == rel_path:
-                    removed = self._remove_vectors_for_source(source_id)
-                    stats["python_removed"] += removed
-                    break
-            # Remove from indexed files
-            self._indexed_files.pop(rel_path, None)
-
-        # Remove vectors for deleted/modified JavaScript files
-        for rel_path in javascript_to_remove:
-            # Find the source_id in metadata that matches this rel_path
-            for source_id, info in list(self._metadata["sources"].items()):
-                if info.get("file_type") == "javascript" and info.get("rel_path", "").replace("\\", "/") == rel_path:
-                    removed = self._remove_vectors_for_source(source_id)
-                    stats["javascript_removed"] += removed
-                    break
-            # Remove from indexed files
-            self._indexed_files.pop(f"js:{rel_path}", None)
-
-        # Remove vectors for deleted/modified HTML files
-        for rel_path in html_to_remove:
-            # Find the source_id in metadata that matches this rel_path
-            for source_id, info in list(self._metadata["sources"].items()):
-                if info.get("file_type") == "html" and info.get("rel_path", "").replace("\\", "/") == rel_path:
-                    removed = self._remove_vectors_for_source(source_id)
-                    stats["html_removed"] += removed
-                    break
-            # Remove from indexed files
-            self._indexed_files.pop(f"html:{rel_path}", None)
-
-        # Remove vectors for deleted/modified C# files
-        for rel_path in csharp_to_remove:
-            # Find the source_id in metadata that matches this rel_path
-            for source_id, info in list(self._metadata["sources"].items()):
-                if info.get("file_type") == "csharp" and info.get("rel_path", "").replace("\\", "/") == rel_path:
-                    removed = self._remove_vectors_for_source(source_id)
-                    stats["csharp_removed"] += removed
-                    break
-            # Remove from indexed files
-            self._indexed_files.pop(f"cs:{rel_path}", None)
-
-        # Remove vectors for deleted/modified C++ files
-        for rel_path in cpp_to_remove:
-            # Find the source_id in metadata that matches this rel_path
-            for source_id, info in list(self._metadata["sources"].items()):
-                if info.get("file_type") == "cpp" and info.get("rel_path", "").replace("\\", "/") == rel_path:
-                    removed = self._remove_vectors_for_source(source_id)
-                    stats["cpp_removed"] += removed
-                    break
-            # Remove from indexed files
-            self._indexed_files.pop(f"cpp:{rel_path}", None)
+        # Remove vectors for deleted/modified code files (all languages)
+        for lang_key, lang_prefix, _, _ in RAG_LANGUAGE_CONFIG:
+            for rel_path in to_remove_by_lang[lang_key]:
+                for source_id, info in list(self._metadata["sources"].items()):
+                    if info.get("file_type") == lang_key and info.get("rel_path", "").replace("\\", "/") == rel_path:
+                        removed = self._remove_vectors_for_source(source_id)
+                        stats[f"{lang_key}_removed"] += removed
+                        break
+                self._indexed_files.pop(f"{lang_prefix}{rel_path}", None)
 
         # Remove vectors for deleted/modified Markdown files
         for rel_path in markdown_to_remove:
@@ -1380,7 +1154,8 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         all_metadata: List[Dict[str, Any]] = []
         source_tracking: List[Tuple[str, str, int, int]] = []  # (source_id, file_type, start_idx, count)
 
-        # --- Phase 1: Collect Python entities, comments, and literals ---
+        # --- Phase 1: Collect Python entities, comments, and literals (special handling) ---
+        python_to_add = to_add_by_lang["python"]
         if python_to_add:
             logger.debug(f"[RAG] sync_sources: Querying entities for {len(python_to_add)} Python files...")
             entities_by_file = self._query_all_entities_bulk(reter)
@@ -1388,28 +1163,21 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
 
             for i, (source_id, rel_path, md5_hash) in enumerate(python_to_add):
                 try:
-                    logger.debug(f"[RAG] sync_sources: Collecting Python [{i+1}/{total_python}]: {rel_path}")
-                    # Convert rel_path to is-in-file format (keep extension)
                     in_file = rel_path.replace("\\", "/")
                     entities = entities_by_file.get(in_file, [])
                     if entities:
-                        # Collect entity texts
                         texts, metadata = self._prepare_python_entities(entities, source_id, project_root)
                         if texts:
                             source_tracking.append((source_id, "python", len(all_texts), len(texts)))
                             all_texts.extend(texts)
                             all_metadata.extend(metadata)
 
-                        # Collect comment texts
                         c_texts, c_meta = self._prepare_python_comments(entities, source_id, project_root)
                         if c_texts:
                             source_tracking.append((f"comments:{source_id}", "python_comment", len(all_texts), len(c_texts)))
                             all_texts.extend(c_texts)
                             all_metadata.extend(c_meta)
 
-                        logger.debug(f"[RAG] sync_sources: Collected {len(texts)} entities + {len(c_texts)} comments for {rel_path}")
-
-                    # Update indexed files tracking
                     self._indexed_files[rel_path] = md5_hash
 
                     if progress_callback and (i + 1) % 10 == 0:
@@ -1419,13 +1187,10 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
 
                 except Exception as e:
                     import traceback
-                    logger.debug(f"[RAG] sync_sources: Error collecting {source_id}: {e}")
-                    logger.debug(f"[RAG] sync_sources: Traceback: {traceback.format_exc()}")
+                    logger.debug(f"[RAG] sync_sources: Error collecting {source_id}: {e}\n{traceback.format_exc()}")
                     stats["errors"].append(f"Python: {source_id}: {e}")
 
-            # Collect Python literals (only from files being added/modified)
-            logger.debug("[RAG] sync_sources: Collecting Python string literals...")
-            # Extract source_ids from python_to_add for filtering
+            # Collect Python literals
             changed_source_ids = [source_id for source_id, _, _ in python_to_add]
             literal_texts, literal_metadata = self._collect_all_python_literals_bulk(
                 reter, project_root, changed_sources=changed_source_ids
@@ -1434,18 +1199,15 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 source_tracking.append(("python_literals_bulk", "python_literal", len(all_texts), len(literal_texts)))
                 all_texts.extend(literal_texts)
                 all_metadata.extend(literal_metadata)
-                logger.debug(f"[RAG] sync_sources: Collected {len(literal_texts)} Python literals")
 
-        # --- Phase 2: Collect JavaScript entities and literals (bulk query) ---
+        # --- Phase 2: Collect JavaScript entities and literals (special handling) ---
+        javascript_to_add = to_add_by_lang["javascript"]
         if javascript_to_add:
             logger.debug(f"[RAG] sync_sources: Querying entities for {len(javascript_to_add)} JavaScript files...")
             js_entities_by_file = self._query_all_entities_bulk(reter, language="javascript")
-            total_javascript = len(javascript_to_add)
 
             for i, (source_id, rel_path, md5_hash) in enumerate(javascript_to_add):
                 try:
-                    logger.debug(f"[RAG] sync_sources: Collecting JavaScript [{i+1}/{total_javascript}]: {rel_path}")
-                    # Convert rel_path to is-in-file format (JavaScript keeps extension)
                     in_file = rel_path.replace("\\", "/")
                     entities = js_entities_by_file.get(in_file, [])
                     if entities:
@@ -1454,41 +1216,32 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                             source_tracking.append((source_id, "javascript", len(all_texts), len(texts)))
                             all_texts.extend(texts)
                             all_metadata.extend(metadata)
-                        logger.debug(f"[RAG] sync_sources: Collected {len(texts)} entities for {rel_path}")
 
-                    # Update indexed files tracking
                     self._indexed_files[f"js:{rel_path}"] = md5_hash
 
                     if progress_callback and (i + 1) % 10 == 0:
-                        progress_callback(i + 1, total_javascript, "collecting_javascript")
-                    elif not progress_callback and (i + 1) % 10 == 0:
-                        logger.info(f"[RAG] Collecting JavaScript: {i+1}/{total_javascript}")
+                        progress_callback(i + 1, len(javascript_to_add), "collecting_javascript")
 
                 except Exception as e:
                     import traceback
-                    logger.debug(f"[RAG] sync_sources: Error collecting JavaScript {source_id}: {e}")
-                    logger.debug(f"[RAG] sync_sources: Traceback: {traceback.format_exc()}")
+                    logger.debug(f"[RAG] sync_sources: Error collecting JavaScript {source_id}: {e}\n{traceback.format_exc()}")
                     stats["errors"].append(f"JavaScript: {source_id}: {e}")
 
-            # Collect JavaScript literals (bulk query)
-            logger.debug("[RAG] sync_sources: Collecting JavaScript string literals...")
+            # Collect JavaScript literals
             js_literal_texts, js_literal_metadata = self._collect_all_javascript_literals_bulk(reter, project_root)
             if js_literal_texts:
                 source_tracking.append(("javascript_literals_bulk", "javascript_literal", len(all_texts), len(js_literal_texts)))
                 all_texts.extend(js_literal_texts)
                 all_metadata.extend(js_literal_metadata)
-                logger.debug(f"[RAG] sync_sources: Collected {len(js_literal_texts)} JavaScript literals")
 
-        # --- Phase 3: Collect HTML entities (bulk query) ---
+        # --- Phase 3: Collect HTML entities (special query) ---
+        html_to_add = to_add_by_lang["html"]
         if html_to_add:
             logger.debug(f"[RAG] sync_sources: Querying entities for {len(html_to_add)} HTML files...")
             html_entities_by_file = self._query_all_html_entities_bulk(reter)
-            total_html = len(html_to_add)
 
             for i, (source_id, rel_path, md5_hash) in enumerate(html_to_add):
                 try:
-                    logger.debug(f"[RAG] sync_sources: Collecting HTML [{i+1}/{total_html}]: {rel_path}")
-                    # Convert rel_path to is-in-document format (keeps extension)
                     in_doc = rel_path.replace("\\", ".").replace("/", ".")
                     entities = html_entities_by_file.get(in_doc, [])
                     if entities:
@@ -1497,89 +1250,59 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                             source_tracking.append((source_id, "html", len(all_texts), len(texts)))
                             all_texts.extend(texts)
                             all_metadata.extend(metadata)
-                        logger.debug(f"[RAG] sync_sources: Collected {len(texts)} entities for {rel_path}")
 
-                    # Update indexed files tracking
                     self._indexed_files[f"html:{rel_path}"] = md5_hash
 
                     if progress_callback and (i + 1) % 10 == 0:
-                        progress_callback(i + 1, total_html, "collecting_html")
-                    elif not progress_callback and (i + 1) % 10 == 0:
-                        logger.info(f"[RAG] Collecting HTML: {i+1}/{total_html}")
+                        progress_callback(i + 1, len(html_to_add), "collecting_html")
 
                 except Exception as e:
                     import traceback
-                    logger.debug(f"[RAG] sync_sources: Error collecting HTML {source_id}: {e}")
-                    logger.debug(f"[RAG] sync_sources: Traceback: {traceback.format_exc()}")
+                    logger.debug(f"[RAG] sync_sources: Error collecting HTML {source_id}: {e}\n{traceback.format_exc()}")
                     stats["errors"].append(f"HTML: {source_id}: {e}")
 
-        # --- Phase 4a: Collect C# entities (bulk query) ---
-        if csharp_to_add:
-            logger.debug(f"[RAG] sync_sources: Querying entities for {len(csharp_to_add)} C# files...")
-            csharp_entities_by_file = self._query_all_entities_bulk(reter, language="csharp")
-            total_csharp = len(csharp_to_add)
+        # --- Phase 4: Collect entities for all other code languages (generic pattern) ---
+        _generic_sync_langs = [
+            ("csharp", "cs:", "C#"), ("cpp", "cpp:", "C++"),
+            ("java", "java:", "Java"), ("go", "go:", "Go"),
+            ("rust", "rust:", "Rust"), ("erlang", "erlang:", "Erlang"),
+            ("php", "php:", "PHP"), ("objc", "objc:", "Objective-C"),
+            ("swift", "swift:", "Swift"), ("vb6", "vb6:", "VB6"),
+            ("scala", "scala:", "Scala"), ("haskell", "haskell:", "Haskell"),
+        ]
+        for lang_key, lang_prefix, lang_display in _generic_sync_langs:
+            lang_to_add = to_add_by_lang[lang_key]
+            if not lang_to_add:
+                continue
 
-            for i, (source_id, rel_path, md5_hash) in enumerate(csharp_to_add):
+            logger.debug(f"[RAG] sync_sources: Querying entities for {len(lang_to_add)} {lang_display} files...")
+            lang_entities_by_file = self._query_all_entities_bulk(reter, language=lang_key)
+            collect_fn = getattr(self, f"_collect_{lang_key}_entities", None)
+            if not collect_fn:
+                continue
+
+            for i, (source_id, rel_path, md5_hash) in enumerate(lang_to_add):
                 try:
-                    logger.debug(f"[RAG] sync_sources: Collecting C# [{i+1}/{total_csharp}]: {rel_path}")
-                    # Convert rel_path to is-in-file format (keep extension)
                     in_file = rel_path.replace("\\", "/")
-                    entities = csharp_entities_by_file.get(in_file, [])
+                    entities = lang_entities_by_file.get(in_file, [])
                     if entities:
-                        texts, metadata = self._collect_csharp_entities(entities, source_id, project_root, self._chunk_config)
+                        texts, metadata = collect_fn(entities, source_id, project_root, self._chunk_config)
                         if texts:
-                            source_tracking.append((source_id, "csharp", len(all_texts), len(texts)))
+                            source_tracking.append((source_id, lang_key, len(all_texts), len(texts)))
                             all_texts.extend(texts)
                             all_metadata.extend(metadata)
-                        logger.debug(f"[RAG] sync_sources: Collected {len(texts)} entities for {rel_path}")
 
-                    # Update indexed files tracking
-                    self._indexed_files[f"cs:{rel_path}"] = md5_hash
+                    self._indexed_files[f"{lang_prefix}{rel_path}"] = md5_hash
 
                     if progress_callback and (i + 1) % 10 == 0:
-                        progress_callback(i + 1, total_csharp, "collecting_csharp")
+                        progress_callback(i + 1, len(lang_to_add), f"collecting_{lang_key}")
                     elif not progress_callback and (i + 1) % 10 == 0:
-                        logger.info(f"[RAG] Collecting C#: {i+1}/{total_csharp}")
+                        logger.info(f"[RAG] Collecting {lang_display}: {i+1}/{len(lang_to_add)}")
 
                 except Exception as e:
                     import traceback
-                    logger.debug(f"[RAG] sync_sources: Error collecting C# {source_id}: {e}")
-                    logger.debug(f"[RAG] sync_sources: Traceback: {traceback.format_exc()}")
-                    stats["errors"].append(f"C#: {source_id}: {e}")
-
-        # --- Phase 4b: Collect C++ entities (bulk query) ---
-        if cpp_to_add:
-            logger.debug(f"[RAG] sync_sources: Querying entities for {len(cpp_to_add)} C++ files...")
-            cpp_entities_by_file = self._query_all_entities_bulk(reter, language="cpp")
-            total_cpp = len(cpp_to_add)
-
-            for i, (source_id, rel_path, md5_hash) in enumerate(cpp_to_add):
-                try:
-                    logger.debug(f"[RAG] sync_sources: Collecting C++ [{i+1}/{total_cpp}]: {rel_path}")
-                    # Convert rel_path to is-in-file format (keep extension)
-                    in_file = rel_path.replace("\\", "/")
-                    entities = cpp_entities_by_file.get(in_file, [])
-                    if entities:
-                        texts, metadata = self._collect_cpp_entities(entities, source_id, project_root, self._chunk_config)
-                        if texts:
-                            source_tracking.append((source_id, "cpp", len(all_texts), len(texts)))
-                            all_texts.extend(texts)
-                            all_metadata.extend(metadata)
-                        logger.debug(f"[RAG] sync_sources: Collected {len(texts)} entities for {rel_path}")
-
-                    # Update indexed files tracking
-                    self._indexed_files[f"cpp:{rel_path}"] = md5_hash
-
-                    if progress_callback and (i + 1) % 10 == 0:
-                        progress_callback(i + 1, total_cpp, "collecting_cpp")
-                    elif not progress_callback and (i + 1) % 10 == 0:
-                        logger.info(f"[RAG] Collecting C++: {i+1}/{total_cpp}")
-
-                except Exception as e:
-                    import traceback
-                    logger.debug(f"[RAG] sync_sources: Error collecting C++ {source_id}: {e}")
-                    logger.debug(f"[RAG] sync_sources: Traceback: {traceback.format_exc()}")
-                    stats["errors"].append(f"C++: {source_id}: {e}")
+                    logger.debug(f"[RAG] sync_sources: Error collecting {lang_display} {source_id}: {e}\n{traceback.format_exc()}")
+                    stats["errors"].append(f"{lang_display}: {source_id}: {e}")
 
         # --- Phase 5: Collect Markdown chunks ---
         if markdown_to_add:
@@ -1671,16 +1394,10 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 }
 
                 # Update stats by type
-                if file_type in ("python", "python_comment", "python_literal"):
-                    stats["python_added"] += count
-                elif file_type in ("javascript", "javascript_literal"):
-                    stats["javascript_added"] += count
-                elif file_type == "html":
-                    stats["html_added"] += count
-                elif file_type == "csharp":
-                    stats["csharp_added"] += count
-                elif file_type == "cpp":
-                    stats["cpp_added"] += count
+                base_type = file_type.split("_")[0]  # "python_comment" -> "python"
+                stat_key = f"{base_type}_added"
+                if stat_key in stats:
+                    stats[stat_key] += count
                 elif file_type == "markdown":
                     stats["markdown_added"] += count
 
@@ -1696,19 +1413,18 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         stats["time_ms"] = int((time.time() - start_time) * 1000)
         stats["total_vectors"] = self._faiss_wrapper.total_vectors
 
+        total_added = sum(stats.get(f"{k}_added", 0) for k, _, _, _ in RAG_LANGUAGE_CONFIG) + stats["markdown_added"]
+        total_removed = sum(stats.get(f"{k}_removed", 0) for k, _, _, _ in RAG_LANGUAGE_CONFIG) + stats["markdown_removed"]
+        total_unchanged = sum(stats.get(f"{k}_unchanged", 0) for k, _, _, _ in RAG_LANGUAGE_CONFIG) + stats["markdown_unchanged"]
         logger.debug(
-            f"[RAG] sync_sources: COMPLETE - Python(+{stats['python_added']} -{stats['python_removed']} "
-            f"={stats['python_unchanged']}) Markdown(+{stats['markdown_added']} -{stats['markdown_removed']} "
-            f"={stats['markdown_unchanged']}) total={stats['total_vectors']} in {stats['time_ms']}ms"
+            f"[RAG] sync_sources: COMPLETE - total={stats['total_vectors']} "
+            f"(+{total_added} -{total_removed} ={total_unchanged}) in {stats['time_ms']}ms"
         )
         logger.info(
             f"RAG sync: {stats['total_vectors']} vectors "
-            f"(+{stats['python_added']+stats['markdown_added']} -{stats['python_removed']+stats['markdown_removed']} "
-            f"unchanged={stats['python_unchanged']+stats['markdown_unchanged']}) in {stats['time_ms']}ms"
+            f"(+{total_added} -{total_removed} unchanged={total_unchanged}) in {stats['time_ms']}ms"
         )
         if not progress_callback:
-            total_added = stats['python_added'] + stats['javascript_added'] + stats['html_added'] + stats['csharp_added'] + stats['cpp_added'] + stats['markdown_added']
-            total_removed = stats['python_removed'] + stats['javascript_removed'] + stats['html_removed'] + stats['csharp_removed'] + stats['cpp_removed'] + stats['markdown_removed']
             logger.info(f"[RAG] Sync complete: {stats['total_vectors']} vectors (+{total_added} -{total_removed}) in {stats['time_ms']}ms")
 
         return stats
@@ -1772,16 +1488,13 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         entities = []
 
         # Determine concept prefix based on language
-        if language == "python":
-            prefix = "py"
-        elif language == "javascript":
-            prefix = "js"
-        elif language == "csharp":
-            prefix = "cs"
-        elif language == "cpp":
-            prefix = "cpp"
-        else:
-            prefix = "py"  # fallback
+        _lang_to_prefix = {
+            "python": "py", "javascript": "js", "csharp": "cs", "cpp": "cpp",
+            "java": "java", "go": "go", "rust": "rust", "erlang": "erlang",
+            "php": "php", "objc": "objc", "swift": "swift", "vb6": "vb6",
+            "scala": "scala", "haskell": "haskell",
+        }
+        prefix = _lang_to_prefix.get(language, "py")
 
         # Convert source_id to is-in-file format
         # source_id format: "md5hash|path\\to\\file.py" or "md5hash|path\\to\\file.js" or "md5hash|path\\to\\file.cs"
@@ -3365,7 +3078,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
 
         Args:
             reter: RETER wrapper instance
-            language: "python", "javascript", "csharp", or "cpp"
+            language: Language key (e.g. "python", "javascript", "java", "go", "rust", etc.)
 
         Returns dict mapping inFile -> list of entities
         """
@@ -3373,16 +3086,13 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         seen_entities: set = set()  # Track seen qualified_names to avoid duplicates
 
         # Determine concept prefix based on language
-        if language == "python":
-            prefix = "py"
-        elif language == "javascript":
-            prefix = "js"
-        elif language == "csharp":
-            prefix = "cs"
-        elif language == "cpp":
-            prefix = "cpp"
-        else:
-            prefix = "py"  # fallback
+        _lang_to_prefix = {
+            "python": "py", "javascript": "js", "csharp": "cs", "cpp": "cpp",
+            "java": "java", "go": "go", "rust": "rust", "erlang": "erlang",
+            "php": "php", "objc": "objc", "swift": "swift", "vb6": "vb6",
+            "scala": "scala", "haskell": "haskell",
+        }
+        prefix = _lang_to_prefix.get(language, "py")
 
         # Bulk query all classes
         logger.debug(f"[RAG] _query_all_entities_bulk: Querying all {language} classes...")
@@ -3714,88 +3424,89 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         self._metadata["vectors"] = {}
         self._next_vector_id = 0
 
-        # Get all Python sources from RETER
-        logger.debug("[RAG] reindex_all: Querying Python sources from RETER...")
+        # Get all sources from RETER, classify by language
+        logger.debug("[RAG] reindex_all: Querying sources from RETER...")
         all_sources, _ = reter.get_all_sources()
-        python_sources = [s for s in all_sources if s.endswith(".py") or "|" in s]
-        logger.debug(f"[RAG] reindex_all: Found {len(python_sources)} Python sources")
+        sources_by_lang: Dict[str, List[str]] = {key: [] for key, _, _, _ in RAG_LANGUAGE_CONFIG}
 
-        stats = {
-            "python_sources": len(python_sources),
-            "python_vectors": 0,
-            "markdown_files": 0,
-            "markdown_vectors": 0,
-            "errors": [],
-        }
-
-        # BULK query all entities (3 queries instead of 3 per file)
-        logger.debug("[RAG] reindex_all: Bulk querying all Python entities...")
-        bulk_start = time.time()
-        entities_by_file = self._query_all_entities_bulk(reter)
-        logger.debug(f"[RAG] reindex_all: Bulk query complete in {time.time() - bulk_start:.2f}s")
-
-        # Build mapping from inFile to source_id
-        infile_to_source: Dict[str, str] = {}
-        for source_id in python_sources:
+        for source_id in all_sources:
             if "|" in source_id:
                 _, rel_path = source_id.split("|", 1)
-            else:
-                rel_path = source_id
-            in_file = rel_path.replace("\\", "/")
-            infile_to_source[in_file] = source_id
+                ext = Path(rel_path).suffix.lower()
+                lang_info = RAG_EXT_TO_LANG.get(ext)
+                if lang_info:
+                    sources_by_lang[lang_info[0]].append(source_id)
 
-        # Index Python entities by file
-        logger.debug(f"[RAG] reindex_all: Indexing entities from {len(entities_by_file)} files...")
+        stats: Dict[str, Any] = {"errors": []}
+        for key, _, _, _ in RAG_LANGUAGE_CONFIG:
+            stats[f"{key}_sources"] = len(sources_by_lang[key])
+            stats[f"{key}_vectors"] = 0
+        stats["markdown_files"] = 0
+        stats["markdown_vectors"] = 0
 
-        # Estimate total vectors for progress tracking
-        total_entities = sum(len(entities) for entities in entities_by_file.values())
-        total_files = len(entities_by_file)
+        total_vectors = 0
 
-        py_start = time.time()
-        for i, (in_file, entities) in enumerate(entities_by_file.items()):
-            try:
-                source_id = infile_to_source.get(in_file)
-                if not source_id:
-                    # Try to find matching source
-                    for sid in python_sources:
-                        if "|" in sid:
-                            _, rel_path = sid.split("|", 1)
-                        else:
-                            rel_path = sid
-                        if rel_path.replace("\\", ".").replace("/", ".") == in_file:
-                            source_id = sid
-                            break
+        # --- Index each code language ---
+        for lang_key, lang_prefix, lang_display, _ in RAG_LANGUAGE_CONFIG:
+            lang_sources = sources_by_lang[lang_key]
+            if not lang_sources:
+                continue
 
-                if not source_id:
-                    logger.debug(f"[RAG] reindex_all: No source_id found for {in_file}, skipping")
-                    continue
+            logger.debug(f"[RAG] reindex_all: Bulk querying {lang_display} entities ({len(lang_sources)} sources)...")
+            bulk_start = time.time()
+            entities_by_file = self._query_all_entities_bulk(reter, language=lang_key)
+            logger.debug(f"[RAG] reindex_all: {lang_display} bulk query complete in {time.time() - bulk_start:.2f}s")
 
-                # Log progress every 10 files
-                if (i + 1) % 10 == 0 or i == 0:
-                    logger.debug(f"[RAG] reindex_all: Python [{i+1}/{len(entities_by_file)}] {in_file} ({len(entities)} entities)")
+            # Build mapping from inFile to source_id
+            infile_to_source: Dict[str, str] = {}
+            for source_id in lang_sources:
+                if "|" in source_id:
+                    _, rel_path = source_id.split("|", 1)
+                else:
+                    rel_path = source_id
+                in_file = rel_path.replace("\\", "/")
+                infile_to_source[in_file] = source_id
 
-                added = self._index_python_entities(entities, source_id, project_root)
-                stats["python_vectors"] += added
-                # Also index comments
-                comment_added = self._index_python_comments(entities, source_id, project_root)
-                stats["python_vectors"] += comment_added
-                # Note: literals are indexed in bulk after the loop for better performance
+            lang_start = time.time()
+            for i, (in_file, entities) in enumerate(entities_by_file.items()):
+                try:
+                    source_id = infile_to_source.get(in_file)
+                    if not source_id:
+                        for sid in lang_sources:
+                            if "|" in sid:
+                                _, rel_path = sid.split("|", 1)
+                            else:
+                                rel_path = sid
+                            if rel_path.replace("\\", ".").replace("/", ".") == in_file:
+                                source_id = sid
+                                break
+                    if not source_id:
+                        continue
 
-                # Call progress callback
-                if progress_callback and (i + 1) % 5 == 0:
-                    progress_callback(stats["python_vectors"], total_entities, "python")
+                    added = self._index_entities(entities, source_id, project_root, lang_key)
+                    stats[f"{lang_key}_vectors"] += added
 
-            except Exception as e:
-                logger.debug(f"[RAG] reindex_all: ERROR indexing {in_file}: {e}")
-                stats["errors"].append(f"Python: {in_file}: {e}")
+                    # Python-specific: also index comments
+                    if lang_key == "python":
+                        comment_added = self._index_python_comments(entities, source_id, project_root)
+                        stats["python_vectors"] += comment_added
 
-        py_elapsed = time.time() - py_start
-        logger.debug(f"[RAG] reindex_all: Python indexing complete: {stats['python_vectors']} vectors in {py_elapsed:.2f}s")
+                    if progress_callback and (i + 1) % 5 == 0:
+                        progress_callback(stats[f"{lang_key}_vectors"], len(entities_by_file), lang_key)
 
-        # Bulk index all string literals (much faster than per-file)
-        logger.debug("[RAG] reindex_all: Bulk indexing string literals...")
-        literal_added = self._index_all_python_literals_bulk(reter, project_root)
-        stats["python_vectors"] += literal_added
+                except Exception as e:
+                    stats["errors"].append(f"{lang_display}: {in_file}: {e}")
+
+            lang_elapsed = time.time() - lang_start
+            logger.debug(f"[RAG] reindex_all: {lang_display} indexing: {stats[f'{lang_key}_vectors']} vectors in {lang_elapsed:.2f}s")
+            total_vectors += stats[f"{lang_key}_vectors"]
+
+        # Bulk index Python string literals
+        if sources_by_lang["python"]:
+            logger.debug("[RAG] reindex_all: Bulk indexing Python string literals...")
+            literal_added = self._index_all_python_literals_bulk(reter, project_root)
+            stats["python_vectors"] += literal_added
+            total_vectors += literal_added
 
         # Index Markdown files if enabled
         if self._config.get("rag_index_markdown", True):
@@ -3839,16 +3550,20 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         stats["time_ms"] = int((time.time() - start_time) * 1000)
         stats["total_vectors"] = self._faiss_wrapper.total_vectors
 
+        # Build summary of active languages
+        active_parts = []
+        for key, _, display, _ in RAG_LANGUAGE_CONFIG:
+            v = stats.get(f"{key}_vectors", 0)
+            if v > 0:
+                active_parts.append(f"{v} {display}")
+        if stats["markdown_vectors"] > 0:
+            active_parts.append(f"{stats['markdown_vectors']} Markdown")
+
         logger.debug(
-            f"[RAG] reindex_all: COMPLETE - {stats['python_vectors']} Python + "
-            f"{stats['markdown_vectors']} Markdown = {stats['total_vectors']} total vectors "
+            f"[RAG] reindex_all: COMPLETE - {', '.join(active_parts)} = {stats['total_vectors']} total "
             f"in {stats['time_ms']}ms"
         )
-
-        logger.info(
-            f"Reindex complete: {stats['python_vectors']} Python, "
-            f"{stats['markdown_vectors']} Markdown vectors in {stats['time_ms']}ms"
-        )
+        logger.info(f"Reindex complete: {', '.join(active_parts)} = {stats['total_vectors']} vectors in {stats['time_ms']}ms")
 
         return stats
 
@@ -3923,66 +3638,31 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 "note": "Embedding model will be loaded on first reindex/search",
             }
 
-        # Count by type
-        python_count = 0
-        javascript_count = 0
-        html_count = 0
-        csharp_count = 0
-        cpp_count = 0
-        markdown_count = 0
+        # Count vectors by source type
+        vector_counts: Dict[str, int] = {}
         entity_counts: Dict[str, int] = {}
 
         for vid, meta in self._metadata.get("vectors", {}).items():
             source_type = meta.get("source_type", "python")
             entity_type = meta.get("entity_type", "unknown")
-
-            if source_type == "python" or source_type == "python_literal":
-                python_count += 1
-            elif source_type == "javascript" or source_type == "javascript_literal":
-                javascript_count += 1
-            elif source_type == "html":
-                html_count += 1
-            elif source_type == "csharp":
-                csharp_count += 1
-            elif source_type == "cpp":
-                cpp_count += 1
-            else:
-                markdown_count += 1
-
+            # Map sub-types to base language: "python_literal" -> "python"
+            base_type = source_type.split("_")[0]
+            vector_counts[base_type] = vector_counts.get(base_type, 0) + 1
             entity_counts[entity_type] = entity_counts.get(entity_type, 0) + 1
 
-        # Count sources
-        python_sources = sum(
-            1 for info in self._metadata.get("sources", {}).values()
-            if info.get("file_type") == "python"
-        )
-        javascript_sources = sum(
-            1 for info in self._metadata.get("sources", {}).values()
-            if info.get("file_type") == "javascript"
-        )
-        html_sources = sum(
-            1 for info in self._metadata.get("sources", {}).values()
-            if info.get("file_type") == "html"
-        )
-        csharp_sources = sum(
-            1 for info in self._metadata.get("sources", {}).values()
-            if info.get("file_type") == "csharp"
-        )
-        cpp_sources = sum(
-            1 for info in self._metadata.get("sources", {}).values()
-            if info.get("file_type") == "cpp"
-        )
-        markdown_sources = sum(
-            1 for info in self._metadata.get("sources", {}).values()
-            if info.get("file_type") == "markdown"
-        )
+        # Count sources by file_type
+        source_counts: Dict[str, int] = {}
+        for info in self._metadata.get("sources", {}).values():
+            ft = info.get("file_type", "")
+            base_ft = ft.split("_")[0]
+            source_counts[base_ft] = source_counts.get(base_ft, 0) + 1
 
         # Get index file size
         index_size_mb = 0
         if self._index_path and self._index_path.exists():
             index_size_mb = self._index_path.stat().st_size / (1024 * 1024)
 
-        return {
+        result: Dict[str, Any] = {
             "status": "ready",
             "embedding_model": self._embedding_service.model_name,
             "embedding_provider": self._embedding_service.provider,
@@ -3991,30 +3671,23 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             "index_size_mb": round(index_size_mb, 2),
             "created_at": self._metadata.get("created_at"),
             "updated_at": self._metadata.get("updated_at"),
-            "python_sources": {
-                "files_indexed": python_sources,
-                "total_vectors": python_count,
-            },
-            "javascript_sources": {
-                "files_indexed": javascript_sources,
-                "total_vectors": javascript_count,
-            },
-            "html_sources": {
-                "files_indexed": html_sources,
-                "total_vectors": html_count,
-            },
-            "csharp_sources": {
-                "files_indexed": csharp_sources,
-                "total_vectors": csharp_count,
-            },
-            "cpp_sources": {
-                "files_indexed": cpp_sources,
-                "total_vectors": cpp_count,
-            },
-            "markdown_sources": {
-                "files_indexed": markdown_sources,
-                "total_vectors": markdown_count,
-            },
-            "entity_counts": entity_counts,
-            "cache_info": self._embedding_service.get_info() if self._embedding_service else {},
         }
+
+        # Add per-language stats (only for languages with data)
+        for key, _, _, _ in RAG_LANGUAGE_CONFIG:
+            vc = vector_counts.get(key, 0)
+            sc = source_counts.get(key, 0)
+            if vc > 0 or sc > 0:
+                result[f"{key}_sources"] = {
+                    "files_indexed": sc,
+                    "total_vectors": vc,
+                }
+        # Always include markdown
+        result["markdown_sources"] = {
+            "files_indexed": source_counts.get("markdown", 0),
+            "total_vectors": vector_counts.get("markdown", 0),
+        }
+        result["entity_counts"] = entity_counts
+        result["cache_info"] = self._embedding_service.get_info() if self._embedding_service else {}
+
+        return result

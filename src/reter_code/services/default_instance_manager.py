@@ -836,45 +836,57 @@ class DefaultInstanceManager:
         deleted_count = 0
         errors = []
 
-        # Track source IDs for RAG sync (separated by language)
-        changed_python_sources: List[str] = []
-        deleted_python_sources: List[str] = []
-        changed_javascript_sources: List[str] = []
-        deleted_javascript_sources: List[str] = []
-        changed_html_sources: List[str] = []
-        deleted_html_sources: List[str] = []
-        changed_csharp_sources: List[str] = []
-        deleted_csharp_sources: List[str] = []
-        changed_cpp_sources: List[str] = []
-        deleted_cpp_sources: List[str] = []
+        # Track source IDs for RAG sync (keyed by language name)
+        changed_sources: Dict[str, List[str]] = {}
+        deleted_sources: Dict[str, List[str]] = {}
+
+        # Map extension sets to language names for RAG tracking
+        _ext_to_lang = [
+            (self.PYTHON_EXTENSIONS, "python"),
+            (self.JAVASCRIPT_EXTENSIONS, "javascript"),
+            (self.HTML_EXTENSIONS, "html"),
+            (self.CSHARP_EXTENSIONS, "csharp"),
+            (self.CPP_EXTENSIONS, "cpp"),
+            (self.JAVA_EXTENSIONS, "java"),
+            (self.GO_EXTENSIONS, "go"),
+            (self.RUST_EXTENSIONS, "rust"),
+            (self.ERLANG_EXTENSIONS, "erlang"),
+            (self.PHP_EXTENSIONS, "php"),
+            (self.OBJC_EXTENSIONS, "objc"),
+            (self.SWIFT_EXTENSIONS, "swift"),
+            (self.VB6_EXTENSIONS, "vb6"),
+            (self.SCALA_EXTENSIONS, "scala"),
+            (self.HASKELL_EXTENSIONS, "haskell"),
+            (self.JAVA_EXTENSIONS, "java"),
+            (self.GO_EXTENSIONS, "go"),
+            (self.RUST_EXTENSIONS, "rust"),
+            (self.ERLANG_EXTENSIONS, "erlang"),
+            (self.PHP_EXTENSIONS, "php"),
+            (self.OBJC_EXTENSIONS, "objc"),
+            (self.SWIFT_EXTENSIONS, "swift"),
+            (self.VB6_EXTENSIONS, "vb6"),
+            (self.SCALA_EXTENSIONS, "scala"),
+            (self.HASKELL_EXTENSIONS, "haskell"),
+        ]
+
+        def _lang_for_ext(rel_path: str) -> Optional[str]:
+            ext = Path(rel_path).suffix.lower()
+            for ext_set, lang_name in _ext_to_lang:
+                if ext in ext_set:
+                    return lang_name
+            return None
 
         def track_changed_source(rel_path: str, source_id: str) -> None:
             """Add source to appropriate changed list based on file extension."""
-            ext = Path(rel_path).suffix.lower()
-            if ext in self.PYTHON_EXTENSIONS:
-                changed_python_sources.append(source_id)
-            elif ext in self.JAVASCRIPT_EXTENSIONS:
-                changed_javascript_sources.append(source_id)
-            elif ext in self.HTML_EXTENSIONS:
-                changed_html_sources.append(source_id)
-            elif ext in self.CSHARP_EXTENSIONS:
-                changed_csharp_sources.append(source_id)
-            elif ext in self.CPP_EXTENSIONS:
-                changed_cpp_sources.append(source_id)
+            lang = _lang_for_ext(rel_path)
+            if lang:
+                changed_sources.setdefault(lang, []).append(source_id)
 
         def track_deleted_source(rel_path: str, source_id: str) -> None:
             """Add source to appropriate deleted list based on file extension."""
-            ext = Path(rel_path).suffix.lower()
-            if ext in self.PYTHON_EXTENSIONS:
-                deleted_python_sources.append(source_id)
-            elif ext in self.JAVASCRIPT_EXTENSIONS:
-                deleted_javascript_sources.append(source_id)
-            elif ext in self.HTML_EXTENSIONS:
-                deleted_html_sources.append(source_id)
-            elif ext in self.CSHARP_EXTENSIONS:
-                deleted_csharp_sources.append(source_id)
-            elif ext in self.CPP_EXTENSIONS:
-                deleted_cpp_sources.append(source_id)
+            lang = _lang_for_ext(rel_path)
+            if lang:
+                deleted_sources.setdefault(lang, []).append(source_id)
 
         # Scan for Python package roots if we have changes
         if changes.to_add or changes.to_modify:
@@ -1008,35 +1020,33 @@ class DefaultInstanceManager:
 
         # Sync with RAG index if configured
         if self._rag_manager and self._rag_manager.is_enabled and self._rag_manager.is_initialized:
-            has_changes = (
-                changed_python_sources or deleted_python_sources or
-                changed_javascript_sources or deleted_javascript_sources or
-                changed_html_sources or deleted_html_sources or
-                changed_csharp_sources or deleted_csharp_sources or
-                changed_cpp_sources or deleted_cpp_sources
-            )
+            has_changes = bool(changed_sources or deleted_sources)
             if has_changes:
                 if self._progress_callback is None:
                     logger.info("[default] Syncing RAG index...")
                 try:
+                    _all_rag_langs = [
+                        "python", "javascript", "html", "csharp", "cpp",
+                        "java", "go", "rust", "erlang", "php",
+                        "objc", "swift", "vb6", "scala", "haskell",
+                    ]
                     rag_changes = RAGSyncChanges(
-                        python=LanguageSourceChanges(changed_python_sources, deleted_python_sources),
-                        javascript=LanguageSourceChanges(changed_javascript_sources, deleted_javascript_sources),
-                        html=LanguageSourceChanges(changed_html_sources, deleted_html_sources),
-                        csharp=LanguageSourceChanges(changed_csharp_sources, deleted_csharp_sources),
-                        cpp=LanguageSourceChanges(changed_cpp_sources, deleted_cpp_sources),
+                        **{
+                            lang: LanguageSourceChanges(
+                                changed_sources.get(lang, []),
+                                deleted_sources.get(lang, []),
+                            )
+                            for lang in _all_rag_langs
+                        }
                     )
                     rag_stats = self._rag_manager.sync_with_changes(
                         reter=reter,
                         project_root=self._project_root,
                         changes=rag_changes,
                     )
-                    total_added = (
-                        rag_stats.get('python_vectors_added', 0) +
-                        rag_stats.get('javascript_vectors_added', 0) +
-                        rag_stats.get('html_vectors_added', 0) +
-                        rag_stats.get('csharp_vectors_added', 0) +
-                        rag_stats.get('cpp_vectors_added', 0)
+                    total_added = sum(
+                        rag_stats.get(f'{lang}_vectors_added', 0)
+                        for lang in _all_rag_langs
                     )
                     if self._progress_callback is None:
                         logger.info(
@@ -1046,10 +1056,11 @@ class DefaultInstanceManager:
 
                     # Mark files as indexed in RAG
                     if self._source_state:
-                        for source_id in changed_python_sources + changed_javascript_sources + changed_html_sources + changed_csharp_sources + changed_cpp_sources:
-                            if "|" in source_id:
-                                _, rel_path = source_id.split("|", 1)
-                                self._source_state.mark_in_rag(rel_path)
+                        for lang_sources in changed_sources.values():
+                            for source_id in lang_sources:
+                                if "|" in source_id:
+                                    _, rel_path = source_id.split("|", 1)
+                                    self._source_state.mark_in_rag(rel_path)
 
                 except Exception as e:
                     if self._progress_callback is None:
@@ -1063,7 +1074,23 @@ class DefaultInstanceManager:
     HTML_EXTENSIONS = {".html", ".htm"}
     CSHARP_EXTENSIONS = {".cs"}
     CPP_EXTENSIONS = {".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h++", ".h"}
-    ALL_CODE_EXTENSIONS = PYTHON_EXTENSIONS | JAVASCRIPT_EXTENSIONS | HTML_EXTENSIONS | CSHARP_EXTENSIONS | CPP_EXTENSIONS
+    JAVA_EXTENSIONS = {".java"}
+    GO_EXTENSIONS = {".go"}
+    RUST_EXTENSIONS = {".rs"}
+    ERLANG_EXTENSIONS = {".erl", ".hrl"}
+    PHP_EXTENSIONS = {".php"}
+    OBJC_EXTENSIONS = {".m", ".mm"}
+    SWIFT_EXTENSIONS = {".swift"}
+    VB6_EXTENSIONS = {".bas", ".cls", ".frm"}
+    SCALA_EXTENSIONS = {".scala", ".sc"}
+    HASKELL_EXTENSIONS = {".hs", ".lhs"}
+    ALL_CODE_EXTENSIONS = (
+        PYTHON_EXTENSIONS | JAVASCRIPT_EXTENSIONS | HTML_EXTENSIONS |
+        CSHARP_EXTENSIONS | CPP_EXTENSIONS | JAVA_EXTENSIONS |
+        GO_EXTENSIONS | RUST_EXTENSIONS | ERLANG_EXTENSIONS |
+        PHP_EXTENSIONS | OBJC_EXTENSIONS | SWIFT_EXTENSIONS |
+        VB6_EXTENSIONS | SCALA_EXTENSIONS | HASKELL_EXTENSIONS
+    )
 
     def _scan_project_files(self) -> Dict[str, Tuple[str, str]]:
         """
@@ -1262,30 +1289,39 @@ class DefaultInstanceManager:
             abs_path: Absolute path to the file
             rel_path: Relative path (for logging)
         """
-        # Determine file type by extension
-        is_python = any(rel_path.endswith(ext) for ext in self.PYTHON_EXTENSIONS)
-        is_javascript = any(rel_path.endswith(ext) for ext in self.JAVASCRIPT_EXTENSIONS)
-        is_html = any(rel_path.endswith(ext) for ext in self.HTML_EXTENSIONS)
-        is_csharp = any(rel_path.endswith(ext) for ext in self.CSHARP_EXTENSIONS)
-        is_cpp = any(rel_path.endswith(ext) for ext in self.CPP_EXTENSIONS)
+        ext = Path(rel_path).suffix.lower()
+        base = str(self._project_root)
 
-        # Debug logging for JS/TS files
-        if is_javascript:
-            logger.debug(f"[default] _load_code_file: Loading JS/TS file: {rel_path}")
-
-        if is_python:
-            # Pass package_roots for proper Python module name calculation
-            reter.load_python_file(abs_path, str(self._project_root), self._package_roots)
-        elif is_javascript:
-            logger.debug(f"[default] _load_code_file: Calling load_javascript_file for: {rel_path}")
-            reter.load_javascript_file(abs_path, str(self._project_root))
-            logger.debug(f"[default] _load_code_file: Successfully loaded JS/TS file: {rel_path}")
-        elif is_html:
-            reter.load_html_file(abs_path, str(self._project_root))
-        elif is_csharp:
-            reter.load_csharp_file(abs_path, str(self._project_root))
-        elif is_cpp:
-            reter.load_cpp_file(abs_path, str(self._project_root))
+        if ext in self.PYTHON_EXTENSIONS:
+            reter.load_python_file(abs_path, base, self._package_roots)
+        elif ext in self.JAVASCRIPT_EXTENSIONS:
+            reter.load_javascript_file(abs_path, base)
+        elif ext in self.HTML_EXTENSIONS:
+            reter.load_html_file(abs_path, base)
+        elif ext in self.CSHARP_EXTENSIONS:
+            reter.load_csharp_file(abs_path, base)
+        elif ext in self.CPP_EXTENSIONS:
+            reter.load_cpp_file(abs_path, base)
+        elif ext in self.JAVA_EXTENSIONS:
+            reter.load_java_file(abs_path, base)
+        elif ext in self.GO_EXTENSIONS:
+            reter.load_go_file(abs_path, base)
+        elif ext in self.RUST_EXTENSIONS:
+            reter.load_rust_file(abs_path, base)
+        elif ext in self.ERLANG_EXTENSIONS:
+            reter.load_erlang_file(abs_path, base)
+        elif ext in self.PHP_EXTENSIONS:
+            reter.load_php_file(abs_path, base)
+        elif ext in self.OBJC_EXTENSIONS:
+            reter.load_objc_file(abs_path, base)
+        elif ext in self.SWIFT_EXTENSIONS:
+            reter.load_swift_file(abs_path, base)
+        elif ext in self.VB6_EXTENSIONS:
+            reter.load_vb6_file(abs_path, base)
+        elif ext in self.SCALA_EXTENSIONS:
+            reter.load_scala_file(abs_path, base)
+        elif ext in self.HASKELL_EXTENSIONS:
+            reter.load_haskell_file(abs_path, base)
         else:
             raise ValueError(f"Unsupported file type: {rel_path}")
 
@@ -1363,48 +1399,59 @@ class DefaultInstanceManager:
         modified_count = 0
         deleted_count = 0
 
-        # Track source IDs for RAG sync (separated by language)
-        changed_python_sources: List[str] = []
-        deleted_python_sources: List[str] = []
-        changed_javascript_sources: List[str] = []
-        deleted_javascript_sources: List[str] = []
-        changed_html_sources: List[str] = []
-        deleted_html_sources: List[str] = []
-        changed_csharp_sources: List[str] = []
-        deleted_csharp_sources: List[str] = []
-        changed_cpp_sources: List[str] = []
-        deleted_cpp_sources: List[str] = []
+        # Track source IDs for RAG sync (keyed by language name)
+        changed_sources: Dict[str, List[str]] = {}
+        deleted_sources: Dict[str, List[str]] = {}
 
         errors = []  # Track errors but continue processing
 
-        # Helper to classify source by file extension
+        # Map extension sets to language names for RAG tracking
+        _ext_to_lang = [
+            (self.PYTHON_EXTENSIONS, "python"),
+            (self.JAVASCRIPT_EXTENSIONS, "javascript"),
+            (self.HTML_EXTENSIONS, "html"),
+            (self.CSHARP_EXTENSIONS, "csharp"),
+            (self.CPP_EXTENSIONS, "cpp"),
+            (self.JAVA_EXTENSIONS, "java"),
+            (self.GO_EXTENSIONS, "go"),
+            (self.RUST_EXTENSIONS, "rust"),
+            (self.ERLANG_EXTENSIONS, "erlang"),
+            (self.PHP_EXTENSIONS, "php"),
+            (self.OBJC_EXTENSIONS, "objc"),
+            (self.SWIFT_EXTENSIONS, "swift"),
+            (self.VB6_EXTENSIONS, "vb6"),
+            (self.SCALA_EXTENSIONS, "scala"),
+            (self.HASKELL_EXTENSIONS, "haskell"),
+            (self.JAVA_EXTENSIONS, "java"),
+            (self.GO_EXTENSIONS, "go"),
+            (self.RUST_EXTENSIONS, "rust"),
+            (self.ERLANG_EXTENSIONS, "erlang"),
+            (self.PHP_EXTENSIONS, "php"),
+            (self.OBJC_EXTENSIONS, "objc"),
+            (self.SWIFT_EXTENSIONS, "swift"),
+            (self.VB6_EXTENSIONS, "vb6"),
+            (self.SCALA_EXTENSIONS, "scala"),
+            (self.HASKELL_EXTENSIONS, "haskell"),
+        ]
+
+        def _lang_for_ext(rel_path: str) -> Optional[str]:
+            ext = Path(rel_path).suffix.lower()
+            for ext_set, lang_name in _ext_to_lang:
+                if ext in ext_set:
+                    return lang_name
+            return None
+
         def track_changed_source(rel_path: str, source_id: str) -> None:
             """Add source to appropriate changed list based on file extension."""
-            ext = Path(rel_path).suffix.lower()
-            if ext in self.PYTHON_EXTENSIONS:
-                changed_python_sources.append(source_id)
-            elif ext in self.JAVASCRIPT_EXTENSIONS:
-                changed_javascript_sources.append(source_id)
-            elif ext in self.HTML_EXTENSIONS:
-                changed_html_sources.append(source_id)
-            elif ext in self.CSHARP_EXTENSIONS:
-                changed_csharp_sources.append(source_id)
-            elif ext in self.CPP_EXTENSIONS:
-                changed_cpp_sources.append(source_id)
+            lang = _lang_for_ext(rel_path)
+            if lang:
+                changed_sources.setdefault(lang, []).append(source_id)
 
         def track_deleted_source(rel_path: str, source_id: str) -> None:
             """Add source to appropriate deleted list based on file extension."""
-            ext = Path(rel_path).suffix.lower()
-            if ext in self.PYTHON_EXTENSIONS:
-                deleted_python_sources.append(source_id)
-            elif ext in self.JAVASCRIPT_EXTENSIONS:
-                deleted_javascript_sources.append(source_id)
-            elif ext in self.HTML_EXTENSIONS:
-                deleted_html_sources.append(source_id)
-            elif ext in self.CSHARP_EXTENSIONS:
-                deleted_csharp_sources.append(source_id)
-            elif ext in self.CPP_EXTENSIONS:
-                deleted_cpp_sources.append(source_id)
+            lang = _lang_for_ext(rel_path)
+            if lang:
+                deleted_sources.setdefault(lang, []).append(source_id)
 
         # Debug: log first few current files for comparison
         logger.debug(f"[default] _sync_files: {len(current_files)} current files, {len(existing_sources)} existing sources")
@@ -1520,35 +1567,33 @@ class DefaultInstanceManager:
         # NOTE: RAG sync is skipped during initial load to avoid slowing down startup.
         # Use rag_reindex(force=True) to build the index after startup.
         if self._rag_manager and self._rag_manager.is_enabled and self._rag_manager.is_initialized:
-            has_changes = (
-                changed_python_sources or deleted_python_sources or
-                changed_javascript_sources or deleted_javascript_sources or
-                changed_html_sources or deleted_html_sources or
-                changed_csharp_sources or deleted_csharp_sources or
-                changed_cpp_sources or deleted_cpp_sources
-            )
+            has_changes = bool(changed_sources or deleted_sources)
             if has_changes:
                 if self._progress_callback is None:
                     logger.info("[default] Syncing RAG index...")
                 try:
+                    _all_rag_langs = [
+                        "python", "javascript", "html", "csharp", "cpp",
+                        "java", "go", "rust", "erlang", "php",
+                        "objc", "swift", "vb6", "scala", "haskell",
+                    ]
                     rag_changes = RAGSyncChanges(
-                        python=LanguageSourceChanges(changed_python_sources, deleted_python_sources),
-                        javascript=LanguageSourceChanges(changed_javascript_sources, deleted_javascript_sources),
-                        html=LanguageSourceChanges(changed_html_sources, deleted_html_sources),
-                        csharp=LanguageSourceChanges(changed_csharp_sources, deleted_csharp_sources),
-                        cpp=LanguageSourceChanges(changed_cpp_sources, deleted_cpp_sources),
+                        **{
+                            lang: LanguageSourceChanges(
+                                changed_sources.get(lang, []),
+                                deleted_sources.get(lang, []),
+                            )
+                            for lang in _all_rag_langs
+                        }
                     )
                     rag_stats = self._rag_manager.sync_with_changes(
                         reter=reter,
                         project_root=self._project_root,
                         changes=rag_changes,
                     )
-                    total_added = (
-                        rag_stats.get('python_vectors_added', 0) +
-                        rag_stats.get('javascript_vectors_added', 0) +
-                        rag_stats.get('html_vectors_added', 0) +
-                        rag_stats.get('csharp_vectors_added', 0) +
-                        rag_stats.get('cpp_vectors_added', 0)
+                    total_added = sum(
+                        rag_stats.get(f'{lang}_vectors_added', 0)
+                        for lang in _all_rag_langs
                     )
                     if self._progress_callback is None:
                         logger.info(

@@ -1,0 +1,59 @@
+% Scala Language Ontology - CNL Format
+% Extends oo_ontology.cnl with Scala-specific concepts
+
+% File/Module types
+Every scala-compilation-unit is a compilation-unit.
+Every scala-package is a namespace.
+
+% Type definitions
+Every scala-class is a class.
+Every scala-trait is a trait.
+Every scala-object is a class.
+Every scala-enum is an enum.
+Every scala-type-alias is a type-alias.
+Every scala-case-class is a scala-class.
+
+% Members
+Every scala-method is a method.
+Every scala-function is a function.
+Every scala-field is a field.
+Every scala-constructor is a constructor.
+
+% Parameters
+Every scala-parameter is a parameter.
+
+% Import
+Every scala-import is an import.
+
+% Exception handling
+Every scala-try-block is a try-block.
+Every scala-catch-clause is a catch-clause.
+Every scala-finally-clause is a finally-clause.
+Every scala-throw-statement is a throw-statement.
+
+% Control flow
+Every scala-return-statement is a return-statement.
+
+% Other
+Every scala-variable is a variable.
+Every scala-constant is a field.
+Every scala-reference is a reference.
+Every scala-annotation is an attribute.
+Every scala-anonymous-function is an anonymous-function.
+
+% Scala-Specific Concepts
+Every sealed-trait is a trait.
+Every abstract-class is a class.
+Every case-object is a class.
+Every package-object is a class.
+Every implicit-class is a class.
+Every value-class is a class.
+
+% Access Modifiers
+Every public-member is a member.
+Every private-member is a member.
+Every protected-member is a member.
+
+% Code Smells
+Every scala-god-class is a god-class.
+Every scala-long-method is a long-method.

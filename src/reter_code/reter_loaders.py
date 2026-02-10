@@ -1363,6 +1363,398 @@ class ReterRustLoaderMixin:
         )
 
 
+class ReterErlangLoaderMixin:
+    """Mixin providing Erlang file/code loading methods."""
+
+    def load_erlang_file(
+        self, filepath: str, base_path: Optional[str] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """Load Erlang source file and add semantic facts to RETER."""
+        check_initialization()
+        start_time = time.time()
+        filepath_obj = Path(filepath)
+        with open(filepath_obj, 'r', encoding='utf-8') as f:
+            code = f.read()
+        if base_path:
+            try:
+                rel_path = filepath_obj.relative_to(Path(base_path))
+            except ValueError:
+                rel_path = filepath_obj
+        else:
+            rel_path = filepath_obj.name
+        source_id = generate_source_id(code, str(rel_path))
+        in_file = str(rel_path).replace('\\', '/')
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(owl_rete_cpp.load_erlang_from_string, self.reasoner.network, code, in_file, source_id)
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+        return wme_count, source_id, time_ms, []
+
+    def load_erlang_code(
+        self, code: str, source: str = "module",
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """Load Erlang code string and add semantic facts to RETER."""
+        check_initialization()
+        start_time = time.time()
+        in_file = extract_in_file_path(source)
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(owl_rete_cpp.load_erlang_from_string, self.reasoner.network, code, in_file, source)
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+        return wme_count, source, time_ms, []
+
+    def load_erlang_directory(
+        self, directory: str, recursive: bool = True,
+        exclude_patterns: Optional[List[str]] = None,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, Dict[str, List[str]], float]:
+        """Load all Erlang files from a directory."""
+        return self._load_directory_generic(
+            directory=directory, extensions=["*.erl", "*.hrl"],
+            default_excludes=["_build", ".rebar", "deps"],
+            load_file_func=self.load_erlang_file,
+            recursive=recursive, exclude_patterns=exclude_patterns,
+            progress_callback=progress_callback
+        )
+
+
+class ReterPHPLoaderMixin:
+    """Mixin providing PHP file/code loading methods."""
+
+    def load_php_file(
+        self, filepath: str, base_path: Optional[str] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """Load PHP source file and add semantic facts to RETER."""
+        check_initialization()
+        start_time = time.time()
+        filepath_obj = Path(filepath)
+        with open(filepath_obj, 'r', encoding='utf-8') as f:
+            code = f.read()
+        if base_path:
+            try:
+                rel_path = filepath_obj.relative_to(Path(base_path))
+            except ValueError:
+                rel_path = filepath_obj
+        else:
+            rel_path = filepath_obj.name
+        source_id = generate_source_id(code, str(rel_path))
+        in_file = str(rel_path).replace('\\', '/')
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(owl_rete_cpp.load_php_from_string, self.reasoner.network, code, in_file, source_id)
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+        return wme_count, source_id, time_ms, []
+
+    def load_php_code(
+        self, code: str, source: str = "module",
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """Load PHP code string and add semantic facts to RETER."""
+        check_initialization()
+        start_time = time.time()
+        in_file = extract_in_file_path(source)
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(owl_rete_cpp.load_php_from_string, self.reasoner.network, code, in_file, source)
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+        return wme_count, source, time_ms, []
+
+    def load_php_directory(
+        self, directory: str, recursive: bool = True,
+        exclude_patterns: Optional[List[str]] = None,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, Dict[str, List[str]], float]:
+        """Load all PHP files from a directory."""
+        return self._load_directory_generic(
+            directory=directory, extensions=["*.php"],
+            default_excludes=["vendor", "node_modules"],
+            load_file_func=self.load_php_file,
+            recursive=recursive, exclude_patterns=exclude_patterns,
+            progress_callback=progress_callback
+        )
+
+
+class ReterObjCLoaderMixin:
+    """Mixin providing Objective-C file/code loading methods."""
+
+    def load_objc_file(
+        self, filepath: str, base_path: Optional[str] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """Load Objective-C source file and add semantic facts to RETER."""
+        check_initialization()
+        start_time = time.time()
+        filepath_obj = Path(filepath)
+        with open(filepath_obj, 'r', encoding='utf-8') as f:
+            code = f.read()
+        if base_path:
+            try:
+                rel_path = filepath_obj.relative_to(Path(base_path))
+            except ValueError:
+                rel_path = filepath_obj
+        else:
+            rel_path = filepath_obj.name
+        source_id = generate_source_id(code, str(rel_path))
+        in_file = str(rel_path).replace('\\', '/')
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(owl_rete_cpp.load_objc_from_string, self.reasoner.network, code, in_file, source_id)
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+        return wme_count, source_id, time_ms, []
+
+    def load_objc_code(
+        self, code: str, source: str = "module",
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """Load Objective-C code string and add semantic facts to RETER."""
+        check_initialization()
+        start_time = time.time()
+        in_file = extract_in_file_path(source)
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(owl_rete_cpp.load_objc_from_string, self.reasoner.network, code, in_file, source)
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+        return wme_count, source, time_ms, []
+
+    def load_objc_directory(
+        self, directory: str, recursive: bool = True,
+        exclude_patterns: Optional[List[str]] = None,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, Dict[str, List[str]], float]:
+        """Load all Objective-C files from a directory."""
+        return self._load_directory_generic(
+            directory=directory, extensions=["*.m", "*.mm"],
+            default_excludes=["build", "DerivedData", "Pods"],
+            load_file_func=self.load_objc_file,
+            recursive=recursive, exclude_patterns=exclude_patterns,
+            progress_callback=progress_callback
+        )
+
+
+class ReterSwiftLoaderMixin:
+    """Mixin providing Swift file/code loading methods."""
+
+    def load_swift_file(
+        self, filepath: str, base_path: Optional[str] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """Load Swift source file and add semantic facts to RETER."""
+        check_initialization()
+        start_time = time.time()
+        filepath_obj = Path(filepath)
+        with open(filepath_obj, 'r', encoding='utf-8') as f:
+            code = f.read()
+        if base_path:
+            try:
+                rel_path = filepath_obj.relative_to(Path(base_path))
+            except ValueError:
+                rel_path = filepath_obj
+        else:
+            rel_path = filepath_obj.name
+        source_id = generate_source_id(code, str(rel_path))
+        in_file = str(rel_path).replace('\\', '/')
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(owl_rete_cpp.load_swift_from_string, self.reasoner.network, code, in_file, source_id)
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+        return wme_count, source_id, time_ms, []
+
+    def load_swift_code(
+        self, code: str, source: str = "module",
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """Load Swift code string and add semantic facts to RETER."""
+        check_initialization()
+        start_time = time.time()
+        in_file = extract_in_file_path(source)
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(owl_rete_cpp.load_swift_from_string, self.reasoner.network, code, in_file, source)
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+        return wme_count, source, time_ms, []
+
+    def load_swift_directory(
+        self, directory: str, recursive: bool = True,
+        exclude_patterns: Optional[List[str]] = None,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, Dict[str, List[str]], float]:
+        """Load all Swift files from a directory."""
+        return self._load_directory_generic(
+            directory=directory, extensions=["*.swift"],
+            default_excludes=["build", "DerivedData", ".build"],
+            load_file_func=self.load_swift_file,
+            recursive=recursive, exclude_patterns=exclude_patterns,
+            progress_callback=progress_callback
+        )
+
+
+class ReterVB6LoaderMixin:
+    """Mixin providing Visual Basic 6 file/code loading methods."""
+
+    def load_vb6_file(
+        self, filepath: str, base_path: Optional[str] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """Load VB6 source file and add semantic facts to RETER."""
+        check_initialization()
+        start_time = time.time()
+        filepath_obj = Path(filepath)
+        with open(filepath_obj, 'r', encoding='utf-8') as f:
+            code = f.read()
+        if base_path:
+            try:
+                rel_path = filepath_obj.relative_to(Path(base_path))
+            except ValueError:
+                rel_path = filepath_obj
+        else:
+            rel_path = filepath_obj.name
+        source_id = generate_source_id(code, str(rel_path))
+        in_file = str(rel_path).replace('\\', '/')
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(owl_rete_cpp.load_vb6_from_string, self.reasoner.network, code, in_file, source_id)
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+        return wme_count, source_id, time_ms, []
+
+    def load_vb6_code(
+        self, code: str, source: str = "module",
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """Load VB6 code string and add semantic facts to RETER."""
+        check_initialization()
+        start_time = time.time()
+        in_file = extract_in_file_path(source)
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(owl_rete_cpp.load_vb6_from_string, self.reasoner.network, code, in_file, source)
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+        return wme_count, source, time_ms, []
+
+    def load_vb6_directory(
+        self, directory: str, recursive: bool = True,
+        exclude_patterns: Optional[List[str]] = None,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, Dict[str, List[str]], float]:
+        """Load all VB6 files from a directory."""
+        return self._load_directory_generic(
+            directory=directory, extensions=["*.bas", "*.cls", "*.frm"],
+            default_excludes=[],
+            load_file_func=self.load_vb6_file,
+            recursive=recursive, exclude_patterns=exclude_patterns,
+            progress_callback=progress_callback
+        )
+
+
+class ReterScalaLoaderMixin:
+    """Mixin providing Scala file/code loading methods."""
+
+    def load_scala_file(
+        self, filepath: str, base_path: Optional[str] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """Load Scala source file and add semantic facts to RETER."""
+        check_initialization()
+        start_time = time.time()
+        filepath_obj = Path(filepath)
+        with open(filepath_obj, 'r', encoding='utf-8') as f:
+            code = f.read()
+        if base_path:
+            try:
+                rel_path = filepath_obj.relative_to(Path(base_path))
+            except ValueError:
+                rel_path = filepath_obj
+        else:
+            rel_path = filepath_obj.name
+        source_id = generate_source_id(code, str(rel_path))
+        in_file = str(rel_path).replace('\\', '/')
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(owl_rete_cpp.load_scala_from_string, self.reasoner.network, code, in_file, source_id)
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+        return wme_count, source_id, time_ms, []
+
+    def load_scala_code(
+        self, code: str, source: str = "module",
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """Load Scala code string and add semantic facts to RETER."""
+        check_initialization()
+        start_time = time.time()
+        in_file = extract_in_file_path(source)
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(owl_rete_cpp.load_scala_from_string, self.reasoner.network, code, in_file, source)
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+        return wme_count, source, time_ms, []
+
+    def load_scala_directory(
+        self, directory: str, recursive: bool = True,
+        exclude_patterns: Optional[List[str]] = None,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, Dict[str, List[str]], float]:
+        """Load all Scala files from a directory."""
+        return self._load_directory_generic(
+            directory=directory, extensions=["*.scala", "*.sc"],
+            default_excludes=["target", ".bsp", ".metals"],
+            load_file_func=self.load_scala_file,
+            recursive=recursive, exclude_patterns=exclude_patterns,
+            progress_callback=progress_callback
+        )
+
+
+class ReterHaskellLoaderMixin:
+    """Mixin providing Haskell file/code loading methods."""
+
+    def load_haskell_file(
+        self, filepath: str, base_path: Optional[str] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """Load Haskell source file and add semantic facts to RETER."""
+        check_initialization()
+        start_time = time.time()
+        filepath_obj = Path(filepath)
+        with open(filepath_obj, 'r', encoding='utf-8') as f:
+            code = f.read()
+        if base_path:
+            try:
+                rel_path = filepath_obj.relative_to(Path(base_path))
+            except ValueError:
+                rel_path = filepath_obj
+        else:
+            rel_path = filepath_obj.name
+        source_id = generate_source_id(code, str(rel_path))
+        in_file = str(rel_path).replace('\\', '/')
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(owl_rete_cpp.load_haskell_from_string, self.reasoner.network, code, in_file, source_id)
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+        return wme_count, source_id, time_ms, []
+
+    def load_haskell_code(
+        self, code: str, source: str = "module",
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, str, float, List[str]]:
+        """Load Haskell code string and add semantic facts to RETER."""
+        check_initialization()
+        start_time = time.time()
+        in_file = extract_in_file_path(source)
+        from reter import owl_rete_cpp
+        wme_count = safe_cpp_call(owl_rete_cpp.load_haskell_from_string, self.reasoner.network, code, in_file, source)
+        time_ms = (time.time() - start_time) * 1000
+        self._dirty = True
+        return wme_count, source, time_ms, []
+
+    def load_haskell_directory(
+        self, directory: str, recursive: bool = True,
+        exclude_patterns: Optional[List[str]] = None,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[int, Dict[str, List[str]], float]:
+        """Load all Haskell files from a directory."""
+        return self._load_directory_generic(
+            directory=directory, extensions=["*.hs", "*.lhs"],
+            default_excludes=[".stack-work", "dist-newstyle", "dist"],
+            load_file_func=self.load_haskell_file,
+            recursive=recursive, exclude_patterns=exclude_patterns,
+            progress_callback=progress_callback
+        )
+
+
 class ReterLoaderMixin(
     ReterPythonLoaderMixin,
     ReterJavaScriptLoaderMixin,
@@ -1371,7 +1763,14 @@ class ReterLoaderMixin(
     ReterCPPLoaderMixin,
     ReterJavaLoaderMixin,
     ReterGoLoaderMixin,
-    ReterRustLoaderMixin
+    ReterRustLoaderMixin,
+    ReterErlangLoaderMixin,
+    ReterPHPLoaderMixin,
+    ReterObjCLoaderMixin,
+    ReterSwiftLoaderMixin,
+    ReterVB6LoaderMixin,
+    ReterScalaLoaderMixin,
+    ReterHaskellLoaderMixin,
 ):
     """
     Combined mixin providing all language loader methods.
@@ -1395,5 +1794,12 @@ __all__ = [
     "ReterJavaLoaderMixin",
     "ReterGoLoaderMixin",
     "ReterRustLoaderMixin",
+    "ReterErlangLoaderMixin",
+    "ReterPHPLoaderMixin",
+    "ReterObjCLoaderMixin",
+    "ReterSwiftLoaderMixin",
+    "ReterVB6LoaderMixin",
+    "ReterScalaLoaderMixin",
+    "ReterHaskellLoaderMixin",
     "ReterLoaderMixin",
 ]

@@ -30,7 +30,7 @@ class SyncChanges:
     ::: This is-in-layer Utility-Layer.
     ::: This is a value-object.
 
-    Consolidates 12 individual parameters (6 languages × 2 change types)
+    Consolidates per-language change lists (16 languages + markdown)
     into a structured object organized by language.
     """
     python: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
@@ -38,6 +38,16 @@ class SyncChanges:
     html: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
     csharp: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
     cpp: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    java: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    go: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    rust: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    erlang: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    php: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    objc: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    swift: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    vb6: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    scala: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    haskell: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
     markdown: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
 
     @classmethod
@@ -86,14 +96,15 @@ class SyncChanges:
 
     def has_changes(self) -> bool:
         """Check if there are any changes to sync."""
-        return any([
-            self.python.changed, self.python.deleted,
-            self.javascript.changed, self.javascript.deleted,
-            self.html.changed, self.html.deleted,
-            self.csharp.changed, self.csharp.deleted,
-            self.cpp.changed, self.cpp.deleted,
-            self.markdown.changed, self.markdown.deleted,
-        ])
+        for lang_changes in (
+            self.python, self.javascript, self.html, self.csharp, self.cpp,
+            self.java, self.go, self.rust, self.erlang, self.php,
+            self.objc, self.swift, self.vb6, self.scala, self.haskell,
+            self.markdown,
+        ):
+            if lang_changes.changed or lang_changes.deleted:
+                return True
+        return False
 
 
 class RAGSearchResult:
@@ -113,7 +124,7 @@ class RAGSearchResult:
         line: int,
         end_line: Optional[int],
         score: float,
-        source_type: str,  # "python", "javascript", "html", "csharp", or "markdown"
+        source_type: str,  # "python", "javascript", "html", "csharp", "cpp", "java", "go", "rust", etc.
         docstring: Optional[str] = None,
         content_preview: Optional[str] = None,
         content: Optional[str] = None,

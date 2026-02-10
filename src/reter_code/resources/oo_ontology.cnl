@@ -225,3 +225,151 @@ Every vue-directive is a framework-indicator.
 Every angular-directive is a framework-indicator.
 Every htmx-attribute is a framework-indicator.
 Every alpine-directive is a framework-indicator.
+
+% ============================================================================
+% Boolean Modifier Subtypes
+% ============================================================================
+% These subtypes replace boolean is-* attributes with proper entity types.
+% The cax-sco rule automatically infers base types from subtypes.
+
+% Method subtypes
+Every abstract-method is a method.
+Every static-method is a method.
+Every async-method is a method.
+Every final-method is a method.
+Every override-method is a method.
+Every virtual-method is a method.
+Every pure-virtual-method is a virtual-method.
+Every getter-method is a method.
+Every setter-method is a method.
+Every inline-method is a method.
+Every extern-method is a method.
+Every synchronized-method is a method.
+Every mutating-method is a method.
+Every open-method is a method.
+Every partial-method is a method.
+Every implicit-method is a method.
+Every defaulted-method is a method.
+Every deleted-method is a method.
+Every empty-body-method is a method.
+Every unsafe-method is a method.
+Every throwing-method is a method.
+Every private-method is a method.
+
+% Function subtypes
+Every abstract-function is a function.
+Every async-function is a function.
+Every inline-function is a function.
+Every extern-function is a function.
+Every generator-function is a function.
+Every empty-body-function is a function.
+Every foreign-function is a function.
+Every forward-declared-function is a function.
+Every ambient-function is a function.
+Every unsafe-function is a function.
+Every throwing-function is a function.
+Every raii-cleanup-function is a function.
+Every error-code-like-function is a function.
+Every status-code-like-function is a function.
+
+% Class subtypes
+Every abstract-class is a class.
+Every sealed-class is a class.
+Every final-class is a class.
+Every case-class is a class.
+Every newtype-class is a class.
+Every open-class is a class.
+Every partial-class is a class.
+Every forward-declared-class is a class.
+Every ambient-class is a class.
+
+% Field subtypes
+Every static-field is a field.
+Every readonly-field is a field.
+Every const-field is a field.
+Every lazy-field is a field.
+Every mutable-field is a field.
+Every weak-field is a field.
+Every withevents-field is a field.
+Every private-field is a field.
+
+% Parameter subtypes
+Every rest-parameter is a parameter.
+Every optional-parameter is a parameter.
+Every required-parameter is a parameter.
+Every mutable-parameter is a parameter.
+Every implicit-parameter is a parameter.
+
+% Property subtypes
+Every readonly-property is a property.
+Every computed-property is a property.
+Every lazy-property is a property.
+Every atomic-property is a property.
+Every nonatomic-property is a property.
+Every optional-property is a property.
+Every required-property is a property.
+
+% Catch-clause subtypes
+Every silent-swallow-catch is a catch-clause.
+Every general-exception-catch is a catch-clause.
+Every rethrowing-catch is a catch-clause.
+Every empty-catch is a catch-clause.
+Every empty-body-catch is a catch-clause.
+Every bare-except-catch is a catch-clause.
+Every catch-all-catch is a catch-clause.
+Every except-star-catch is a catch-clause.
+Every comment-only-catch is a catch-clause.
+
+% Assignment subtypes
+Every augmented-assignment is an assignment.
+Every attribute-assignment is an assignment.
+
+% Import subtypes
+Every static-import is an import.
+Every blank-import is an import.
+Every dot-import is an import.
+Every extern-crate-import is an import.
+Every glob-import is an import.
+Every qualified-import is an import.
+
+% Variable subtypes
+Every const-variable is a variable.
+Every mutable-variable is a variable.
+Every ambient-variable is a variable.
+
+% Enum subtypes
+Every scoped-enum is an enum.
+Every indirect-enum is an enum.
+
+% Constructor subtypes
+Every convenience-constructor is a constructor.
+Every failable-constructor is a constructor.
+
+% Return-statement subtypes
+Every null-return is a return-statement.
+Every void-return is a return-statement.
+Every bool-return is a return-statement.
+Every code-return is a return-statement.
+Every nullish-return is a return-statement.
+Every this-return is a return-statement.
+
+% Throw-statement subtypes
+Every typed-error-throw is a throw-statement.
+Every new-error-throw is a throw-statement.
+
+% Type-alias subtypes
+Every exported-type-alias is a type-alias.
+
+% Export subtypes
+Every default-export is an export.
+
+% HTML subtypes
+Every external-script is a script.
+Every external-style-sheet is a style-sheet.
+Every required-form-input is a form-input.
+
+% Literal subtypes
+Every magic-number-literal is a literal.
+
+% Closure subtypes
+Every move-closure is an anonymous-function.

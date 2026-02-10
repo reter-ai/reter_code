@@ -449,6 +449,106 @@ class RAGCollectorMixin:
         """Collect C++ entities for batched indexing."""
         return self._collect_entities(entities, source_id, project_root, "cpp", chunk_config)
 
+    def _collect_java_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect Java entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "java", chunk_config)
+
+    def _collect_go_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect Go entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "go", chunk_config)
+
+    def _collect_rust_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect Rust entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "rust", chunk_config)
+
+    def _collect_erlang_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect Erlang entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "erlang", chunk_config)
+
+    def _collect_php_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect PHP entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "php", chunk_config)
+
+    def _collect_objc_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect Objective-C entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "objc", chunk_config)
+
+    def _collect_swift_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect Swift entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "swift", chunk_config)
+
+    def _collect_vb6_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect VB6 entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "vb6", chunk_config)
+
+    def _collect_scala_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect Scala entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "scala", chunk_config)
+
+    def _collect_haskell_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect Haskell entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "haskell", chunk_config)
+
     def _collect_markdown_chunks(
         self,
         chunks: List[Any],

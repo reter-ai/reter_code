@@ -36,6 +36,16 @@ class Language(Enum):
     HTML = "html"       # HTML documents
     CSHARP = "cs"       # C#
     CPP = "cpp"         # C++
+    JAVA = "java"       # Java
+    GO = "go"           # Go
+    RUST = "rust"       # Rust
+    ERLANG = "erlang"   # Erlang
+    PHP = "php"         # PHP
+    OBJC = "objc"       # Objective-C
+    SWIFT = "swift"     # Swift
+    VB6 = "vb6"         # Visual Basic 6
+    SCALA = "scala"     # Scala
+    HASKELL = "haskell" # Haskell
 
     @classmethod
     def from_string(cls, value) -> "Language":
@@ -53,6 +63,8 @@ class Language(Enum):
             "python": cls.PYTHON,
             "js": cls.JAVASCRIPT,
             "javascript": cls.JAVASCRIPT,
+            "typescript": cls.JAVASCRIPT,
+            "ts": cls.JAVASCRIPT,
             "html": cls.HTML,
             "htm": cls.HTML,
             "cs": cls.CSHARP,
@@ -61,14 +73,39 @@ class Language(Enum):
             "cpp": cls.CPP,
             "c++": cls.CPP,
             "cxx": cls.CPP,
+            "java": cls.JAVA,
+            "go": cls.GO,
+            "golang": cls.GO,
+            "rust": cls.RUST,
+            "rs": cls.RUST,
+            "erlang": cls.ERLANG,
+            "erl": cls.ERLANG,
+            "php": cls.PHP,
+            "objc": cls.OBJC,
+            "objective-c": cls.OBJC,
+            "objectivec": cls.OBJC,
+            "swift": cls.SWIFT,
+            "vb6": cls.VB6,
+            "vb": cls.VB6,
+            "visualbasic": cls.VB6,
+            "scala": cls.SCALA,
+            "haskell": cls.HASKELL,
+            "hs": cls.HASKELL,
         }
         if value_lower in mapping:
             return mapping[value_lower]
-        raise ValueError(f"Unsupported language: {value}. Supported: oo, python, javascript, html, csharp, cpp")
+        raise ValueError(f"Unsupported language: {value}. Supported: oo, python, javascript, html, csharp, cpp, java, go, rust, erlang, php, objc, swift, vb6, scala, haskell")
 
 
 # Type alias for language parameter
-LanguageType = Literal["oo", "py", "python", "js", "javascript", "html", "htm", "cs", "csharp", "c#", "cpp", "c++", "cxx", "all", "generic"]
+LanguageType = Literal[
+    "oo", "py", "python", "js", "javascript", "ts", "typescript",
+    "html", "htm", "cs", "csharp", "c#", "cpp", "c++", "cxx",
+    "java", "go", "golang", "rust", "rs", "erlang", "erl",
+    "php", "objc", "objective-c", "objectivec", "swift",
+    "vb6", "vb", "visualbasic", "scala", "haskell", "hs",
+    "all", "generic"
+]
 
 
 @dataclass
@@ -122,6 +159,16 @@ class LanguageSupport:
         Language.HTML: "html",
         Language.CSHARP: "cs",
         Language.CPP: "cpp",
+        Language.JAVA: "java",
+        Language.GO: "go",
+        Language.RUST: "rust",
+        Language.ERLANG: "erlang",
+        Language.PHP: "php",
+        Language.OBJC: "objc",
+        Language.SWIFT: "swift",
+        Language.VB6: "vb6",
+        Language.SCALA: "scala",
+        Language.HASKELL: "haskell",
     }
 
     # Entity concept mappings (some entities have different names per language)
@@ -257,7 +304,11 @@ class LanguageSupport:
     @classmethod
     def supported_languages(cls) -> List[str]:
         """Return list of supported language identifiers."""
-        return ["oo", "python", "javascript", "html", "csharp", "cpp"]
+        return [
+            "oo", "python", "javascript", "html", "csharp", "cpp",
+            "java", "go", "rust", "erlang", "php", "objc", "swift",
+            "vb6", "scala", "haskell",
+        ]
 
     @classmethod
     def is_language_specific(cls, entity: str) -> bool:

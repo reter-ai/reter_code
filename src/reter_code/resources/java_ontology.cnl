@@ -1,0 +1,57 @@
+% Java Language Ontology - CNL Format
+% Extends oo_ontology.cnl with Java-specific concepts
+
+% File/Module types
+Every java-compilation-unit is a compilation-unit.
+Every java-package is a namespace.
+
+% Type definitions
+Every java-class is a class.
+Every java-interface is an interface.
+Every java-enum is an enum.
+Every java-record is a class.
+Every java-annotation-type is an interface.
+
+% Members
+Every java-method is a method.
+Every java-field is a field.
+Every java-constructor is a constructor.
+
+% Parameters
+Every java-parameter is a parameter.
+
+% Import
+Every java-import is an import.
+Every java-static-import is a java-import.
+
+% Exception handling
+Every java-try-block is a try-block.
+Every java-catch-clause is a catch-clause.
+Every java-finally-clause is a finally-clause.
+Every java-throw-statement is a throw-statement.
+
+% Control flow
+Every java-return-statement is a return-statement.
+
+% Other
+Every java-annotation is an attribute.
+Every java-reference is a reference.
+Every java-variable is a variable.
+
+% Java-Specific Concepts
+Every abstract-class is a class.
+Every final-class is a class.
+Every sealed-class is a class.
+Every static-inner-class is a class.
+Every anonymous-class is a class.
+Every lambda-expression is a function.
+
+% Access Modifiers
+Every public-member is a member.
+Every private-member is a member.
+Every protected-member is a member.
+Every package-private-member is a member.
+
+% Code Smells
+Every java-god-class is a god-class.
+Every java-long-method is a long-method.

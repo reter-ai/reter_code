@@ -140,6 +140,16 @@ class ReterWrapper(ReterLoaderMixin):
             self._load_html_ontology()
             self._load_csharp_ontology()
             self._load_cpp_ontology()
+            self._load_java_ontology()
+            self._load_go_ontology()
+            self._load_rust_ontology()
+            self._load_erlang_ontology()
+            self._load_php_ontology()
+            self._load_objc_ontology()
+            self._load_swift_ontology()
+            self._load_vb6_ontology()
+            self._load_scala_ontology()
+            self._load_haskell_ontology()
         else:
             logger.debug("Skipping ontology load (will be loaded from snapshot)")
 
@@ -385,6 +395,62 @@ class ReterWrapper(ReterLoaderMixin):
         except Exception as e:
             # Log error but don't fail initialization - ontology is optional
             logger.debug(f"ERROR loading C++ ontology: {type(e).__name__}: {e}")
+
+    def _load_language_ontology(self, filename: str, source_name: str, display_name: str) -> None:
+        """Generic helper to load a language ontology from resources."""
+        try:
+            ontology_path = Path(__file__).parent / "resources" / filename
+            if ontology_path.exists():
+                with open(ontology_path, 'r', encoding='utf-8') as f:
+                    ontology_content = f.read()
+                wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, source_name)
+                self._session_stats["total_wmes"] += wme_count
+                self._session_stats["total_sources"] += 1
+                logger.debug(f"{display_name} ontology loaded successfully ({wme_count} WMEs)")
+            else:
+                logger.debug(f"WARNING: {display_name} ontology not found at {ontology_path}")
+        except Exception as e:
+            logger.debug(f"ERROR loading {display_name} ontology: {type(e).__name__}: {e}")
+
+    def _load_java_ontology(self) -> None:
+        """Load Java code analysis ontology."""
+        self._load_language_ontology("java_ontology.cnl", "java_ontology", "Java")
+
+    def _load_go_ontology(self) -> None:
+        """Load Go code analysis ontology."""
+        self._load_language_ontology("go_ontology.cnl", "go_ontology", "Go")
+
+    def _load_rust_ontology(self) -> None:
+        """Load Rust code analysis ontology."""
+        self._load_language_ontology("rust_ontology.cnl", "rust_ontology", "Rust")
+
+    def _load_erlang_ontology(self) -> None:
+        """Load Erlang code analysis ontology."""
+        self._load_language_ontology("erlang_ontology.cnl", "erlang_ontology", "Erlang")
+
+    def _load_php_ontology(self) -> None:
+        """Load PHP code analysis ontology."""
+        self._load_language_ontology("php_ontology.cnl", "php_ontology", "PHP")
+
+    def _load_objc_ontology(self) -> None:
+        """Load Objective-C code analysis ontology."""
+        self._load_language_ontology("objc_ontology.cnl", "objc_ontology", "Objective-C")
+
+    def _load_swift_ontology(self) -> None:
+        """Load Swift code analysis ontology."""
+        self._load_language_ontology("swift_ontology.cnl", "swift_ontology", "Swift")
+
+    def _load_vb6_ontology(self) -> None:
+        """Load Visual Basic 6 code analysis ontology."""
+        self._load_language_ontology("vb6_ontology.cnl", "vb6_ontology", "VB6")
+
+    def _load_scala_ontology(self) -> None:
+        """Load Scala code analysis ontology."""
+        self._load_language_ontology("scala_ontology.cnl", "scala_ontology", "Scala")
+
+    def _load_haskell_ontology(self) -> None:
+        """Load Haskell code analysis ontology."""
+        self._load_language_ontology("haskell_ontology.cnl", "haskell_ontology", "Haskell")
 
     def _run_with_lock(self, func: Callable[..., T], *args: Any) -> T:
         """

@@ -1,0 +1,62 @@
+% Swift Language Ontology - CNL Format
+% Extends oo_ontology.cnl with Swift-specific concepts
+
+% File/Module types
+Every swift-compilation-unit is a compilation-unit.
+Every swift-module is a module.
+
+% Type definitions
+Every swift-class is a class.
+Every swift-struct is a struct.
+Every swift-enum is an enum.
+Every swift-protocol is an interface.
+Every swift-extension is a class.
+Every swift-type-alias is a type-alias.
+
+% Members
+Every swift-method is a method.
+Every swift-function is a function.
+Every swift-field is a field.
+Every swift-property is a property.
+Every swift-constructor is a constructor.
+Every swift-enum-member is an enum-member.
+Every swift-subscript is a property.
+
+% Parameters
+Every swift-parameter is a parameter.
+
+% Import
+Every swift-import is an import.
+
+% Exception handling
+Every swift-try-block is a try-block.
+Every swift-catch-clause is a catch-clause.
+Every swift-throw-statement is a throw-statement.
+
+% Control flow
+Every swift-return-statement is a return-statement.
+
+% Other
+Every swift-variable is a variable.
+Every swift-constant is a field.
+Every swift-reference is a reference.
+Every swift-attribute is an attribute.
+Every swift-anonymous-function is an anonymous-function.
+
+% Swift-Specific Concepts
+Every final-class is a class.
+Every open-class is a class.
+Every convenience-initializer is a constructor.
+Every required-initializer is a constructor.
+Every deinitializer is a method.
+
+% Access Modifiers
+Every public-member is a member.
+Every private-member is a member.
+Every internal-member is a member.
+Every fileprivate-member is a member.
+Every open-member is a member.
+
+% Code Smells
+Every swift-god-class is a god-class.
+Every swift-long-method is a long-method.
