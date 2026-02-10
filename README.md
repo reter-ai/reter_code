@@ -258,7 +258,7 @@ Place a `reter_code.json` in your project root to configure the server. All sett
 | `natural_language_query` | Ask refactoring questions in plain English — translates to CADSL automatically |
 | `reql` | Execute REQL queries directly against the knowledge graph |
 | `semantic_search` | Find semantically similar code using vector similarity (FAISS) |
-| `code_inspection` | Multi-language code analysis (Python, JS, C#, C++) |
+| `code_inspection` | Multi-language code analysis (15 languages) |
 
 ### Session and Tracking
 
@@ -392,11 +392,20 @@ Code analysis is available for:
 | Language | Extensions | Status |
 |----------|-----------|--------|
 | Python | `.py` | Full support |
+| JavaScript | `.js`, `.mjs`, `.jsx`, `.ts`, `.tsx` | Full support |
+| Java | `.java` | Full support |
 | C# | `.cs` | Full support |
-| C++ | `.cpp`, `.hpp`, `.h`, `.cc` | Full support |
-| JavaScript | `.js` | Full support |
-
-The C++ engine additionally includes parsers for Java, Go, Rust, Swift, PHP, Erlang, Objective-C, OCL, C, CSS, HTML, and PlantUML.
+| C++ | `.cpp`, `.cc`, `.cxx`, `.hpp`, `.h` | Full support |
+| Go | `.go` | Full support |
+| Rust | `.rs` | Full support |
+| Swift | `.swift` | Full support |
+| Scala | `.scala`, `.sc` | Full support |
+| PHP | `.php` | Full support |
+| Haskell | `.hs`, `.lhs` | Full support |
+| Erlang | `.erl`, `.hrl` | Full support |
+| Objective-C | `.m`, `.mm` | Full support |
+| Visual Basic 6 | `.bas`, `.cls`, `.frm` | Full support |
+| HTML | `.html`, `.htm` | Full support |
 
 ---
 
