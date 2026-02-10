@@ -114,7 +114,7 @@ class ReterWrapper(ReterLoaderMixin):
         - Cardinality: symbols (>=, <=, =) or keywords (at_least, at_most, exactly)
 
         Args:
-            load_ontology: If True, automatically load Python ontology.
+            load_ontology: If True, automatically load code ontology.
                           Set to False when loading from snapshot (ontology already included).
         """
         logger.debug(f"ReterWrapper.__init__ starting... (load_ontology={load_ontology})")
@@ -131,326 +131,35 @@ class ReterWrapper(ReterLoaderMixin):
         self._dirty = False  # True if instance has unsaved changes
         self._last_save_time = time.time()  # Timestamp of last save
 
-        # Automatically load ontologies for code analysis (skip if loading from snapshot)
-        # Load order: OO meta-ontology first (defines generic concepts), then language-specific
+        # Automatically load code ontology for analysis (skip if loading from snapshot)
         if load_ontology:
-            self._load_oo_ontology()  # Must be first - defines generic OO concepts
-            self._load_python_ontology()
-            self._load_javascript_ontology()
-            self._load_html_ontology()
-            self._load_csharp_ontology()
-            self._load_cpp_ontology()
-            self._load_java_ontology()
-            self._load_go_ontology()
-            self._load_rust_ontology()
-            self._load_erlang_ontology()
-            self._load_php_ontology()
-            self._load_objc_ontology()
-            self._load_swift_ontology()
-            self._load_vb6_ontology()
-            self._load_scala_ontology()
-            self._load_haskell_ontology()
+            self._load_code_ontology()
         else:
             logger.debug("Skipping ontology load (will be loaded from snapshot)")
 
-    def _load_oo_ontology(self) -> None:
+    def _load_code_ontology(self) -> None:
         """
-        Load the Object-Oriented meta-ontology first.
+        Load the code analysis ontology.
 
-        This ontology defines language-independent OO concepts (class, function,
-        method, etc.) using CNL naming conventions. Must be loaded before
-        Python and JavaScript ontologies.
+        This ontology defines entity type hierarchy for all supported languages
+        (e.g., Every method is a function, Every class is a type, etc.).
+        Generated from FACTS_COMPARISON.csv for 1:1 correspondence with C++ facts.
 
-        Loaded with source "oo_ontology" for potential selective forgetting.
+        Loaded with source "code_ontology" for potential selective forgetting.
         """
-        logger.debug("_load_oo_ontology starting...")
         try:
-            # Get path to CNL ontology file relative to this module
-            # Resources are now inside the package: src/reter_code/resources/
-            ontology_path = Path(__file__).parent / "resources" / "oo_ontology.cnl"
-            logger.debug(f"OO ontology path: {ontology_path}")
-
-            if ontology_path.exists():
-                logger.debug("Reading OO CNL ontology file...")
-                with open(ontology_path, 'r', encoding='utf-8') as f:
-                    ontology_content = f.read()
-                logger.debug(f"OO ontology content length: {len(ontology_content)} chars")
-
-                # Load the CNL ontology into RETER - wrap with safe call for C++ protection
-                logger.debug("Calling safe_cpp_call(load_cnl) for OO...")
-                wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, "oo_ontology")
-                logger.debug(f"load_cnl returned: {wme_count} WMEs")
-                self._session_stats["total_wmes"] += wme_count
-                self._session_stats["total_sources"] += 1
-
-                logger.debug(f"OO meta-ontology loaded successfully ({wme_count} WMEs)")
-            else:
-                # Log warning but don't fail - ontology is optional
-                logger.debug(f"WARNING: OO ontology not found at {ontology_path}")
-        except Exception as e:
-            # Log error but don't fail initialization - ontology is optional
-            logger.debug(f"ERROR loading OO ontology: {type(e).__name__}: {e}")
-
-    def _load_python_ontology(self) -> None:
-        """
-        Automatically load Python code analysis ontology on initialization
-
-        This ontology provides inference rules for Python code understanding:
-        - Class hierarchy (Module, Class, Function, Method, etc.)
-        - Transitive relationships (calls, imports, inheritance)
-        - Magic method recognition (__init__, __str__, etc.)
-        - Decorator-based inference (@property, @dataclass, etc.)
-
-        Loaded with source "python_ontology" for potential selective forgetting.
-        """
-        logger.debug("_load_python_ontology starting...")
-        try:
-            # Get path to CNL ontology file relative to this module
-            # Resources are now inside the package: src/reter_code/resources/
-            ontology_path = Path(__file__).parent / "resources" / "py_ontology.cnl"
-            logger.debug(f"Ontology path: {ontology_path}")
-
-            if ontology_path.exists():
-                logger.debug("Reading CNL ontology file...")
-                with open(ontology_path, 'r', encoding='utf-8') as f:
-                    ontology_content = f.read()
-                logger.debug(f"Ontology content length: {len(ontology_content)} chars")
-
-                # Load the CNL ontology into RETER - wrap with safe call for C++ protection
-                logger.debug("Calling safe_cpp_call(load_cnl)...")
-                wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, "python_ontology")
-                logger.debug(f"load_cnl returned: {wme_count} WMEs")
-                self._session_stats["total_wmes"] += wme_count
-                self._session_stats["total_sources"] += 1
-
-                logger.debug(f"Python ontology loaded successfully ({wme_count} WMEs)")
-            else:
-                # Log warning but don't fail - ontology is optional
-                logger.debug(f"WARNING: Python ontology not found at {ontology_path}")
-        except Exception as e:
-            # Log error but don't fail initialization - ontology is optional
-            logger.debug(f"ERROR loading Python ontology: {type(e).__name__}: {e}")
-
-    def _load_javascript_ontology(self) -> None:
-        """
-        Automatically load JavaScript code analysis ontology on initialization
-
-        This ontology provides inference rules for JavaScript code understanding:
-        - Class hierarchy (Module, Class, Function, Method, ArrowFunction, etc.)
-        - Transitive relationships (calls, imports, inheritance)
-        - Async/generator function recognition
-        - Error handling patterns (try/catch/finally)
-        - ES6+ features (private fields, getters/setters, etc.)
-
-        Loaded with source "javascript_ontology" for potential selective forgetting.
-        """
-        logger.debug("_load_javascript_ontology starting...")
-        try:
-            # Get path to CNL ontology file relative to this module
-            # Resources are now inside the package: src/reter_code/resources/
-            ontology_path = Path(__file__).parent / "resources" / "js_ontology.cnl"
-            logger.debug(f"JavaScript ontology path: {ontology_path}")
-
-            if ontology_path.exists():
-                logger.debug("Reading JavaScript CNL ontology file...")
-                with open(ontology_path, 'r', encoding='utf-8') as f:
-                    ontology_content = f.read()
-                logger.debug(f"JavaScript ontology content length: {len(ontology_content)} chars")
-
-                # Load the CNL ontology into RETER - wrap with safe call for C++ protection
-                logger.debug("Calling safe_cpp_call(load_cnl) for JavaScript...")
-                wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, "javascript_ontology")
-                logger.debug(f"load_cnl returned: {wme_count} WMEs")
-                self._session_stats["total_wmes"] += wme_count
-                self._session_stats["total_sources"] += 1
-
-                logger.debug(f"JavaScript ontology loaded successfully ({wme_count} WMEs)")
-            else:
-                # Log warning but don't fail - ontology is optional
-                logger.debug(f"WARNING: JavaScript ontology not found at {ontology_path}")
-        except Exception as e:
-            # Log error but don't fail initialization - ontology is optional
-            logger.debug(f"ERROR loading JavaScript ontology: {type(e).__name__}: {e}")
-
-    def _load_html_ontology(self) -> None:
-        """
-        Automatically load HTML document analysis ontology on initialization
-
-        This ontology provides inference rules for HTML document understanding:
-        - Document structure (documents, elements, forms, links)
-        - Script detection (inline and external)
-        - Event handler recognition (onclick, onsubmit, etc.)
-        - Framework detection (Vue, Angular, HTMX, Alpine)
-        - Security considerations (CSRF, script integrity)
-
-        Loaded with source "html_ontology" for potential selective forgetting.
-        """
-        logger.debug("_load_html_ontology starting...")
-        try:
-            # Get path to CNL ontology file relative to this module
-            # Resources are now inside the package: src/reter_code/resources/
-            ontology_path = Path(__file__).parent / "resources" / "html_ontology.cnl"
-            logger.debug(f"HTML ontology path: {ontology_path}")
-
-            if ontology_path.exists():
-                logger.debug("Reading HTML CNL ontology file...")
-                with open(ontology_path, 'r', encoding='utf-8') as f:
-                    ontology_content = f.read()
-                logger.debug(f"HTML ontology content length: {len(ontology_content)} chars")
-
-                # Load the CNL ontology into RETER - wrap with safe call for C++ protection
-                logger.debug("Calling safe_cpp_call(load_cnl) for HTML...")
-                wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, "html_ontology")
-                logger.debug(f"load_cnl returned: {wme_count} WMEs")
-                self._session_stats["total_wmes"] += wme_count
-                self._session_stats["total_sources"] += 1
-
-                logger.debug(f"HTML ontology loaded successfully ({wme_count} WMEs)")
-            else:
-                # Log warning but don't fail - ontology is optional
-                logger.debug(f"WARNING: HTML ontology not found at {ontology_path}")
-        except Exception as e:
-            # Log error but don't fail initialization - ontology is optional
-            logger.debug(f"ERROR loading HTML ontology: {type(e).__name__}: {e}")
-
-    def _load_csharp_ontology(self) -> None:
-        """
-        Automatically load C# code analysis ontology on initialization
-
-        This ontology provides inference rules for C# code understanding:
-        - Class hierarchy (CompilationUnit, Namespace, Class, Struct, Interface, etc.)
-        - Transitive relationships (calls, inheritance)
-        - Method and property recognition
-        - Attribute/decorator support
-        - Exception handling (try/catch/finally)
-
-        Loaded with source "csharp_ontology" for potential selective forgetting.
-        """
-        logger.debug("_load_csharp_ontology starting...")
-        try:
-            # Get path to CNL ontology file relative to this module
-            # Resources are now inside the package: src/reter_code/resources/
-            ontology_path = Path(__file__).parent / "resources" / "cs_ontology.cnl"
-            logger.debug(f"C# ontology path: {ontology_path}")
-
-            if ontology_path.exists():
-                logger.debug("Reading C# CNL ontology file...")
-                with open(ontology_path, 'r', encoding='utf-8') as f:
-                    ontology_content = f.read()
-                logger.debug(f"C# ontology content length: {len(ontology_content)} chars")
-
-                # Load the CNL ontology into RETER - wrap with safe call for C++ protection
-                logger.debug("Calling safe_cpp_call(load_cnl) for C#...")
-                wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, "csharp_ontology")
-                logger.debug(f"load_cnl returned: {wme_count} WMEs")
-                self._session_stats["total_wmes"] += wme_count
-                self._session_stats["total_sources"] += 1
-
-                logger.debug(f"C# ontology loaded successfully ({wme_count} WMEs)")
-            else:
-                # Log warning but don't fail - ontology is optional
-                logger.debug(f"WARNING: C# ontology not found at {ontology_path}")
-        except Exception as e:
-            # Log error but don't fail initialization - ontology is optional
-            logger.debug(f"ERROR loading C# ontology: {type(e).__name__}: {e}")
-
-    def _load_cpp_ontology(self) -> None:
-        """
-        Automatically load C++ code analysis ontology on initialization
-
-        This ontology provides inference rules for C++ code understanding:
-        - Class hierarchy (TranslationUnit, Namespace, Class, Struct, etc.)
-        - Transitive relationships (calls, inheritance)
-        - Method and field recognition
-        - Template support
-        - Exception handling (try/catch/throw)
-        - Enums and enumerators
-
-        Loaded with source "cpp_ontology" for potential selective forgetting.
-        """
-        logger.debug("_load_cpp_ontology starting...")
-        try:
-            # Get path to CNL ontology file relative to this module
-            # Resources are now inside the package: src/reter_code/resources/
-            ontology_path = Path(__file__).parent / "resources" / "cpp_ontology.cnl"
-            logger.debug(f"C++ ontology path: {ontology_path}")
-
-            if ontology_path.exists():
-                logger.debug("Reading C++ CNL ontology file...")
-                with open(ontology_path, 'r', encoding='utf-8') as f:
-                    ontology_content = f.read()
-                logger.debug(f"C++ ontology content length: {len(ontology_content)} chars")
-
-                # Load the CNL ontology into RETER - wrap with safe call for C++ protection
-                logger.debug("Calling safe_cpp_call(load_cnl) for C++...")
-                wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, "cpp_ontology")
-                logger.debug(f"load_cnl returned: {wme_count} WMEs")
-                self._session_stats["total_wmes"] += wme_count
-                self._session_stats["total_sources"] += 1
-
-                logger.debug(f"C++ ontology loaded successfully ({wme_count} WMEs)")
-            else:
-                # Log warning but don't fail - ontology is optional
-                logger.debug(f"WARNING: C++ ontology not found at {ontology_path}")
-        except Exception as e:
-            # Log error but don't fail initialization - ontology is optional
-            logger.debug(f"ERROR loading C++ ontology: {type(e).__name__}: {e}")
-
-    def _load_language_ontology(self, filename: str, source_name: str, display_name: str) -> None:
-        """Generic helper to load a language ontology from resources."""
-        try:
-            ontology_path = Path(__file__).parent / "resources" / filename
+            ontology_path = Path(__file__).parent / "resources" / "code_ontology.cnl"
             if ontology_path.exists():
                 with open(ontology_path, 'r', encoding='utf-8') as f:
                     ontology_content = f.read()
-                wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, source_name)
+                wme_count = safe_cpp_call(self.reasoner.load_cnl, ontology_content, "code_ontology")
                 self._session_stats["total_wmes"] += wme_count
                 self._session_stats["total_sources"] += 1
-                logger.debug(f"{display_name} ontology loaded successfully ({wme_count} WMEs)")
+                logger.debug(f"Code ontology loaded successfully ({wme_count} WMEs)")
             else:
-                logger.debug(f"WARNING: {display_name} ontology not found at {ontology_path}")
+                logger.debug(f"WARNING: Code ontology not found at {ontology_path}")
         except Exception as e:
-            logger.debug(f"ERROR loading {display_name} ontology: {type(e).__name__}: {e}")
-
-    def _load_java_ontology(self) -> None:
-        """Load Java code analysis ontology."""
-        self._load_language_ontology("java_ontology.cnl", "java_ontology", "Java")
-
-    def _load_go_ontology(self) -> None:
-        """Load Go code analysis ontology."""
-        self._load_language_ontology("go_ontology.cnl", "go_ontology", "Go")
-
-    def _load_rust_ontology(self) -> None:
-        """Load Rust code analysis ontology."""
-        self._load_language_ontology("rust_ontology.cnl", "rust_ontology", "Rust")
-
-    def _load_erlang_ontology(self) -> None:
-        """Load Erlang code analysis ontology."""
-        self._load_language_ontology("erlang_ontology.cnl", "erlang_ontology", "Erlang")
-
-    def _load_php_ontology(self) -> None:
-        """Load PHP code analysis ontology."""
-        self._load_language_ontology("php_ontology.cnl", "php_ontology", "PHP")
-
-    def _load_objc_ontology(self) -> None:
-        """Load Objective-C code analysis ontology."""
-        self._load_language_ontology("objc_ontology.cnl", "objc_ontology", "Objective-C")
-
-    def _load_swift_ontology(self) -> None:
-        """Load Swift code analysis ontology."""
-        self._load_language_ontology("swift_ontology.cnl", "swift_ontology", "Swift")
-
-    def _load_vb6_ontology(self) -> None:
-        """Load Visual Basic 6 code analysis ontology."""
-        self._load_language_ontology("vb6_ontology.cnl", "vb6_ontology", "VB6")
-
-    def _load_scala_ontology(self) -> None:
-        """Load Scala code analysis ontology."""
-        self._load_language_ontology("scala_ontology.cnl", "scala_ontology", "Scala")
-
-    def _load_haskell_ontology(self) -> None:
-        """Load Haskell code analysis ontology."""
-        self._load_language_ontology("haskell_ontology.cnl", "haskell_ontology", "Haskell")
+            logger.debug(f"ERROR loading code ontology: {type(e).__name__}: {e}")
 
     def _run_with_lock(self, func: Callable[..., T], *args: Any) -> T:
         """

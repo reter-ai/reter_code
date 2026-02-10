@@ -1,0 +1,219 @@
+% Object-Oriented Meta-Ontology - CNL Format
+% Generated from FACTS_COMPARISON.csv - 1:1 correspondence with entity types
+
+% Callable entities
+Every method is a function.
+Every arrow-function is a function.
+Every anonymous-function is a function.
+Every abstract-function is a function.
+Every async-function is a function.
+Every inline-function is a function.
+Every extern-function is a function.
+Every generator-function is a function.
+Every empty-body-function is a function.
+Every foreign-function is a function.
+Every forward-declared-function is a function.
+Every ambient-function is a function.
+Every unsafe-function is a function.
+Every throwing-function is a function.
+Every raii-cleanup-function is a function.
+Every error-code-like-function is a function.
+Every status-code-like-function is a function.
+Every operator-function is a function.
+
+% Method subtypes
+Every constructor is a method.
+Every destructor is a method.
+Every abstract-method is a method.
+Every static-method is a method.
+Every async-method is a method.
+Every final-method is a method.
+Every override-method is a method.
+Every virtual-method is a method.
+Every getter-method is a method.
+Every setter-method is a method.
+Every inline-method is a method.
+Every extern-method is a method.
+Every synchronized-method is a method.
+Every mutating-method is a method.
+Every open-method is a method.
+Every partial-method is a method.
+Every implicit-method is a method.
+Every defaulted-method is a method.
+Every deleted-method is a method.
+Every empty-body-method is a method.
+Every unsafe-method is a method.
+Every throwing-method is a method.
+Every private-method is a method.
+Every pure-virtual-method is a virtual-method.
+
+% Constructor subtypes
+Every convenience-constructor is a constructor.
+Every failable-constructor is a constructor.
+
+% Type entities
+Every interface is a type.
+Every class is a type.
+Every struct is a type.
+Every union is a type.
+Every enum is a type.
+Every delegate is a type.
+Every type-alias is a type.
+Every type-def is a type.
+Every trait is a type.
+Every protocol is a type.
+Every category is a type.
+Every extension is a type.
+
+% Class subtypes
+Every abstract-class is a class.
+Every sealed-class is a class.
+Every final-class is a class.
+Every case-class is a class.
+Every newtype-class is a class.
+Every open-class is a class.
+Every partial-class is a class.
+Every forward-declared-class is a class.
+Every ambient-class is a class.
+
+% Enum subtypes
+Every scoped-enum is an enum.
+Every indirect-enum is an enum.
+Every enum-class is an enum.
+
+% Type-alias subtypes
+Every exported-type-alias is a type-alias.
+
+% Member entities
+Every field is a member.
+Every property is a member.
+Every event is a member.
+
+% Field subtypes
+Every static-field is a field.
+Every readonly-field is a field.
+Every const-field is a field.
+Every lazy-field is a field.
+Every mutable-field is a field.
+Every weak-field is a field.
+Every withevents-field is a field.
+Every private-field is a field.
+
+% Property subtypes
+Every readonly-property is a property.
+Every computed-property is a property.
+Every lazy-property is a property.
+Every atomic-property is a property.
+Every nonatomic-property is a property.
+Every optional-property is a property.
+Every required-property is a property.
+
+% Parameter subtypes
+Every rest-parameter is a parameter.
+Every optional-parameter is a parameter.
+Every required-parameter is a parameter.
+Every mutable-parameter is a parameter.
+Every implicit-parameter is a parameter.
+
+% Source-unit entities
+Every module is a source-unit.
+Every compilation-unit is a source-unit.
+Every translation-unit is a source-unit.
+Every document is a source-unit.
+
+% Statement hierarchy
+Every catch-clause is a statement.
+Every finally-clause is a statement.
+Every try-block is a statement.
+Every try-else-block is a statement.
+Every throw-statement is a statement.
+Every return-statement is a statement.
+Every with-statement is a statement.
+Every assignment is a statement.
+Every break-statement is a statement.
+Every continue-statement is a statement.
+Every for-statement is a statement.
+Every if-statement is a statement.
+Every switch-statement is a statement.
+Every goto-statement is a statement.
+Every select-statement is a statement.
+
+% Return-statement subtypes
+Every null-return is a return-statement.
+Every void-return is a return-statement.
+Every bool-return is a return-statement.
+Every code-return is a return-statement.
+Every nullish-return is a return-statement.
+Every this-return is a return-statement.
+
+% Throw-statement subtypes
+Every typed-error-throw is a throw-statement.
+Every new-error-throw is a throw-statement.
+
+% Catch-clause subtypes
+Every silent-swallow-catch is a catch-clause.
+Every general-exception-catch is a catch-clause.
+Every rethrowing-catch is a catch-clause.
+Every empty-catch is a catch-clause.
+Every empty-body-catch is a catch-clause.
+Every bare-except-catch is a catch-clause.
+Every catch-all-catch is a catch-clause.
+Every except-star-catch is a catch-clause.
+Every comment-only-catch is a catch-clause.
+
+% Assignment subtypes
+Every augmented-assignment is an assignment.
+Every attribute-assignment is an assignment.
+
+% Import subtypes
+Every static-import is an import.
+Every blank-import is an import.
+Every dot-import is an import.
+Every extern-crate-import is an import.
+Every glob-import is an import.
+Every qualified-import is an import.
+
+% Variable subtypes
+Every const-variable is a variable.
+Every mutable-variable is a variable.
+Every ambient-variable is a variable.
+
+% Export subtypes
+Every default-export is an export.
+
+% Anonymous-function subtypes
+Every move-closure is an anonymous-function.
+
+% Literal subtypes
+Every magic-number-literal is a literal.
+Every floating-literal is a literal.
+Every integer-literal is a literal.
+Every string-literal is a literal.
+Every character-literal is a literal.
+Every user-defined-literal is a literal.
+
+% HTML entity hierarchy
+Every element is an entity.
+Every script is an entity.
+Every script-reference is an entity.
+Every style-sheet is an entity.
+Every event-handler is an entity.
+Every data-attribute is an entity.
+Every framework-indicator is an entity.
+
+% HTML element subtypes
+Every form is an element.
+Every form-input is an element.
+Every link is an element.
+Every meta is an element.
+Every image is an element.
+Every iframe is an element.
+
+% HTML specific subtypes
+Every external-script is a script.
+Every external-style-sheet is a style-sheet.
+Every required-form-input is a form-input.
+Every vue-directive is a framework-indicator.
+Every angular-directive is a framework-indicator.
+Every htmx-attribute is a framework-indicator.
+Every alpine-directive is a framework-indicator.

