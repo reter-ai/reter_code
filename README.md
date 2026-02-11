@@ -33,14 +33,14 @@ The ontology is built with OWL 2 RL Description Logic and enhanced with **RAG em
 5. **Feeds results** to AI agents for automated or assisted refactoring
 
 ```
-                    RETER Server (separate process)
-                    +---------------------------------------------+
-Source Code ------->| Parsers -> Code Ontology (OWL 2 RL) -+      |
-                    |                                      +-> Results --> ZeroMQ --> MCP Client --> AI Agent
-                    |          RAG Embeddings (FAISS/ML) --+      |
-                    |          CADSL Pipelines                     |
-                    |          View Server (HTTP+WS) --> Browser   |
-                    +---------------------------------------------+
+               RETER Server
+               .--------------------------------------------.
+Source    ---> | Parsers --> Code Ontology (OWL 2 RL) ---.   |
+Code          |                                         '--> Results --> ZeroMQ --> MCP Client --> AI Agent
+              | RAG Embeddings (FAISS/ML) --------------'   |
+              | CADSL Pipelines                             |
+              | View Server (HTTP+WS) --> Browser           |
+              '--------------------------------------------'
 ```
 
 ## Architecture
@@ -48,21 +48,21 @@ Source Code ------->| Parsers -> Code Ontology (OWL 2 RL) -+      |
 Reter Code runs as **two separate processes** connected via ZeroMQ:
 
 ```
-+----------------------------------+                  +----------------------------------+
-|  RETER Server (reter)            |     ZeroMQ       |  MCP Client (reter_code)         |
-|                                  |     REQ/REP      |                                  |
-|  - Holds RETE network + RAG      |<--- tcp:// ----->|  - Stateless FastMCP proxy        |
-|  - Builds code ontology          |  127.0.0.1:5555  |  - Registers MCP tools            |
-|  - Processes all queries         |     msgpack      |  - Runs inside Claude             |
-|  - View Server (HTTP + WS)       |                  |  - Forwards requests to server    |
-|  - Runs in separate console      |                  |                                  |
-+----------+-----------------------+                  +----------------------------------+
-           |
-           | HTTP + WebSocket
-           v
-     +-----------+
-     |  Browser  |  Live markdown + mermaid diagrams
-     +-----------+
+ .-----------------------------------.                .-----------------------------------.
+ | RETER Server (reter)              |    ZeroMQ      | MCP Client (reter_code)           |
+ |                                   |    REQ/REP     |                                   |
+ | * RETE network + RAG index        |<=== tcp:// ===>| * Stateless FastMCP proxy          |
+ | * Code ontology builder           | 127.0.0.1:5555 | * Registers MCP tools              |
+ | * Query processing                |    msgpack     | * Runs inside Claude               |
+ | * View Server (HTTP + WS)         |                | * Forwards requests to server      |
+ | * Rich console UI                 |                |                                   |
+ '----------.------------------------'                '-----------------------------------'
+            |
+            | HTTP + WebSocket
+            v
+      .-----------.
+      |  Browser  |  Live markdown + mermaid diagrams
+      '-----------'
 ```
 
 The **server** is stateful — it initializes the C++ RETE engine, loads the codebase into the ontology, builds RAG embeddings, and processes all queries. The **MCP client** is stateless — it registers tools with Claude via FastMCP and forwards every request to the server over ZeroMQ.
