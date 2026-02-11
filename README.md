@@ -39,6 +39,7 @@ Source Code ───────►│ Parsers → Code Ontology (OWL 2 RL) ─
                     │                                      ├→ Results ──► ZeroMQ ──► MCP Client ──► AI Agent
                     │          RAG Embeddings (FAISS/ML) ──┘      │
                     │          CADSL Pipelines                     │
+                    │          View Server (HTTP+WS) ──► Browser   │
                     └─────────────────────────────────────────────┘
 ```
 
@@ -53,8 +54,14 @@ Reter Code runs as **two separate processes** connected via ZeroMQ:
 │  • Holds RETE network + RAG      │◄────────────────►│  • Stateless FastMCP proxy        │
 │  • Builds code ontology          │   127.0.0.1:5555 │  • Registers MCP tools            │
 │  • Processes all queries         │   msgpack        │  • Runs inside Claude             │
-│  • Runs in separate console      │                  │  • Forwards requests to server    │
-└──────────────────────────────────┘                  └──────────────────────────────────┘
+│  • View Server (HTTP + WS)       │                  │  • Forwards requests to server    │
+│  • Runs in separate console      │                  │                                  │
+└──────────┬───────────────────────┘                  └──────────────────────────────────┘
+           │ HTTP + WebSocket
+           ▼
+     ┌───────────┐
+     │  Browser   │  Live markdown + mermaid diagrams
+     └───────────┘
 ```
 
 The **server** is stateful — it initializes the C++ RETE engine, loads the codebase into the ontology, builds RAG embeddings, and processes all queries. The **MCP client** is stateless — it registers tools with Claude via FastMCP and forwards every request to the server over ZeroMQ.
@@ -65,6 +72,7 @@ This separation means the expensive RETE network and RAG index stay alive across
 |-----------|---------|-------------|
 | RETER Server | `reter` | Stateful server: RETE network, RAG, CADSL pipelines, query processing |
 | MCP Client | `reter_code` | Stateless FastMCP proxy: tool registration, Claude integration |
+| View Server | (built-in) | HTTP + WebSocket server for live browser visualization |
 | Python API | `reter` | `Reter` class, query result sets, CLI |
 | C++ Engine | `reter_core` | RETE network, OWL RL rules, language parsers (closed source) |
 
@@ -108,8 +116,9 @@ The server will:
 1. Initialize the RETE network and load your codebase into the ontology
 2. Build RAG embeddings (FAISS index)
 3. Bind ZeroMQ on `tcp://127.0.0.1:5555`
-4. Write a discovery file at `.reter_code/server.json`
-5. Display a console UI showing status, config, and queries
+4. Start the View Server on a random HTTP port (for live browser visualization)
+5. Write a discovery file at `.reter_code/server.json`
+6. Display a console UI showing status, config, and queries
 
 **Keep the server terminal open** — the MCP client connects to it via ZeroMQ.
 
@@ -123,6 +132,42 @@ The `-e RETER_PROJECT_ROOT=...` tells the MCP client where to find the server's 
 | `--port` | ZeroMQ query port (default: 5555) |
 | `--no-console` | Disable rich console UI |
 | `--verbose, -v` | Enable debug logging |
+
+| Env Variable | Description | Default |
+|--------------|-------------|---------|
+| `RETER_VIEW_PORT` | View server HTTP port (0 = auto) | `0` |
+
+---
+
+## RETER View
+
+The server includes a built-in **browser UI** for live visualization. When the server starts, it launches an HTTP + WebSocket server on a random port and prints the URL in the console:
+
+```
+RETER Server v0.1.3  [tcp://127.0.0.1:5555]  [http://127.0.0.1:61151]
+```
+
+Open the URL in any browser. The AI agent pushes content to it using the `view` MCP tool:
+
+```python
+# Push a mermaid diagram
+view(content="sequenceDiagram\n    Client->>Server: POST /api\n    Server-->>Client: 200 OK")
+
+# Push markdown
+view(content="# Security Report\n\nFound **3 critical** issues...")
+
+# Push a file
+view(content="docs/architecture.md")
+```
+
+The browser page renders:
+- **Mermaid diagrams** — sequence, class, flowchart, state, ER, gantt, pie, block-beta, and more
+- **Rich markdown** — rendered with marked.js, with mermaid code blocks auto-rendered inline
+- **Raw HTML** — displayed as-is
+
+A collapsible **sidebar** shows all previously pushed items with timestamps and type badges. History is persisted in SQLite (`.reter_code/.unified.sqlite`) so it survives server restarts. Each item has a **Save** button that exports the content to `.reter_code/diagrams/` as `.md`, `.mmd`, or `.html` files.
+
+The UI supports light and dark themes (toggle in the header) and adapts to screen size.
 
 ---
 
@@ -260,6 +305,13 @@ Place a `reter_code.json` in your project root to configure the server. All sett
 | `semantic_search` | Find semantically similar code using vector similarity (FAISS) |
 | `code_inspection` | Multi-language code analysis (15 languages) |
 
+### Visualization
+
+| Tool | Description |
+|------|-------------|
+| `view` | Push markdown or mermaid diagrams to a live browser page |
+| `diagram` | Visualize class hierarchy, dependencies, call graphs |
+
 ### Session and Tracking
 
 | Tool | Description |
@@ -267,7 +319,6 @@ Place a `reter_code.json` in your project root to configure the server. All sett
 | `session` | Session lifecycle — **call `context` first to restore state** |
 | `thinking` | Record reasoning with design doc sections (context, goals, design, tasks) |
 | `items` | Track refactoring tasks, milestones, and progress |
-| `diagram` | Visualize class hierarchy, dependencies, call graphs |
 | `system` | Initialization status, source management, reindexing |
 
 ---
