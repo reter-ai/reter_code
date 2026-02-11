@@ -1,7 +1,7 @@
 # sequence_diagram - Generate sequence diagram of method calls
 #
 # Visualizes method call sequences as a Mermaid sequence diagram.
-# Uses native render_mermaid with sequence type for pure declarative implementation.
+# Note: is-defined-in returns the class name as a string, not an entity reference.
 
 diagram sequence_diagram() {
     """Generate sequence diagram of method calls."""
@@ -10,29 +10,26 @@ diagram sequence_diagram() {
     param target: str = "";
     param max_calls: int = 100;
     param format: str = "mermaid";
+    param skip: bool = false;
 
     reql {
         SELECT ?caller ?caller_name ?caller_class ?callee ?callee_name ?callee_class ?file ?line
         WHERE {
             ?caller type method .
             ?caller has-name ?caller_name .
-            ?caller is-defined-in ?cc .
-            ?cc has-name ?caller_class .
+            ?caller is-defined-in ?caller_class .
             ?caller is-in-file ?file .
             ?caller is-at-line ?line .
             ?caller calls ?callee .
             ?callee type method .
             ?callee has-name ?callee_name .
             OPTIONAL {
-                ?callee is-defined-in ?tc .
-                ?tc has-name ?callee_class
+                ?callee is-defined-in ?callee_class
             }
         }
         ORDER BY ?caller_class ?caller_name
     }
     | select { caller_name, caller_class, callee_name, callee_class, file, line }
-    | when { {classes} is not null } filter { caller_class in {classes} or callee_class in {classes} }
-    | when { {target} != "" } filter { caller_name == {target} }
     | limit { {max_calls} }
     | compute { message_label: callee_name }
     | render_mermaid {
@@ -40,5 +37,6 @@ diagram sequence_diagram() {
         participants: caller_class,
         messages: caller_class -> callee_class : message_label
     }
+    | view { skip: {skip}, description: "Sequence Diagram" }
     | emit { diagram }
 }

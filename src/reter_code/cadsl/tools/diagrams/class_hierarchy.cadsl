@@ -1,6 +1,7 @@
 # class_hierarchy - Generate class inheritance hierarchy diagram
 #
 # Visualizes class inheritance relationships as a Mermaid flowchart.
+# Note: inherits-from stores the parent name as a string, not an entity reference.
 
 diagram class_hierarchy() {
     """Generate class inheritance hierarchy diagram."""
@@ -8,27 +9,25 @@ diagram class_hierarchy() {
     param target: str = "";
     param max_depth: int = 10;
     param format: str = "mermaid";
+    param skip: bool = false;
 
     reql {
-        SELECT ?class ?class_name ?parent ?parent_name ?file ?line
+        SELECT ?class ?class_name ?parent ?file ?line
         WHERE {
             ?class type class .
             ?class has-name ?class_name .
             ?class is-in-file ?file .
             ?class is-at-line ?line .
-            OPTIONAL {
-                ?class inherits-from ?parent .
-                ?parent has-name ?parent_name
-            }
+            ?class inherits-from ?parent
         }
         ORDER BY ?class_name
     }
-    | select { parent: parent_name, child: class_name, file, line }
-    | filter { parent is not null }
+    | select { parent, child: class_name, file, line }
     | render_mermaid {
         type: flowchart,
         edges: parent -> child,
         direction: TB
     }
+    | view { skip: {skip}, description: "Class Hierarchy" }
     | emit { diagram }
 }

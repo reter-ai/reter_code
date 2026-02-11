@@ -553,9 +553,10 @@ def handle_search_examples(query: str, max_results: int = 10, include_code_count
         Formatted string with examples (top N with full code, rest as metadata)
     """
     tool_index = get_cadsl_tool_index()
+    tool_index.index()
 
     if not tool_index._tools:
-        return "# No examples indexed. Tool index not initialized."
+        return "# No examples indexed. No CADSL tool files found."
 
     # Use existing similarity search
     similar = tool_index.find_similar_tools(query, max_results=max_results, min_score=0.1)

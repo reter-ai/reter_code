@@ -1,30 +1,38 @@
-# dependency_graph - Generate module dependency graph
+# dependency_graph - Generate file dependency graph
 #
-# Visualizes module import dependencies as a Mermaid flowchart.
+# Visualizes file-level dependencies based on inheritance and interface
+# implementation where both source and target classes are in the codebase.
+# Also shows interface implementation relationships.
 
 diagram dependency_graph() {
-    """Generate module dependency graph."""
+    """Generate file dependency graph from class relationships."""
 
     param target: str = "";
     param show_external: bool = false;
     param format: str = "mermaid";
+    param skip: bool = false;
 
     reql {
-        SELECT ?module ?module_name ?imported ?imported_name ?file
+        SELECT DISTINCT ?child_name ?parent_name ?child_file ?parent_file
         WHERE {
-            ?module type module .
-            ?module has-name ?module_name .
-            ?module is-in-file ?file .
-            ?module imports ?imported .
-            ?imported has-name ?imported_name
+            ?child type class .
+            ?child has-name ?child_name .
+            ?child is-in-file ?child_file .
+            ?child implements ?parent_name .
+            ?parent has-name ?parent_name .
+            ?parent concept ?parent_type .
+            FILTER(?parent_type = "class" || ?parent_type = "interface" || ?parent_type = "trait")
+            ?parent is-in-file ?parent_file .
+            FILTER(?child_file != ?parent_file)
         }
-        ORDER BY ?module_name
+        ORDER BY ?child_file
     }
-    | select { from: module_name, to: imported_name, file }
+    | select { from: child_file, to: parent_file }
     | render_mermaid {
         type: flowchart,
         edges: from -> to,
         direction: LR
     }
+    | view { skip: {skip}, description: "Dependency Graph" }
     | emit { diagram }
 }

@@ -177,6 +177,7 @@ step: filter_step
     | rag_enrich_step
     | create_task_step
     | fetch_content_step
+    | view_step
 
 filter_step: "filter" "{" condition "}"
 
@@ -650,6 +651,27 @@ fetch_content_param: "file" ":" NAME                   -> fc_file
                    | "output" ":" NAME                 -> fc_output
                    | "max_lines" ":" INT               -> fc_max_lines
                    | "max_lines" ":" param_ref         -> fc_max_lines_param
+
+// ============================================================
+// VIEW (Push to RETER View)
+// ============================================================
+
+// Push rendered content to RETER View (browser-based viewer)
+// view { skip: false, content: diagram, type: mermaid }
+view_step: "view" "{" view_spec "}"
+
+view_spec: view_param ("," view_param)*
+
+view_param: "skip" ":" bool_val           -> view_skip
+          | "skip" ":" param_ref          -> view_skip_param
+          | "content" ":" NAME            -> view_content
+          | "type" ":" view_content_type  -> view_type_param
+          | "description" ":" STRING      -> view_description
+          | "description" ":" param_ref   -> view_description_param
+
+view_content_type: "mermaid"   -> view_mermaid
+                 | "markdown"  -> view_markdown
+                 | "html"      -> view_html
 
 // ============================================================
 // GROUP BY

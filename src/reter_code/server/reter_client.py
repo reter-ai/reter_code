@@ -47,6 +47,7 @@ from .protocol import (
     METHOD_THINKING,
     METHOD_ITEMS,
     METHOD_SIMILAR_CADSL_TOOLS,
+    METHOD_CADSL_EXAMPLES,
     METHOD_VIEW_PUSH,
 )
 from .config import ClientConfig
@@ -759,6 +760,34 @@ class ReterClient:
         return self._send_request(METHOD_SIMILAR_CADSL_TOOLS, {
             "question": question,
             "max_results": max_results
+        })
+
+    def cadsl_examples(
+        self,
+        action: str = "list",
+        query: str = "",
+        category: str = "",
+        name: str = "",
+        max_results: int = 10
+    ) -> Dict[str, Any]:
+        """Browse and search CADSL tool examples.
+
+        Args:
+            action: "list", "search", or "get"
+            query: Search query (for action="search")
+            category: Category filter (for action="list")
+            name: Tool name (for action="get")
+            max_results: Max results for search
+
+        Returns:
+            Dictionary with success and content
+        """
+        return self._send_request(METHOD_CADSL_EXAMPLES, {
+            "action": action,
+            "query": query,
+            "category": category,
+            "name": name,
+            "max_results": max_results,
         })
 
 

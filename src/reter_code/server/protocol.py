@@ -283,6 +283,9 @@ METHOD_ITEMS = "items"
 # CADSL tools similarity search
 METHOD_SIMILAR_CADSL_TOOLS = "similar_cadsl_tools"
 
+# CADSL examples browse/search
+METHOD_CADSL_EXAMPLES = "cadsl_examples"
+
 # View server methods
 METHOD_VIEW_PUSH = "view_push"
 
@@ -340,4 +343,5 @@ __all__ = [
     "METHOD_THINKING",
     "METHOD_ITEMS",
     "METHOD_VIEW_PUSH",
+    "METHOD_CADSL_EXAMPLES",
 ]

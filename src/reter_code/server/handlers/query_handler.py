@@ -22,6 +22,7 @@ from ..protocol import (
     METHOD_EXECUTE_CADSL,
     METHOD_GENERATE_CADSL,
     METHOD_SIMILAR_CADSL_TOOLS,
+    METHOD_CADSL_EXAMPLES,
     QUERY_ERROR,
     ReterError,
 )
@@ -44,6 +45,7 @@ class QueryHandler(BaseHandler):
             METHOD_EXECUTE_CADSL: self._handle_execute_cadsl,
             METHOD_GENERATE_CADSL: self._handle_generate_cadsl,
             METHOD_SIMILAR_CADSL_TOOLS: self._handle_similar_cadsl_tools,
+            METHOD_CADSL_EXAMPLES: self._handle_cadsl_examples,
         }
 
     def can_handle(self, method: str) -> bool:
@@ -257,6 +259,7 @@ class QueryHandler(BaseHandler):
                 "rag_manager": rag_manager,
                 "timeout_ms": timeout_ms,
                 "project_root": project_root,
+                "view_push": self.push_view,
             }
             for param_spec in tool_spec.params:
                 if param_spec.default is not None:
@@ -467,6 +470,54 @@ class QueryHandler(BaseHandler):
                 "count": 0,
                 "error": str(e)
             }
+
+    def _handle_cadsl_examples(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Browse and search CADSL tool examples.
+
+        Params:
+            action: "list", "search", or "get"
+            query: Search query (for action="search")
+            category: Category filter (for action="list")
+            name: Tool name (for action="get")
+            max_results: Max results (for action="search", default: 10)
+
+        Returns:
+            Dictionary with success and content
+        """
+        action = params.get("action", "list")
+        query = params.get("query", "")
+        category = params.get("category", "")
+        name = params.get("name", "")
+        max_results = params.get("max_results", 10)
+
+        try:
+            from ...services.hybrid_query_engine import (
+                handle_list_examples,
+                handle_get_example,
+                handle_search_examples,
+            )
+
+            if action == "list":
+                content = handle_list_examples(category or None)
+                return {"success": True, "content": content}
+
+            elif action == "search":
+                if not query:
+                    raise ValueError("query is required for action='search'")
+                content = handle_search_examples(query, max_results=max_results)
+                return {"success": True, "content": content}
+
+            elif action == "get":
+                if not name:
+                    raise ValueError("name is required for action='get'")
+                content = handle_get_example(name)
+                return {"success": True, "content": content}
+
+            else:
+                raise ValueError(f"Unknown action '{action}'. Use 'list', 'search', or 'get'.")
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
 
 __all__ = ["QueryHandler"]

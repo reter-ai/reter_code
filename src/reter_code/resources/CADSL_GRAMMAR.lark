@@ -147,6 +147,7 @@ step: filter_step
     | string_match_step
     | rag_enrich_step
     | create_task_step
+    | view_step
 
 filter_step: "filter" "{" condition "}"
 
@@ -570,6 +571,27 @@ ct_priority_val: "critical" -> ct_prio_critical
                | "high"     -> ct_prio_high
                | "medium"   -> ct_prio_medium
                | "low"      -> ct_prio_low
+
+// ============================================================
+// VIEW (Push to RETER View)
+// ============================================================
+
+// Push rendered content to RETER View (browser-based viewer)
+// view { skip: false, content: diagram, type: mermaid }
+view_step: "view" "{" view_spec "}"
+
+view_spec: view_param ("," view_param)*
+
+view_param: "skip" ":" bool_val           -> view_skip
+          | "skip" ":" param_ref          -> view_skip_param
+          | "content" ":" NAME            -> view_content
+          | "type" ":" view_content_type  -> view_type_param
+          | "description" ":" STRING      -> view_description
+          | "description" ":" param_ref   -> view_description_param
+
+view_content_type: "mermaid"   -> view_mermaid
+                 | "markdown"  -> view_markdown
+                 | "html"      -> view_html
 
 // ============================================================
 // GROUP BY

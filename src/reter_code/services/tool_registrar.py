@@ -28,8 +28,8 @@ if TYPE_CHECKING:
     pass
 
 
-# Default tools available in "default" mode
-DEFAULT_TOOLS: Set[str] = {
+# Minimal tools available in "minimal" mode
+MINIMAL_TOOLS: Set[str] = {
     "reql",
     "system",
     "thinking",
@@ -76,10 +76,14 @@ class ToolRegistrar:
         self.reter_client = reter_client
 
         # Read tools availability mode from environment
-        self._tools_mode = os.environ.get("TOOLS_AVAILABLE", "default").lower()
+        # "full" (default) = all tools; "minimal" = limited set
+        # Legacy: "default" is treated as "full" for backward compatibility
+        self._tools_mode = os.environ.get("TOOLS_AVAILABLE", "full").lower()
+        if self._tools_mode == "default":
+            self._tools_mode = "full"
 
         # Direct tools registration with reter_client
-        tools_filter = DEFAULT_TOOLS if self._tools_mode == "default" else None
+        tools_filter = MINIMAL_TOOLS if self._tools_mode == "minimal" else None
         self.tools_registrar = ToolsRegistrar(
             instance_manager, persistence, default_manager,
             tools_filter=tools_filter, reter_client=reter_client
@@ -160,23 +164,23 @@ class ToolRegistrar:
         import logging
         logger = logging.getLogger(__name__)
 
-        is_full_mode = self._tools_mode == "full"
+        is_minimal_mode = self._tools_mode == "minimal"
 
-        if is_full_mode:
-            logger.info("Tools mode: FULL (all tools available)")
+        if is_minimal_mode:
+            logger.info("Tools mode: MINIMAL (limited to: %s)", ", ".join(sorted(MINIMAL_TOOLS)))
         else:
-            logger.info("Tools mode: DEFAULT (limited to: %s)", ", ".join(sorted(DEFAULT_TOOLS)))
+            logger.info("Tools mode: FULL (all tools available)")
 
-        # Knowledge tools - full mode only
-        if is_full_mode:
+        # Knowledge tools - not in minimal mode
+        if not is_minimal_mode:
             self._register_knowledge_tools(app)
 
         # Query tools (reql)
-        if is_full_mode or "reql" in DEFAULT_TOOLS:
+        if not is_minimal_mode or "reql" in MINIMAL_TOOLS:
             self._register_query_tools(app)
 
         # System tool
-        if is_full_mode or "system" in DEFAULT_TOOLS:
+        if not is_minimal_mode or "system" in MINIMAL_TOOLS:
             self.system_registrar.register(app)
 
         # Domain tools
@@ -185,8 +189,11 @@ class ToolRegistrar:
         # View tool (always available)
         self._register_view_tool(app)
 
+        # CADSL examples tool (always available)
+        self._register_cadsl_examples_tool(app)
+
         # Experimental tools
-        self._register_experimental_tools(app, is_full_mode)
+        self._register_experimental_tools(app, is_minimal_mode)
 
     def _register_knowledge_tools(self, app: FastMCP) -> None:
         """Register knowledge management tools."""
@@ -393,15 +400,63 @@ class ToolRegistrar:
             except Exception as e:
                 return {"success": False, "error": str(e)}
 
-    def _register_experimental_tools(self, app: FastMCP, is_full_mode: bool = True) -> None:
+    def _register_cadsl_examples_tool(self, app: FastMCP) -> None:
+        """Register the CADSL examples browser/search tool."""
+        registrar = self
+
+        @app.tool()
+        def cadsl_examples(
+            action: str = "list",
+            query: str = "",
+            category: str = "",
+            name: str = "",
+            max_results: int = 10,
+        ) -> Dict[str, Any]:
+            """
+            Browse and search the CADSL tool library.
+
+            Use this to discover available analysis tools, find examples by
+            category, search for tools matching a description, or read a
+            specific tool's source code.
+
+            Args:
+                action: One of:
+                    - "list"   : List all tools grouped by category.
+                                 Optionally filter by category.
+                    - "search" : Semantic search for tools matching a query.
+                    - "get"    : Get full source code of a specific tool.
+                query: Search query (required for action="search").
+                category: Category filter for "list", e.g. "diagrams", "smells".
+                name: Tool name for "get", e.g. "diagrams/class_hierarchy"
+                      or just "class_hierarchy".
+                max_results: Max results for "search" (default: 10).
+
+            Returns:
+                success, content (formatted text)
+            """
+            if registrar.reter_client is None:
+                return {"success": False, "error": "RETER server not connected"}
+
+            try:
+                return registrar.reter_client.cadsl_examples(
+                    action=action,
+                    query=query,
+                    category=category,
+                    name=name,
+                    max_results=max_results,
+                )
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+    def _register_experimental_tools(self, app: FastMCP, is_minimal_mode: bool = False) -> None:
         """Register experimental tools."""
-        if is_full_mode or "natural_language_query" in DEFAULT_TOOLS:
+        if not is_minimal_mode or "natural_language_query" in MINIMAL_TOOLS:
             self._register_nlq_tool(app)
 
-        if is_full_mode or "execute_cadsl" in DEFAULT_TOOLS:
+        if not is_minimal_mode or "execute_cadsl" in MINIMAL_TOOLS:
             self._register_cadsl_tool(app)
 
-        if is_full_mode or "generate_cadsl" in DEFAULT_TOOLS:
+        if not is_minimal_mode or "generate_cadsl" in MINIMAL_TOOLS:
             self._register_generate_cadsl_tool(app)
 
     def _execute_single_cadsl_pipeline(

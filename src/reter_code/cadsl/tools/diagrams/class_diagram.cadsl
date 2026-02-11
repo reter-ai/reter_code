@@ -1,8 +1,7 @@
 # class_diagram - Generate UML class diagram with methods and attributes
 #
 # Visualizes classes with their members as a Mermaid class diagram.
-# Supports inheritance, composition, and association relationships.
-# Uses native collect and render_mermaid for pure declarative implementation.
+# Note: inherits-from stores parent name as string; has-field for member fields.
 
 diagram class_diagram() {
     """Generate UML class diagram with methods, attributes, and relationships."""
@@ -10,11 +9,11 @@ diagram class_diagram() {
     param classes: list = [];
     param include_methods: bool = true;
     param include_attributes: bool = true;
-    param include_associations: bool = true;
     param format: str = "mermaid";
+    param skip: bool = false;
 
     reql {
-        SELECT ?class ?class_name ?method_name ?attr_name ?parent_name ?assoc_to ?file ?line
+        SELECT ?class ?class_name ?method_name ?attr_name ?parent_name ?file ?line
         WHERE {
             ?class type class .
             ?class has-name ?class_name .
@@ -25,34 +24,23 @@ diagram class_diagram() {
                 ?method has-name ?method_name
             }
             OPTIONAL {
-                ?class has-attribute ?attr .
+                ?class has-field ?attr .
                 ?attr has-name ?attr_name
             }
             OPTIONAL {
-                ?class inherits-from ?parent .
-                ?parent has-name ?parent_name
-            }
-            OPTIONAL {
-                # Association: class has attribute with type referencing another class
-                ?class has-attribute ?typed_attr .
-                ?typed_attr has-type ?type_ref .
-                ?type_ref has-name ?assoc_to .
-                # Only include if the type is a class in our codebase
-                ?target_class type class .
-                ?target_class has-name ?assoc_to
+                ?class inherits-from ?parent_name
             }
         }
         ORDER BY ?class_name ?method_name ?attr_name
     }
-    | select { class_name, method_name, attr_name, parent_name, assoc_to, file, line }
-    | when { {classes} is not null } filter { class_name in {classes} }
+    | select { class_name, method_name, attr_name, parent_name, file, line }
     | render_mermaid {
         type: class,
         classes: class_name,
         methods: method_name,
         attributes: attr_name,
-        inheritance: parent_name -> class_name,
-        association: class_name --> assoc_to
+        inheritance: parent_name -> class_name
     }
+    | view { skip: {skip}, description: "Class Diagram" }
     | emit { diagram }
 }

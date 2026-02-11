@@ -657,6 +657,8 @@ class CADSLTransformer:
             return self._transform_create_task_step(node)
         elif step_type == "fetch_content":
             return self._transform_fetch_content_step(node)
+        elif step_type == "view":
+            return self._transform_view_step(node)
 
         return None
 
@@ -1806,6 +1808,51 @@ class CADSLTransformer:
             # Field reference like score - return as template string
             return "{" + str(node.children[0]) + "}"
         return None
+
+    def _transform_view_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform view step: view { skip: false, content: diagram, type: mermaid }"""
+        result = {
+            "type": "view",
+            "skip": False,
+        }
+
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "view_spec":
+                for param in child.children:
+                    if isinstance(param, Tree):
+                        if param.data == "view_skip":
+                            # bool_val node
+                            bool_node = param.children[0]
+                            if isinstance(bool_node, Tree):
+                                result["skip"] = bool_node.data == "bool_true"
+                            else:
+                                result["skip"] = str(bool_node).lower() == "true"
+                        elif param.data == "view_skip_param":
+                            # param_ref node
+                            ref_node = param.children[0]
+                            if isinstance(ref_node, Tree) and ref_node.data == "param_ref":
+                                result["skip_param"] = str(ref_node.children[0])
+                            else:
+                                result["skip_param"] = str(ref_node)
+                        elif param.data == "view_content":
+                            result["content_key"] = str(param.children[0])
+                        elif param.data == "view_type_param":
+                            # view_content_type node
+                            type_node = param.children[0]
+                            if isinstance(type_node, Tree):
+                                result["content_type"] = type_node.data.replace("view_", "")
+                            else:
+                                result["content_type"] = str(type_node)
+                        elif param.data == "view_description":
+                            result["description"] = unquote(str(param.children[0]))
+                        elif param.data == "view_description_param":
+                            ref_node = param.children[0]
+                            if isinstance(ref_node, Tree) and ref_node.data == "param_ref":
+                                result["description_param"] = str(ref_node.children[0])
+                            else:
+                                result["description_param"] = str(ref_node)
+
+        return result
 
     def _transform_fetch_content_step(self, node: Tree) -> Dict[str, Any]:
         """Transform fetch_content step: fetch_content { file: file_field, start_line: line, end_line: end, output: body }"""
@@ -4638,6 +4685,98 @@ class FetchContentStep:
             import traceback
             logger.error(f"Fetch content failed: {e}\n{traceback.format_exc()}")
             return pipeline_err("fetch_content", f"Fetch content failed: {e}", e)
+
+
+class ViewStep:
+    """
+    Pushes rendered content to RETER View (browser-based viewer).
+
+    This is a pass-through step: it pushes content to the viewer but always
+    returns data unchanged. If view_push is not available (no ViewServer),
+    it silently passes through.
+
+    Syntax: view { skip: false, content: diagram, type: mermaid }
+
+    Parameters:
+    - skip: Whether to skip pushing (default: False)
+    - content_key: Data dict key to push (default: auto-detect)
+    - content_type: Content type hint: mermaid, markdown, html (default: auto-detect)
+
+    ::: This is-in-layer Domain-Specific-Language-Layer.
+    ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
+    """
+
+    # Auto-detection mapping: data key -> content type
+    _KEY_TYPE_MAP = {
+        "diagram": "mermaid",
+        "chart": "mermaid",
+        "table": "markdown",
+        "markdown": "markdown",
+        "html": "html",
+    }
+
+    def __init__(self, skip: bool = False, content_key: str = None, content_type: str = None, description: str = None):
+        self.skip = skip
+        self.content_key = content_key
+        self.content_type = content_type
+        self.description = description
+
+    def execute(self, data, ctx=None):
+        """Execute view push (pass-through)."""
+        from reter_code.dsl.core import pipeline_ok
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        if self.skip:
+            logger.debug("ViewStep: skipped (skip=True)")
+            return pipeline_ok(data)
+
+        # Get view_push callback from context
+        view_push = None
+        if ctx and hasattr(ctx, 'params'):
+            view_push = ctx.params.get("view_push")
+
+        if view_push is None:
+            logger.debug("ViewStep: no view_push callback available, passing through")
+            return pipeline_ok(data)
+
+        try:
+            # Determine content and type
+            content = None
+            content_type = self.content_type
+
+            if isinstance(data, dict):
+                if self.content_key:
+                    content = data.get(self.content_key)
+                    if content_type is None:
+                        content_type = self._KEY_TYPE_MAP.get(self.content_key, "markdown")
+                else:
+                    # Auto-detect from dict keys
+                    for key, ctype in self._KEY_TYPE_MAP.items():
+                        if key in data and data[key]:
+                            content = data[key]
+                            if content_type is None:
+                                content_type = ctype
+                            break
+
+            elif isinstance(data, str):
+                content = data
+                if content_type is None:
+                    content_type = "markdown"
+
+            if content and content_type:
+                view_push(content_type, content, title=self.description)
+                logger.debug(f"ViewStep: pushed {content_type} content ({len(str(content))} chars)")
+            else:
+                logger.debug("ViewStep: no content to push")
+
+        except Exception as e:
+            logger.debug(f"ViewStep: push failed (non-fatal): {e}")
+
+        return pipeline_ok(data)
 
 
 # ============================================================

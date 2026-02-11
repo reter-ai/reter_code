@@ -173,15 +173,19 @@ class BaseHandler(ABC):
             "message": message
         })
 
-    def push_view(self, content_type: str, content: str) -> None:
+    def push_view(self, content_type: str, content: str, title: str = None) -> None:
         """Push content to connected browser viewers.
 
         Args:
             content_type: "markdown", "mermaid", or "html"
             content: The content string to render
+            title: Optional display title for history (auto-extracted if omitted)
         """
         if self.context.view_push:
-            self.context.view_push({"type": content_type, "content": content})
+            msg = {"type": content_type, "content": content}
+            if title:
+                msg["title"] = title
+            self.context.view_push(msg)
 
 
 class HandlerRegistry:

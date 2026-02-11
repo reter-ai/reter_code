@@ -1,38 +1,31 @@
 # call_graph - Generate call graph from entry point
 #
 # Visualizes function/method call relationships as a Mermaid flowchart.
-# Uses native graph_traverse and render_mermaid for pure declarative implementation.
-#
-# NOTE: Only static calls are included by default for performance.
-# For include_maybe support, use call_graph_full.cadsl (much slower due to 44k+ maybe-calls).
-#
-# NOTE: Uses concept instead of type to support all languages (Python, C++, C#, JS)
+# Note: is-defined-in returns class name as string; calls links methods directly.
 
 diagram call_graph() {
-    """Generate call graph from entry point (static calls only)."""
+    """Generate call graph from entry point."""
 
     param target: str required;
     param max_depth: int = 10;
     param format: str = "mermaid";
+    param skip: bool = false;
 
     reql {
-        SELECT ?caller ?callee ?caller_name ?callee_name ?file ?line ?caller_type ?callee_type
+        SELECT ?caller ?callee ?caller_name ?callee_name ?caller_class ?file ?line
         WHERE {
             ?caller calls ?callee .
             ?caller has-name ?caller_name .
             ?caller is-in-file ?file .
             ?caller is-at-line ?line .
-            ?caller concept ?caller_type .
             ?callee has-name ?callee_name .
-            ?callee concept ?callee_type .
-            FILTER(?caller_type = "method" || ?caller_type = "function")
-            FILTER(?callee_type = "method" || ?callee_type = "function")
-            FILTER(!CONTAINS(?caller_name, "::"))
-            FILTER(!CONTAINS(?callee_name, "::"))
+            OPTIONAL {
+                ?caller is-defined-in ?caller_class
+            }
         }
         ORDER BY ?caller_name
     }
-    | select { from_node: caller, to_node: callee, caller_name, callee_name, file, line }
+    | select { from_node: caller, to_node: callee, caller_name, callee_name, caller_class, file, line }
     | graph_traverse {
         from: from_node,
         to: to_node,
@@ -45,5 +38,6 @@ diagram call_graph() {
         edges: from_node -> to_node,
         direction: TD
     }
+    | view { skip: {skip}, description: "Call Graph" }
     | emit { diagram }
 }

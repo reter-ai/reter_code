@@ -148,7 +148,7 @@ class ViewServer:
             return None
         content_type = message.get("type", "html")
         content = message.get("content", "")
-        title = self._extract_title(content_type, content)
+        title = message.get("title") or self._extract_title(content_type, content)
         cur = self._db.execute(
             "INSERT INTO view_history (timestamp, content_type, title, content) "
             "VALUES (?, ?, ?, ?)",

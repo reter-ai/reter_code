@@ -12,7 +12,7 @@ Supported settings in reter_code.json:
 {
     "project_include": "src/*,lib/*",      // -> RETER_PROJECT_INCLUDE
     "project_exclude": "test_*.py,**/__pycache__/*",  // -> RETER_PROJECT_EXCLUDE
-    "tools_available": "full",             // -> TOOLS_AVAILABLE ("default" or "full")
+    "tools_available": "full",             // -> TOOLS_AVAILABLE ("full" or "minimal")
 
     // RAG Configuration
     "rag_enabled": true,                   // -> RETER_RAG_ENABLED
@@ -60,7 +60,7 @@ class ConfigLoader:
         "snapshots_dir": "RETER_SNAPSHOTS_DIR",
         "debug_log": "RETER_DEBUG_LOG",
         # Tools configuration
-        "tools_available": "TOOLS_AVAILABLE",  # "default" or "full"
+        "tools_available": "TOOLS_AVAILABLE",  # "full" (default) or "minimal"
         # RAG configuration
         "rag_enabled": "RETER_RAG_ENABLED",
         "rag_embedding_model": "RETER_RAG_MODEL",

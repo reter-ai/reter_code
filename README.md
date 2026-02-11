@@ -145,7 +145,7 @@ The `-e RETER_PROJECT_ROOT=...` tells the MCP client where to find the server's 
 The server includes a built-in **browser UI** for live visualization. When the server starts, it launches an HTTP + WebSocket server on a random port and prints the URL in the console:
 
 ```
-RETER Server v0.1.3  [tcp://127.0.0.1:5555]  [http://127.0.0.1:61151]
+RETER Server v0.1.4  [tcp://127.0.0.1:5555]  [http://127.0.0.1:61151]
 ```
 
 Open the URL in any browser. The AI agent pushes content to it using the `view` MCP tool:
@@ -242,7 +242,7 @@ Place a `reter_code.json` in your project root to configure the server. All sett
 |-----|-------------|-------------|---------|
 | `project_include` | `RETER_PROJECT_INCLUDE` | Glob patterns for files to analyze | `**/*.*` |
 | `project_exclude` | `RETER_PROJECT_EXCLUDE` | Glob patterns for files to skip | `**/__pycache__/*` |
-| `tools_available` | `TOOLS_AVAILABLE` | Tool set: `"default"` or `"full"` | `"default"` |
+| `tools_available` | `TOOLS_AVAILABLE` | Tool set: `"full"` (all tools) or `"minimal"` (limited) | `"full"` |
 
 #### RAG Settings
 

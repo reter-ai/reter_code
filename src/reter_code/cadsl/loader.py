@@ -566,6 +566,23 @@ def build_pipeline_factory(spec: CADSLToolSpec,
                     source_tool=source_tool,
                 )
 
+            elif step_type == "view":
+                # Push content to RETER View
+                from .transformer import ViewStep
+                skip = step_spec.get("skip", False)
+                if "skip_param" in step_spec:
+                    val = ctx.params.get(step_spec["skip_param"], False)
+                    skip = val if isinstance(val, bool) else str(val).lower() == "true"
+                description = step_spec.get("description")
+                if "description_param" in step_spec:
+                    description = ctx.params.get(step_spec["description_param"], description)
+                pipeline = pipeline >> ViewStep(
+                    skip=skip,
+                    content_key=step_spec.get("content_key"),
+                    content_type=step_spec.get("content_type"),
+                    description=description,
+                )
+
             elif step_type == "fetch_content":
                 # Fetch source code content from files
                 from .transformer import FetchContentStep

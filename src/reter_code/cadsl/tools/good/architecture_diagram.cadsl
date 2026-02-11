@@ -18,6 +18,7 @@ diagram architecture_diagram() {
 
     param max_classes_per_layer: int = 12;
     param columns: int = 4;
+    param skip: bool = false;
 
     reql {
         SELECT ?class_name ?layer
@@ -35,5 +36,6 @@ diagram architecture_diagram() {
         columns: {columns},
         max_per_group: {max_classes_per_layer}
     }
+    | view { skip: {skip}, description: "Architecture Diagram" }
     | emit { diagram }
 }
