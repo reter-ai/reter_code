@@ -125,10 +125,23 @@ class SourceStateManager:
     HTML_EXTENSIONS = {".html", ".htm"}
     CSHARP_EXTENSIONS = {".cs"}
     CPP_EXTENSIONS = {".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h++", ".h"}
+    JAVA_EXTENSIONS = {".java"}
+    GO_EXTENSIONS = {".go"}
+    RUST_EXTENSIONS = {".rs"}
+    ERLANG_EXTENSIONS = {".erl", ".hrl"}
+    PHP_EXTENSIONS = {".php"}
+    OBJC_EXTENSIONS = {".m", ".mm"}
+    SWIFT_EXTENSIONS = {".swift"}
+    VB6_EXTENSIONS = {".bas", ".cls", ".frm"}
+    SCALA_EXTENSIONS = {".scala", ".sc"}
+    HASKELL_EXTENSIONS = {".hs", ".lhs"}
     MARKDOWN_EXTENSIONS = {".md", ".markdown"}
     ALL_CODE_EXTENSIONS = (
         PYTHON_EXTENSIONS | JAVASCRIPT_EXTENSIONS | HTML_EXTENSIONS |
-        CSHARP_EXTENSIONS | CPP_EXTENSIONS
+        CSHARP_EXTENSIONS | CPP_EXTENSIONS | JAVA_EXTENSIONS |
+        GO_EXTENSIONS | RUST_EXTENSIONS | ERLANG_EXTENSIONS |
+        PHP_EXTENSIONS | OBJC_EXTENSIONS | SWIFT_EXTENSIONS |
+        VB6_EXTENSIONS | SCALA_EXTENSIONS | HASKELL_EXTENSIONS
     )
 
     def __init__(self, state_file_path: Path, project_root: Path):
