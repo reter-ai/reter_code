@@ -39,12 +39,14 @@ class HandlerContext:
         reter: "ReterWrapper",
         rag_manager: "RAGIndexManager",
         instance_manager: "DefaultInstanceManager",
-        event_publisher: Optional[Callable[[str, Dict[str, Any]], None]] = None
+        event_publisher: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+        view_push: Optional[Callable[[Dict[str, Any]], None]] = None
     ):
         self.reter = reter
         self.rag_manager = rag_manager
         self.instance_manager = instance_manager
         self.event_publisher = event_publisher
+        self.view_push = view_push
 
     def publish_event(self, event_type: str, data: Dict[str, Any]) -> None:
         """Publish an event via PUB socket."""
@@ -170,6 +172,16 @@ class BaseHandler(ABC):
             "percent": (current / total * 100) if total > 0 else 0,
             "message": message
         })
+
+    def push_view(self, content_type: str, content: str) -> None:
+        """Push content to connected browser viewers.
+
+        Args:
+            content_type: "markdown", "mermaid", or "html"
+            content: The content string to render
+        """
+        if self.context.view_push:
+            self.context.view_push({"type": content_type, "content": content})
 
 
 class HandlerRegistry:

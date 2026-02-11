@@ -33,6 +33,7 @@ from .protocol import (
 )
 from .config import ServerConfig, ServerDiscovery
 from .handlers import HandlerContext, HandlerRegistry, create_handler_registry
+from .view_server import ViewServer
 
 # Configure logger to write to debug_trace.log
 from ..logging_config import configure_logger_for_debug_trace
@@ -88,6 +89,9 @@ class ReterServer:
 
         # Discovery info
         self._discovery: Optional[ServerDiscovery] = None
+
+        # View server (HTTP + WebSocket)
+        self._view_server: Optional[ViewServer] = None
 
         # Statistics
         self._stats = {
@@ -216,7 +220,8 @@ class ReterServer:
             reter=self._reter,
             rag_manager=self._rag_manager,
             instance_manager=self._instance_manager,
-            event_publisher=self._publish_event
+            event_publisher=self._publish_event,
+            view_push=self._view_server.push if self._view_server else None
         )
         self._handler_registry = create_handler_registry(context)
 
@@ -278,13 +283,33 @@ class ReterServer:
         except ImportError:
             pass  # Rich not available
 
+    def _init_view_server(self) -> None:
+        """Initialize HTTP + WebSocket view server."""
+        try:
+            project_root = os.environ.get("RETER_PROJECT_ROOT", os.getcwd())
+            db_dir = os.path.join(project_root, ".reter_code")
+            os.makedirs(db_dir, exist_ok=True)
+            db_path = os.path.join(db_dir, ".unified.sqlite")
+            self._view_server = ViewServer(
+                host=self.config.host,
+                port=self.config.view_port,
+                db_path=db_path,
+            )
+            self._view_server.start()
+            logger.info(f"ViewServer started at {self._view_server.url}")
+        except Exception as e:
+            logger.warning(f"Failed to start ViewServer: {e}")
+            self._view_server = None
+
     def _write_discovery(self) -> None:
         """Write discovery file for clients."""
         if self.config.project_root:
             from .config import DISCOVERY_DIR, DISCOVERY_FILE
+            view_url = self._view_server.url if self._view_server else ""
             self._discovery = self.config.write_discovery(
                 self._actual_query_port,
-                self._actual_event_port
+                self._actual_event_port,
+                view_url=view_url
             )
             logger.info(f"Discovery file written to {self.config.project_root / DISCOVERY_DIR / DISCOVERY_FILE}")
 
@@ -664,6 +689,8 @@ class ReterServer:
 
         try:
             # Initialize components - progress callbacks update console automatically
+            # ViewServer must start before _init_reter so HandlerContext can reference view_push
+            self._init_view_server()
             self._init_reter()
             self._init_zmq()
             self._write_discovery()
@@ -701,6 +728,10 @@ class ReterServer:
             self._console.stop()
 
         logger.info("Stopping RETER server...")
+
+        # Stop view server
+        if self._view_server:
+            self._view_server.stop()
 
         # Cleanup discovery file
         self._cleanup_discovery()

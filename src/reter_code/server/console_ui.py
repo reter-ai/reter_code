@@ -253,6 +253,10 @@ class ConsoleUI:
         else:
             title.append("  [binding...]", style="yellow")
 
+        # Show view server URL
+        if self.server._view_server:
+            title.append(f"  [{self.server._view_server.url}]", style="magenta")
+
         # Show project root
         if self.server.config.project_root:
             root_str = str(self.server.config.project_root)
@@ -350,10 +354,17 @@ class ConsoleUI:
         elif self.status.initialized:
             content.append("Ready", style="bold green")
             content.append(" - Server is idle, waiting for queries\n\n", style="dim")
-            content.append("  Add MCP to Claude Code:\n  ", style="dim")
+            # Show browser URL if view server is running
+            if self.server._view_server:
+                content.append("  Browser: ", style="dim")
+                content.append(self.server._view_server.url, style="bold magenta underline")
+                content.append("\n\n", style="dim")
+            else:
+                content.append("\n", style="dim")
+            content.append("  Add MCP:  ", style="dim")
             project_root = str(self.server.config.project_root) if self.server.config.project_root else ""
             content.append(self._get_mcp_command(project_root), style="bold white")
-            content.append("\n\n  ", style="dim")
+            content.append("\n  ", style="dim")
             content.append("[C]", style="bold")
             content.append("opy to clipboard", style="dim")
         else:

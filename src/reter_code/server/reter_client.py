@@ -47,6 +47,7 @@ from .protocol import (
     METHOD_THINKING,
     METHOD_ITEMS,
     METHOD_SIMILAR_CADSL_TOOLS,
+    METHOD_VIEW_PUSH,
 )
 from .config import ClientConfig
 
@@ -758,6 +759,30 @@ class ReterClient:
         return self._send_request(METHOD_SIMILAR_CADSL_TOOLS, {
             "question": question,
             "max_results": max_results
+        })
+
+
+    # =========================================================================
+    # View Operations
+    # =========================================================================
+
+    def view_push(
+        self,
+        content: str,
+        content_type: str = "markdown"
+    ) -> Dict[str, Any]:
+        """Push content to browser viewers via the ViewServer.
+
+        Args:
+            content: Content string to render
+            content_type: "markdown", "mermaid", or "html"
+
+        Returns:
+            Result with success status
+        """
+        return self._send_request(METHOD_VIEW_PUSH, {
+            "content": content,
+            "content_type": content_type
         })
 
 

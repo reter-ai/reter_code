@@ -283,6 +283,9 @@ METHOD_ITEMS = "items"
 # CADSL tools similarity search
 METHOD_SIMILAR_CADSL_TOOLS = "similar_cadsl_tools"
 
+# View server methods
+METHOD_VIEW_PUSH = "view_push"
+
 
 # =============================================================================
 # Exports
@@ -336,4 +339,5 @@ __all__ = [
     "METHOD_SESSION",
     "METHOD_THINKING",
     "METHOD_ITEMS",
+    "METHOD_VIEW_PUSH",
 ]

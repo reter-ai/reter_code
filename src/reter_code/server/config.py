@@ -72,6 +72,7 @@ class ServerDiscovery:
     host: str
     pid: int
     started_at: float
+    view_url: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -83,6 +84,7 @@ class ServerDiscovery:
             "host": self.host,
             "pid": self.pid,
             "started_at": self.started_at,
+            "view_url": self.view_url,
         }
 
     @classmethod
@@ -96,6 +98,7 @@ class ServerDiscovery:
             host=data["host"],
             pid=data["pid"],
             started_at=data["started_at"],
+            view_url=data.get("view_url", ""),
         )
 
     def save(self, project_root: Path) -> None:
@@ -172,6 +175,7 @@ class ServerConfig:
     host: str = field(default_factory=lambda: os.environ.get("RETER_HOST", DEFAULT_HOST))
     query_port: int = field(default_factory=lambda: int(os.environ.get("RETER_QUERY_PORT", DEFAULT_QUERY_PORT)))
     event_port: int = field(default_factory=lambda: int(os.environ.get("RETER_EVENT_PORT", DEFAULT_EVENT_PORT)))
+    view_port: int = field(default_factory=lambda: int(os.environ.get("RETER_VIEW_PORT", "0")))
 
     # IPC configuration (Unix only)
     use_ipc: bool = field(default_factory=lambda: os.environ.get("RETER_USE_IPC", "false").lower() == "true")
@@ -276,7 +280,8 @@ class ServerConfig:
             config.event_port = 0
         return config
 
-    def create_discovery(self, actual_query_port: int, actual_event_port: int) -> ServerDiscovery:
+    def create_discovery(self, actual_query_port: int, actual_event_port: int,
+                         view_url: str = "") -> ServerDiscovery:
         """Create discovery info after server binds to ports.
 
         Call this after ZeroMQ binds to get the actual assigned ports.
@@ -291,13 +296,15 @@ class ServerConfig:
             host=self.host,
             pid=os.getpid(),
             started_at=time.time(),
+            view_url=view_url,
         )
 
-    def write_discovery(self, actual_query_port: int, actual_event_port: int) -> ServerDiscovery:
+    def write_discovery(self, actual_query_port: int, actual_event_port: int,
+                        view_url: str = "") -> ServerDiscovery:
         """Create and write discovery file after server starts."""
         if not self.project_root:
             raise ValueError("Cannot write discovery without project_root")
-        discovery = self.create_discovery(actual_query_port, actual_event_port)
+        discovery = self.create_discovery(actual_query_port, actual_event_port, view_url=view_url)
         discovery.save(self.project_root)
         return discovery
 

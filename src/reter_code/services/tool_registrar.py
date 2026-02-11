@@ -182,6 +182,9 @@ class ToolRegistrar:
         # Domain tools
         self._register_domain_tools(app)
 
+        # View tool (always available)
+        self._register_view_tool(app)
+
         # Experimental tools
         self._register_experimental_tools(app, is_full_mode)
 
@@ -302,6 +305,93 @@ class ToolRegistrar:
     def _register_domain_tools(self, app: FastMCP) -> None:
         """Register all RETER domain-specific tools."""
         self.tools_registrar.register_all_tools(app)
+
+    def _register_view_tool(self, app: FastMCP) -> None:
+        """Register the view tool for pushing content to browser."""
+        registrar = self
+
+        @app.tool()
+        def view(
+            content: str,
+            content_type: str = "auto",
+        ) -> Dict[str, Any]:
+            """
+            Display markdown or mermaid content in a live browser view.
+
+            Pushes content to the RETER ViewServer which renders it in a
+            browser page with mermaid.js diagram support and dark theme.
+
+            The content can be:
+            - A file path (reads and displays the file)
+            - Inline markdown (rendered with marked.js; mermaid code blocks auto-render)
+            - Inline mermaid diagram source (rendered with mermaid.js)
+            - Raw HTML
+
+            Args:
+                content: File path or inline content string to display.
+                    If the string is a path to an existing file, the file is read.
+                content_type: "auto" (default), "markdown", "mermaid", or "html".
+                    With "auto", detects mermaid by leading keywords (graph, flowchart,
+                    sequenceDiagram, classDiagram, stateDiagram, erDiagram, gantt, pie,
+                    gitgraph, mindmap, timeline, block-beta, etc).
+
+            Returns:
+                success, content_type, content_length, view_url
+            """
+            if registrar.reter_client is None:
+                return {"success": False, "error": "RETER server not connected"}
+
+            actual_content = content
+            source_file = None
+
+            # Check if content is a file path
+            import os
+            stripped = content.strip()
+            if (
+                not stripped.startswith(("{", "<", "#", "graph ", "flowchart ", "sequenceDiagram"))
+                and len(stripped) < 500
+                and ("\n" not in stripped)
+            ):
+                # Could be a file path
+                if os.path.isfile(stripped):
+                    source_file = stripped
+                    with open(stripped, "r", encoding="utf-8") as f:
+                        actual_content = f.read()
+
+            # Auto-detect content type
+            actual_type = content_type
+            if actual_type == "auto":
+                first_line = actual_content.lstrip().split("\n", 1)[0].strip().lower()
+                mermaid_keywords = (
+                    "graph ", "graph\n", "flowchart ", "flowchart\n",
+                    "sequencediagram", "classdiagram", "statediagram",
+                    "erdiagram", "gantt", "pie", "gitgraph",
+                    "mindmap", "timeline", "block-beta",
+                    "journey", "quadrantchart", "requirementdiagram",
+                    "c4context", "c4container", "c4component", "c4deployment",
+                    "sankey-beta", "xychart-beta",
+                )
+                if any(first_line.startswith(kw) for kw in mermaid_keywords):
+                    actual_type = "mermaid"
+                elif stripped.lstrip().startswith("<"):
+                    actual_type = "html"
+                else:
+                    actual_type = "markdown"
+
+            try:
+                result = registrar.reter_client.view_push(actual_content, actual_type)
+                if source_file:
+                    result["source_file"] = source_file
+                # Include the view URL from discovery if available
+                try:
+                    discovery = registrar.reter_client.config.discover_server()
+                    if discovery and discovery.view_url:
+                        result["view_url"] = discovery.view_url
+                except Exception:
+                    pass
+                return result
+            except Exception as e:
+                return {"success": False, "error": str(e)}
 
     def _register_experimental_tools(self, app: FastMCP, is_full_mode: bool = True) -> None:
         """Register experimental tools."""

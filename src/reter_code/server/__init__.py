@@ -52,6 +52,7 @@ from .reter_client import (
     ReterClientConnectionError,
 )
 from .console_ui import ConsoleUI
+from .view_server import ViewServer
 
 __all__ = [
     # Protocol
@@ -80,4 +81,6 @@ __all__ = [
     "ReterClientConnectionError",
     # Console
     "ConsoleUI",
+    # View server
+    "ViewServer",
 ]

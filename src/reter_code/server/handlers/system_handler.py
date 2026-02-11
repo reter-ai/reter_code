@@ -11,7 +11,7 @@ import time
 from typing import Any, Dict
 
 from . import BaseHandler
-from ..protocol import METHOD_SYSTEM, METHOD_STATUS, METHOD_INFO
+from ..protocol import METHOD_SYSTEM, METHOD_STATUS, METHOD_INFO, METHOD_VIEW_PUSH
 
 
 class SystemHandler(BaseHandler):
@@ -28,6 +28,7 @@ class SystemHandler(BaseHandler):
             METHOD_SYSTEM: self._handle_system,
             METHOD_STATUS: self._handle_status,
             METHOD_INFO: self._handle_info,
+            METHOD_VIEW_PUSH: self._handle_view_push,
             "health": self._handle_health,
             "sources": self._handle_sources,
             "facts": self._handle_facts,
@@ -204,6 +205,31 @@ class SystemHandler(BaseHandler):
             "consistent": len(issues) == 0,
             "issues": issues,
             "issues_count": len(issues)
+        }
+
+
+    def _handle_view_push(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Push content to connected browser viewers.
+
+        Params:
+            content_type: "markdown", "mermaid", or "html"
+            content: Content string to render
+
+        Returns:
+            Dictionary with success status
+        """
+        content_type = params.get("content_type", "markdown")
+        content = params.get("content", "")
+
+        if not content:
+            raise ValueError("content is required")
+
+        self.push_view(content_type, content)
+
+        return {
+            "success": True,
+            "content_type": content_type,
+            "content_length": len(content),
         }
 
 
