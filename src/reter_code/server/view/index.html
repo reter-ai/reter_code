@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RETER View</title>
+<link rel="icon" type="image/svg+xml" href="/favico.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+</head>
+<body>
+
+<div id="header">
+  <div class="header-left">
+    <button id="sidebar-toggle" title="Toggle history sidebar">
+      <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+        <path d="M1 2.75A.75.75 0 0 1 1.75 2h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 2.75Zm0 5A.75.75 0 0 1 1.75 7h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 7.75ZM1.75 12h12.5a.75.75 0 0 1 0 1.5H1.75a.75.75 0 0 1 0-1.5Z"/>
+      </svg>
+    </button>
+    <span class="logo">
+      <svg viewBox="0 0 161 40" width="80" height="20" fill="none">
+        <g transform="translate(35.475,-31.03)"><rect x="0" y="35.16" width="27" height="4.5" class="logo-letter"/></g>
+        <g transform="translate(35.475,-13.03)"><rect x="0" y="19.41" width="4.5" height="20.25" class="logo-letter"/></g>
+        <g transform="translate(37.725,-13.03)"><rect x="0" y="35.16" width="24.75" height="4.5" class="logo-letter"/></g>
+        <g transform="translate(35.475,-4.03)"><rect x="0" y="35.12" width="27" height="4.54" class="logo-letter"/></g>
+        <g transform="translate(66.975,-31.11)"><rect x="0" y="35.16" width="27" height="4.5" class="logo-letter"/></g>
+        <g transform="translate(73.725,-4.11)"><rect x="0" y="17.08" width="4.5" height="22.58" class="logo-letter"/></g>
+        <g transform="translate(3.975,-4.03)"><rect x="0" y="8.03" width="4.5" height="31.63" class="logo-accent"/></g>
+        <g transform="translate(82.96,-4.11)"><rect x="0" y="17.08" width="4.5" height="22.58" class="logo-letter"/></g>
+        <g transform="translate(73.725,-4.11)"><rect x="0" y="35.16" width="13.73" height="4.5" class="logo-letter"/></g>
+        <g transform="translate(100.725,-31.11)"><rect x="0" y="35.16" width="24.75" height="4.5" class="logo-letter"/></g>
+        <g transform="translate(98.475,-13.11)"><rect x="0" y="17.08" width="4.5" height="22.58" class="logo-letter"/></g>
+        <g transform="translate(100.725,-13.11)"><rect x="0" y="35.16" width="24.75" height="4.5" class="logo-letter"/></g>
+        <g transform="translate(98.475,-4.11)"><rect x="0" y="35.12" width="27" height="4.54" class="logo-letter"/></g>
+        <g transform="translate(57.13,22.99) rotate(90)"><rect x="0" y="35.16" width="12.64" height="4.5" class="logo-accent"/></g>
+        <g transform="translate(17.475,-3.99)"><rect x="0" y="35.08" width="13.5" height="4.58" class="logo-accent"/></g>
+        <g transform="translate(19.125,-11.96)"><path d="M0 39.66 A11.85 11.85 -180 1 0 0 15.96 L0 20.52 A7.21 7.21 0 0 1 0 34.94 L0 39.66 Z" class="logo-accent"/></g>
+        <g transform="translate(3.975,-31.11)"><rect x="0" y="35.1" width="15.66" height="4.56" class="logo-accent"/></g>
+        <g transform="translate(129.975,-4.01)"><rect x="0" y="8.03" width="4.5" height="31.63" class="logo-letter"/></g>
+        <g transform="translate(183.13,23.01) rotate(90)"><rect x="0" y="35.16" width="12.64" height="4.5" class="logo-letter"/></g>
+        <g transform="translate(143.475,-3.98)"><rect x="0" y="35.08" width="13.5" height="4.58" class="logo-letter"/></g>
+        <g transform="translate(145.125,-11.94)"><path d="M0 39.66 A11.85 11.85 -180 1 0 0 15.96 L0 20.52 A7.21 7.21 0 0 1 0 34.94 L0 39.66 Z" class="logo-letter"/></g>
+        <g transform="translate(132.16,-31.09)"><rect x="0" y="35.1" width="13" height="4.56" class="logo-letter"/></g>
+      </svg>
+      <span class="label">View</span>
+    </span>
+  </div>
+  <div class="header-right">
+    <div id="status-badge" class="disconnected">disconnected</div>
+    <button id="theme-toggle" title="Toggle theme">
+      <svg class="icon-sun" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 1.5a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11ZM8 0a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0V.75A.75.75 0 0 1 8 0Zm0 13a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 8 13ZM2.343 2.343a.75.75 0 0 1 1.061 0l1.06 1.061a.75.75 0 0 1-1.06 1.06l-1.06-1.06a.75.75 0 0 1 0-1.06Zm9.193 9.193a.75.75 0 0 1 1.06 0l1.061 1.06a.75.75 0 0 1-1.06 1.061l-1.061-1.06a.75.75 0 0 1 0-1.061ZM0 8a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 0 1.5H.75A.75.75 0 0 1 0 8Zm13 0a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 0 1.5h-1.5A.75.75 0 0 1 13 8ZM2.343 13.657a.75.75 0 0 1 0-1.06l1.06-1.061a.75.75 0 1 1 1.06 1.06l-1.06 1.061a.75.75 0 0 1-1.06 0Zm9.193-9.193a.75.75 0 0 1 0-1.06l1.061-1.061a.75.75 0 1 1 1.06 1.06l-1.06 1.061a.75.75 0 0 1-1.061 0Z"/>
+      </svg>
+      <svg class="icon-moon" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M9.598 1.591a.749.749 0 0 1 .785-.175 7.001 7.001 0 1 1-8.967 8.967.75.75 0 0 1 .961-.96 5.5 5.5 0 0 0 7.046-7.046.75.75 0 0 1 .175-.786Zm1.616 1.945a7 7 0 0 1-7.678 7.678 5.499 5.499 0 1 0 7.678-7.678Z"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<div id="main">
+  <aside id="sidebar">
+    <div class="sidebar-header">History</div>
+    <div id="history-list"></div>
+  </aside>
+  <div id="splitter"></div>
+  <div id="content">
+    <div class="waiting">
+      <div class="icon">&gt;_</div>
+      <div class="text">Waiting for content</div>
+      <div class="sub">Push markdown or diagrams via the <code>view</code> MCP tool</div>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
