@@ -23,17 +23,18 @@ from .models import (
     LogicalThinkingInput,
     LogicalThinkingOutput
 )
-from .reter_wrapper import (
-    ReterWrapper,
-    # Exception hierarchy
-    ReterError,
-    ReterFileError,
-    ReterFileNotFoundError,
-    ReterSaveError,
-    ReterLoadError,
-    ReterQueryError,
-    ReterOntologyError,
-)
+
+# ReterWrapper and exceptions are lazy-imported (they depend on reter/reter_core)
+_RETER_WRAPPER_ATTRS = {
+    "ReterWrapper", "ReterError", "ReterFileError", "ReterFileNotFoundError",
+    "ReterSaveError", "ReterLoadError", "ReterQueryError", "ReterOntologyError",
+}
+
+def __getattr__(name):
+    if name in _RETER_WRAPPER_ATTRS:
+        from . import reter_wrapper
+        return getattr(reter_wrapper, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     "create_server",
@@ -46,7 +47,6 @@ __all__ = [
     "LogicalThinkingInput",
     "LogicalThinkingOutput",
     "ReterWrapper",
-    # Exceptions
     "ReterError",
     "ReterFileError",
     "ReterFileNotFoundError",

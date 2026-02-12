@@ -84,7 +84,9 @@ This separation means the expensive RETE network and RAG index stay alive across
 Install once — commands stay available:
 
 ```bash
-uv tool install --from git+https://github.com/reter-ai/reter_code reter_code
+uv tool install --from git+https://github.com/reter-ai/reter_code \
+  --find-links https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html \
+  reter_code
 ```
 
 > **Troubleshooting:** If `uv` tries to build `faiss-cpu` or `pyarrow` from source (swig/cmake errors), add `--no-build-package faiss-cpu --no-build-package pyarrow` to force pre-built wheels.
@@ -106,11 +108,15 @@ Run directly without installing — uvx creates a temporary environment each tim
 
 ```bash
 cd /path/to/your/project
-uvx --from git+https://github.com/reter-ai/reter_code reter
+uvx --from git+https://github.com/reter-ai/reter_code \
+  --find-links https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html \
+  reter
 ```
 
 ```bash
-claude mcp add reter -- uvx --from git+https://github.com/reter-ai/reter_code reter_code --stdio
+claude mcp add reter -- uvx --from git+https://github.com/reter-ai/reter_code \
+  --find-links https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html \
+  reter_code --stdio
 ```
 
 ### What Happens
@@ -203,6 +209,7 @@ Or without installing (uvx):
       "command": "uvx",
       "args": [
         "--from", "git+https://github.com/reter-ai/reter_code",
+        "--find-links", "https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html",
         "reter_code", "--stdio"
       ]
     }

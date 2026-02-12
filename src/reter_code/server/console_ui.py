@@ -872,7 +872,8 @@ class ConsoleUI:
         if shutil.which("reter_code"):
             return "claude mcp add reter -- reter_code --stdio"
         _UVX_FROM = "git+https://github.com/reter-ai/reter_code"
-        return f"claude mcp add reter -- uvx --from {_UVX_FROM} reter_code --stdio"
+        _FIND_LINKS = "https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html"
+        return f"claude mcp add reter -- uvx --from {_UVX_FROM} --find-links {_FIND_LINKS} reter_code --stdio"
 
     def log_query(
         self,
