@@ -58,6 +58,7 @@ class SystemHandler(BaseHandler):
             "facts": lambda: self._handle_facts(params),
             "health": lambda: self._handle_health(params),
             "check": lambda: self._handle_consistency_check(params),
+            "forget": lambda: self._handle_forget(params),
         }
 
         handler = action_handlers.get(action)
@@ -230,6 +231,28 @@ class SystemHandler(BaseHandler):
             "success": True,
             "content_type": content_type,
             "content_length": len(content),
+        }
+
+    def _handle_forget(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Forget knowledge from a source.
+
+        Params:
+            source: Source identifier to forget
+
+        Returns:
+            Dictionary with source and execution time
+        """
+        source = params.get("source", "")
+
+        if not source:
+            raise ValueError("Source identifier is required")
+
+        source_id, time_ms = self.reter.forget_source(source)
+
+        return {
+            "success": True,
+            "source": source_id,
+            "execution_time_ms": time_ms
         }
 
 

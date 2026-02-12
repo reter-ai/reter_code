@@ -114,14 +114,18 @@ class RAGHandler(BaseHandler):
         Returns:
             Dictionary with reindex statistics
         """
-        force = params.get("force", False)
+        project_root = self.rag_manager._project_root
+        if not project_root:
+            return {
+                "success": False,
+                "error": "RAG not initialized (no project root)"
+            }
 
-        # Trigger reindex
-        result = self.rag_manager.reindex(force=force)
+        result = self.rag_manager.reindex_all(self.reter, project_root)
 
         return {
             "success": True,
-            "vectors_indexed": result.get("vectors_indexed", 0),
+            "vectors_indexed": result.get("vectors_indexed", result.get("total_vectors", 0)),
             "files_processed": result.get("files_processed", 0),
             "execution_time_ms": result.get("execution_time_ms", 0)
         }

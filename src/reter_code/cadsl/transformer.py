@@ -2886,50 +2886,68 @@ class RenderMermaidStep:
             elif nodes_field:
                 nodes.add(row.get(nodes_field))
 
+        def _sanitize_mermaid_id(name):
+            """Sanitize a string for use as a Mermaid node ID."""
+            import re
+            return re.sub(r'[^a-zA-Z0-9_]', '_', str(name))
+
         # Render edges (nodes are implicit in edges)
         if edges:
             for from_val, to_val in sorted(edges):
-                safe_from = str(from_val).replace(" ", "_").replace("-", "_").replace(".", "_")
-                safe_to = str(to_val).replace(" ", "_").replace("-", "_").replace(".", "_")
+                safe_from = _sanitize_mermaid_id(from_val)
+                safe_to = _sanitize_mermaid_id(to_val)
                 lines.append(f'    {safe_from}["{from_val}"] --> {safe_to}["{to_val}"]')
         elif nodes:
             # Render standalone nodes when no edges defined
             for node_val in sorted(n for n in nodes if n):
-                safe_node = str(node_val).replace(" ", "_").replace("-", "_").replace(".", "_")
+                safe_node = _sanitize_mermaid_id(node_val)
                 lines.append(f'    {safe_node}["{node_val}"]')
 
         return "\n".join(lines)
 
     def _render_sequence(self, data):
         """Render a sequence diagram."""
+        import re
         seq = self.config.sequence
         lines = ["sequenceDiagram"]
+
+        def _get(row, field):
+            """Get field, trying both plain and ?-prefixed keys."""
+            if not field:
+                return None
+            v = row.get(field)
+            if v is None:
+                v = row.get("?" + field)
+            return v
+
+        def _safe_participant(name):
+            return re.sub(r'[^a-zA-Z0-9_]', '_', str(name))
 
         # Collect participants
         participants = set()
         messages = []
         for row in data:
             if seq.messages_from and seq.messages_to:
-                from_val = row.get(seq.messages_from)
-                to_val = row.get(seq.messages_to)
-                label = row.get(seq.messages_label, "") if seq.messages_label else ""
+                from_val = _get(row, seq.messages_from)
+                to_val = _get(row, seq.messages_to)
+                label = _get(row, seq.messages_label) or "" if seq.messages_label else ""
                 if from_val and to_val:
                     participants.add(from_val)
                     participants.add(to_val)
                     messages.append((from_val, to_val, label))
             elif seq.participants:
-                participants.add(row.get(seq.participants))
+                participants.add(_get(row, seq.participants))
 
         # Render participants
         for p in sorted(participants):
             if p:
-                safe_p = str(p).replace(" ", "_")
+                safe_p = _safe_participant(p)
                 lines.append(f"    participant {safe_p} as {p}")
 
         # Render messages
         for from_val, to_val, label in messages:
-            safe_from = str(from_val).replace(" ", "_")
-            safe_to = str(to_val).replace(" ", "_")
+            safe_from = _safe_participant(from_val)
+            safe_to = _safe_participant(to_val)
             lines.append(f"    {safe_from}->>+{safe_to}: {label}")
 
         return "\n".join(lines)
@@ -3121,8 +3139,8 @@ class RenderMermaidStep:
         ]
 
         def _safe_id(name):
-            return str(name).replace(".", "_").replace("-", "_").replace(
-                "::", "_").replace(" ", "_")
+            import re
+            return re.sub(r'[^a-zA-Z0-9_]', '_', str(name))
 
         def _get_field(row, field_name):
             """Get field value, handling ?-prefixed REQL columns."""

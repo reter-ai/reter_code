@@ -679,8 +679,40 @@ class ReterServer:
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
 
+    def _check_binary_integrity(self) -> None:
+        """Check reter_core binary integrity before console takes over terminal."""
+        from ..services.state_persistence import (
+            StatePersistenceService,
+            check_reter_core_integrity,
+            purge_stale_state,
+        )
+        from ..services.instance_manager import InstanceManager
+
+        # Build snapshots_dir the same way StatePersistenceService does
+        snapshots_dir = os.getenv("RETER_SNAPSHOTS_DIR")
+        if not snapshots_dir:
+            project_root = os.getenv("RETER_PROJECT_ROOT")
+            if project_root:
+                snapshots_dir = str(Path(project_root) / ".reter_code")
+            else:
+                snapshots_dir = str(Path.cwd() / ".reter_code")
+
+        if check_reter_core_integrity(snapshots_dir):
+            print("\n[!] reter_core binary has changed since last snapshot.")
+            print("    Stale snapshots, deltas, and RAG index must be purged for a fresh init.")
+            answer = input("    Purge and continue? [y/N] ").strip().lower()
+            if answer in ("y", "yes"):
+                purge_stale_state(snapshots_dir)
+                logger.warning("reter_core binary changed — purged stale state, performing fresh init")
+            else:
+                print("    Exiting.")
+                sys.exit(0)
+
     def start(self) -> None:
         """Start the RETER server."""
+        # Check binary integrity BEFORE console takes over terminal
+        self._check_binary_integrity()
+
         # Initialize and START console FIRST so we can show progress during init
         self._init_console()
         if self._console:

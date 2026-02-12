@@ -11,8 +11,9 @@ query get_imports() {
         SELECT ?i ?module ?imported ?line
         WHERE {
             ?i type import .
-            ?i is-in-module ?module .
             ?i imports ?imported .
+            OPTIONAL { ?i is-in-module ?module }
+            OPTIONAL { ?i is-in-file ?module }
             OPTIONAL { ?i is-at-line ?line }
         }
         ORDER BY ?module ?imported

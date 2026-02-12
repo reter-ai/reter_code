@@ -221,7 +221,7 @@ class ConsoleUI:
         layout.split_column(
             Layout(name="header", size=3),
             Layout(name="main"),
-            Layout(name="progress", size=7),
+            Layout(name="progress", size=9),
             Layout(name="footer", size=3),
         )
 
@@ -289,6 +289,28 @@ class ConsoleUI:
         table.add_row("Queries", str(stats.get("requests_handled", 0)))
         table.add_row("Errors", str(stats.get("errors", 0)))
         table.add_row("Avg Time", f"{stats.get('avg_request_time_ms', 0):.1f}ms")
+
+        # C++ core version (from installed wheel)
+        try:
+            from importlib.metadata import version as pkg_version
+            core_ver = pkg_version("reter_core")
+            table.add_row("", "")
+            table.add_row("Core", core_ver)
+            from reter import owl_rete_cpp
+            build_ts = getattr(owl_rete_cpp, "__build_timestamp__", None)
+            if build_ts:
+                table.add_row("Built", build_ts)
+        except Exception:
+            pass
+
+        # Supported languages
+        try:
+            from ..reter_loaders import LANGUAGE_CONFIGS
+            langs = sorted(LANGUAGE_CONFIGS.keys())
+            table.add_row("", "")
+            table.add_row("Languages", f"{len(langs)}: {', '.join(langs)}")
+        except Exception:
+            pass
 
         # Config
         try:
@@ -358,7 +380,7 @@ class ConsoleUI:
             if self.server._view_server:
                 content.append("  Browser: ", style="dim")
                 content.append(self.server._view_server.url, style="bold magenta underline")
-                content.append("\n\n", style="dim")
+                content.append("\n", style="dim")
             else:
                 content.append("\n", style="dim")
             content.append("  Add MCP:  ", style="dim")
@@ -846,9 +868,11 @@ class ConsoleUI:
     @staticmethod
     def _get_mcp_command(project_root: str) -> str:
         """Build the claude mcp add command with project root."""
+        import shutil
+        if shutil.which("reter_code"):
+            return "claude mcp add reter -- reter_code --stdio"
         _UVX_FROM = "git+https://github.com/reter-ai/reter_code"
-        _FIND_LINKS = "https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html"
-        return f"claude mcp add reter -e RETER_PROJECT_ROOT={project_root} -- uvx --from {_UVX_FROM} --find-links {_FIND_LINKS} reter_code --stdio"
+        return f"claude mcp add reter -- uvx --from {_UVX_FROM} reter_code --stdio"
 
     def log_query(
         self,

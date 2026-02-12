@@ -61,16 +61,11 @@ class SystemToolsRegistrar(ToolRegistrarBase):
             - sources: List all loaded source files
             - facts: Get fact IDs for a source (requires `source`)
             - forget: Remove facts from a source (requires `source`)
-            - reload: Reload modified source files (incremental)
             - check: Consistency check of knowledge base
-            - initialize: Full re-initialization (reloads everything)
-            - reindex: RAG index rebuild (use `force=True` for full rebuild)
-            - reset_parser: Force CADSL grammar reload (after grammar.lark changes)
 
             Args:
-                action: One of: status, info, sources, facts, forget, reload, check, initialize, reindex, reset_parser
+                action: One of: status, info, sources, facts, forget, check
                 source: Source ID or file path (required for facts, forget)
-                force: Force full rebuild for reindex action (default: False)
 
             Returns:
                 Action-specific results with success status
@@ -81,11 +76,7 @@ class SystemToolsRegistrar(ToolRegistrarBase):
                 system("sources")                   # List loaded files
                 system("facts", "path/to/file.py")  # Get facts for file
                 system("forget", "path/to/file.py") # Forget a file
-                system("reload")                    # Reload modified files
                 system("check")                     # Consistency check
-                system("initialize")                # Full re-init
-                system("reindex", force=True)       # Force RAG rebuild
-                system("reset_parser")              # Reload CADSL grammar
             """
             if registrar.reter_client is None:
                 return {

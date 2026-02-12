@@ -23,11 +23,8 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
-# Note: Installation requires --find-links for reter-core:
-# uv pip install reter_code --find-links https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html
 dependencies = [
     "fastmcp>=2.0.0",
-    "reter @ git+https://github.com/reter-ai/reter.git",
     "pyarrow>=10.0.0",
     "sentence-transformers>=2.0.0",
     "faiss-cpu>=1.7.0",

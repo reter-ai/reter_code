@@ -216,6 +216,11 @@ class ToolRegistrar:
 
             Returns:
                 success, items_added, execution_time_ms, source_id
+
+            Examples:
+                CNL string:  add_knowledge("Every cat is a mammal.", type="ontology")
+                CNL annotations: add_knowledge("MyClass is-in-layer Core-Layer.", type="ontology")
+                Code file:   add_knowledge("path/to/file.py", type="python")
             """
             if registrar.reter_client is None:
                 return {"success": False, "error": "RETER server not connected"}

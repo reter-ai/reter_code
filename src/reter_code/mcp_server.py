@@ -275,7 +275,6 @@ def create_server():
 
 
 _UVX_FROM = "git+https://github.com/reter-ai/reter_code"
-_FIND_LINKS = "https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html"
 
 
 def _print_setup_instructions():
@@ -284,19 +283,17 @@ def _print_setup_instructions():
 Reter Code - AI-powered code reasoning MCP server
 
   Install (persistent):
-    uv tool install --from {_UVX_FROM} --find-links {_FIND_LINKS} reter_code
+    uv tool install --from {_UVX_FROM} reter_code
 
   After install, start the server:
     cd /path/to/your/project
     reter
 
   Add MCP to Claude Code:
-    claude mcp add reter -e RETER_PROJECT_ROOT=/path/to/your/project -- reter_code --stdio
+    claude mcp add reter -- reter_code --stdio
 
   Or without installing (uvx):
-    cd /path/to/your/project
-    uvx --from {_UVX_FROM} --find-links {_FIND_LINKS} reter
-    claude mcp add reter -e RETER_PROJECT_ROOT=/path/to/your/project -- uvx --from {_UVX_FROM} --find-links {_FIND_LINKS} reter_code --stdio
+    claude mcp add reter -- uvx --from {_UVX_FROM} reter_code --stdio
 
   Config locations:
     macOS:   ~/Library/Application Support/Claude/claude_desktop_config.json

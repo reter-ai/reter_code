@@ -20,6 +20,55 @@ from ..logging_config import configure_logger_for_debug_trace
 logger = configure_logger_for_debug_trace(__name__)
 
 
+def check_reter_core_integrity(reter_code_dir: str) -> bool:
+    """Check if reter_core binary changed since last snapshot.
+
+    Computes MD5 of the reter_core .pyd/.so and compares with stored hash.
+    If different, returns True to signal the caller to prompt the user.
+    Does NOT purge automatically — call purge_stale_state() after confirmation.
+
+    Returns True if binary changed (stale state detected).
+    """
+    import hashlib
+    from reter import owl_rete_cpp
+
+    pyd_path = Path(owl_rete_cpp.__file__)
+    reter_dir = Path(reter_code_dir)
+    md5_file = reter_dir / ".reter_core.md5"
+
+    current_md5 = hashlib.md5(pyd_path.read_bytes()).hexdigest()
+
+    if md5_file.exists():
+        if md5_file.read_text().strip() == current_md5:
+            return False  # No change
+
+    return True
+
+
+def purge_stale_state(reter_code_dir: str) -> None:
+    """Purge stale snapshots, deltas, and RAG files, then store new MD5."""
+    import hashlib
+    from reter import owl_rete_cpp
+
+    pyd_path = Path(owl_rete_cpp.__file__)
+    reter_dir = Path(reter_code_dir)
+    md5_file = reter_dir / ".reter_core.md5"
+
+    current_md5 = hashlib.md5(pyd_path.read_bytes()).hexdigest()
+
+    for pattern in [".default.reter", ".default.reter.*",
+                    ".default.delta", ".default.delta.*",
+                    ".default.sources.json",
+                    ".default.faiss", ".default.faiss.meta",
+                    ".default.rag_files.json"]:
+        for f in reter_dir.glob(pattern):
+            if f.is_file():
+                f.unlink(missing_ok=True)
+
+    reter_dir.mkdir(parents=True, exist_ok=True)
+    md5_file.write_text(current_md5)
+
+
 class StatePersistenceService:
     """
     Service for RETER state persistence operations.

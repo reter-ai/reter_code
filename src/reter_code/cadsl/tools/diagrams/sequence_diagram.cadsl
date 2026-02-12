@@ -31,11 +31,10 @@ diagram sequence_diagram() {
     }
     | select { caller_name, caller_class, callee_name, callee_class, file, line }
     | limit { {max_calls} }
-    | compute { message_label: callee_name }
     | render_mermaid {
         type: sequence,
         participants: caller_class,
-        messages: caller_class -> callee_class : message_label
+        messages: caller_class -> callee_class : callee_name
     }
     | view { skip: {skip}, description: "Sequence Diagram" }
     | emit { diagram }

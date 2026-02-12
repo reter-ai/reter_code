@@ -15,7 +15,6 @@ from ..protocol import (
     METHOD_ADD_KNOWLEDGE,
     METHOD_ADD_DIRECTORY,
     METHOD_FORGET,
-    METHOD_RELOAD,
     METHOD_VALIDATE_CNL,
     KNOWLEDGE_ERROR,
 )
@@ -35,7 +34,6 @@ class KnowledgeHandler(BaseHandler):
             METHOD_ADD_KNOWLEDGE: self._handle_add_knowledge,
             METHOD_ADD_DIRECTORY: self._handle_add_directory,
             METHOD_FORGET: self._handle_forget,
-            METHOD_RELOAD: self._handle_reload,
             METHOD_VALIDATE_CNL: self._handle_validate_cnl,
         }
 
@@ -63,17 +61,23 @@ class KnowledgeHandler(BaseHandler):
 
         # Dispatch based on type
         if source_type == "ontology":
-            items, time_ms = self.reter.add_ontology(source, source_id=source_id)
+            import time as _time
+            from ...reter_utils import safe_cpp_call
+            start = _time.time()
+            items = safe_cpp_call(
+                self.reter.reasoner.load_cnl, source, source_id or ""
+            )
+            time_ms = (_time.time() - start) * 1000
         elif source_type == "python":
-            items, time_ms = self.reter.load_python_file(source, source_id=source_id)
+            items, _source, time_ms, _errors = self.reter.load_python_file(source)
         elif source_type == "javascript":
-            items, time_ms = self.reter.load_javascript_file(source, source_id=source_id)
+            items, _source, time_ms, _errors = self.reter.load_javascript_file(source)
         elif source_type == "html":
-            items, time_ms = self.reter.load_html_file(source, source_id=source_id)
+            items, _source, time_ms, _errors = self.reter.load_html_file(source)
         elif source_type == "csharp":
-            items, time_ms = self.reter.load_csharp_file(source, source_id=source_id)
+            items, _source, time_ms, _errors = self.reter.load_csharp_file(source)
         elif source_type == "cpp":
-            items, time_ms = self.reter.load_cpp_file(source, source_id=source_id)
+            items, _source, time_ms, _errors = self.reter.load_cpp_file(source)
         else:
             raise ValueError(f"Unknown source type: {source_type}")
 
@@ -87,6 +91,9 @@ class KnowledgeHandler(BaseHandler):
     def _handle_add_directory(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Add all code files from a directory.
 
+        Scans the directory for supported language files and loads them all.
+        Auto-detects languages by file extension.
+
         Params:
             directory: Path to directory
             recursive: Whether to search subdirectories
@@ -97,25 +104,49 @@ class KnowledgeHandler(BaseHandler):
         """
         directory = params.get("directory", "")
         recursive = params.get("recursive", True)
-        exclude_patterns = params.get("exclude_patterns", [])
+        exclude_patterns = params.get("exclude_patterns") or []
 
         if not directory:
             raise ValueError("Directory is required")
 
-        # Use instance manager to scan directory
-        result = self.instance_manager.scan_directory(
-            directory,
-            recursive=recursive,
-            exclude_patterns=exclude_patterns
-        )
+        import time as _time
+        from pathlib import Path
+        start = _time.time()
 
+        # Load each supported language from the directory
+        from ...reter_loaders import LANGUAGE_CONFIGS
+        total_wmes = 0
+        total_files = 0
+        all_errors = []
+
+        for lang_name in LANGUAGE_CONFIGS:
+            loader_method = getattr(self.reter, f"load_{lang_name}_directory", None)
+            if loader_method is None:
+                continue
+            try:
+                wmes, errors_dict, lang_time = loader_method(
+                    directory,
+                    recursive=recursive,
+                    exclude_patterns=exclude_patterns,
+                )
+                total_wmes += wmes
+                for src, errs in errors_dict.items():
+                    total_files += 1
+                    if errs:
+                        all_errors.extend(errs)
+                    else:
+                        total_files += 0  # counted above
+            except Exception as e:
+                all_errors.append(f"{lang_name}: {e}")
+
+        time_ms = (_time.time() - start) * 1000
         return {
             "success": True,
-            "files_loaded": result.get("files_loaded", 0),
-            "total_files": result.get("total_files", 0),
-            "total_wmes": result.get("total_wmes", 0),
-            "errors": result.get("errors", []),
-            "execution_time_ms": result.get("execution_time_ms", 0)
+            "files_loaded": total_files,
+            "total_files": total_files,
+            "total_wmes": total_wmes,
+            "errors": all_errors,
+            "execution_time_ms": time_ms
         }
 
     def _handle_forget(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -140,25 +171,11 @@ class KnowledgeHandler(BaseHandler):
             "execution_time_ms": time_ms
         }
 
-    def _handle_reload(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Reload modified source files.
-
-        Returns:
-            Dictionary with reload statistics
-        """
-        # Use instance manager to check for changes and reload
-        result = self.instance_manager.sync_changes()
-
-        return {
-            "success": True,
-            "files_reloaded": result.get("reloaded", 0),
-            "files_added": result.get("added", 0),
-            "files_removed": result.get("removed", 0),
-            "execution_time_ms": result.get("execution_time_ms", 0)
-        }
-
     def _handle_validate_cnl(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Validate a CNL statement without adding it.
+
+        Uses the C++ CNL parser (owl_rete_cpp.parse_cnl) to parse and
+        validate the statement without modifying the knowledge base.
 
         Params:
             statement: CNL statement to validate
@@ -173,17 +190,23 @@ class KnowledgeHandler(BaseHandler):
         if not statement:
             raise ValueError("Statement is required")
 
-        # Import CNL parser
-        from ...cnl.parser import CNLParser
+        # Resolve "This" references if context_entity provided
+        resolved = statement
+        if context_entity:
+            resolved = statement.replace("This", context_entity)
 
-        parser = CNLParser()
-        result = parser.validate(statement, context_entity=context_entity)
+        from reter import owl_rete_cpp
+
+        result = owl_rete_cpp.parse_cnl(resolved)
+
+        # Convert Fact objects to dicts
+        facts = [dict(f) for f in result.facts]
 
         return {
-            "success": result.get("success", False),
-            "errors": result.get("errors", []),
-            "facts": result.get("facts", []),
-            "resolved_statement": result.get("resolved_statement")
+            "success": result.success,
+            "errors": list(result.errors),
+            "facts": facts,
+            "resolved_statement": resolved
         }
 
 
