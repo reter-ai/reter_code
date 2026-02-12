@@ -84,8 +84,10 @@ This separation means the expensive RETE network and RAG index stay alive across
 Install once — commands stay available:
 
 ```bash
-uv tool install --from git+https://github.com/reter-ai/reter_code --find-links https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html reter_code
+uv tool install --from git+https://github.com/reter-ai/reter_code reter_code
 ```
+
+> **Troubleshooting:** If `uv` tries to build `faiss-cpu` or `pyarrow` from source (swig/cmake errors), add `--no-build-package faiss-cpu --no-build-package pyarrow` to force pre-built wheels.
 
 Then start the server and add MCP:
 
@@ -95,7 +97,7 @@ reter
 ```
 
 ```bash
-claude mcp add reter -e RETER_PROJECT_ROOT=/path/to/your/project -- reter_code --stdio
+claude mcp add reter -- reter_code --stdio
 ```
 
 ### Option B: No Install (uvx)
@@ -104,11 +106,11 @@ Run directly without installing — uvx creates a temporary environment each tim
 
 ```bash
 cd /path/to/your/project
-uvx --from git+https://github.com/reter-ai/reter_code --find-links https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html reter
+uvx --from git+https://github.com/reter-ai/reter_code reter
 ```
 
 ```bash
-claude mcp add reter -e RETER_PROJECT_ROOT=/path/to/your/project -- uvx --from git+https://github.com/reter-ai/reter_code --find-links https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html reter_code --stdio
+claude mcp add reter -- uvx --from git+https://github.com/reter-ai/reter_code reter_code --stdio
 ```
 
 ### What Happens
@@ -123,7 +125,7 @@ The server will:
 
 **Keep the server terminal open** — the MCP client connects to it via ZeroMQ.
 
-The `-e RETER_PROJECT_ROOT=...` tells the MCP client where to find the server's discovery file.
+The MCP client auto-detects the project root from its working directory (Claude Code sets this to your project). You can override with `-e RETER_PROJECT_ROOT=/path/to/project` if needed.
 
 **Server options:**
 
@@ -186,10 +188,7 @@ After `uv tool install`:
   "mcpServers": {
     "reter": {
       "command": "reter_code",
-      "args": ["--stdio"],
-      "env": {
-        "RETER_PROJECT_ROOT": "/path/to/your/project"
-      }
+      "args": ["--stdio"]
     }
   }
 }
@@ -204,12 +203,8 @@ Or without installing (uvx):
       "command": "uvx",
       "args": [
         "--from", "git+https://github.com/reter-ai/reter_code",
-        "--find-links", "https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html",
         "reter_code", "--stdio"
-      ],
-      "env": {
-        "RETER_PROJECT_ROOT": "/path/to/your/project"
-      }
+      ]
     }
   }
 }
