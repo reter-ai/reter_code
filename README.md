@@ -89,7 +89,7 @@ This separation means the expensive RETE network and RAG index stay alive across
 |----------|-----------------|
 | Windows (x64) | 3.9 – 3.14 |
 | macOS (Apple Silicon) | 3.9 – 3.14 |
-| macOS (Intel x86_64) | 3.9 – 3.12 |
+| macOS (Intel x86_64) | 3.11 – 3.12 |
 | Linux (x64) | 3.9 – 3.14 |
 
 > **macOS Intel note:** PyTorch dropped x86_64 macOS support in 2.5+, and older versions don't have Python 3.13 wheels. Use `--python 3.12` when installing with uv.
