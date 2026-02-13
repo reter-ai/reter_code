@@ -55,10 +55,13 @@ def _fix_macos_openmp():
 
     Intel MKL (via torch/faiss) ships libiomp5 while Homebrew/system
     provides libomp. Both loaded simultaneously causes SIGSEGV in
-    __kmp_suspend_64. KMP_DUPLICATE_LIB_OK suppresses the fatal check.
+    OpenMP worker threads. Disable OpenMP threading entirely — the
+    server doesn't need parallel BLAS.
     """
     if sys.platform == 'darwin':
         os.environ.setdefault('KMP_DUPLICATE_LIB_OK', 'TRUE')
+        os.environ.setdefault('OMP_NUM_THREADS', '1')
+        os.environ.setdefault('MKL_NUM_THREADS', '1')
 
 
 def main():
