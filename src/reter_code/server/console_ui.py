@@ -114,7 +114,6 @@ class ConsoleUI:
         self.query_log: deque[QueryLogEntry] = deque(maxlen=self.MAX_LOG_ENTRIES)
 
         self._running = False
-        self._keyboard_callback = None  # Set by server for keyboard polling
 
         # Log viewer state
         self._view_mode: str = "dashboard"  # "dashboard", "debug_log", "nlq_log", "source_tree"
@@ -192,16 +191,10 @@ class ConsoleUI:
                     sys.stdout.write("\033[H" + output + "\033[J")
                     sys.stdout.flush()
 
-                    # Poll keyboard if callback is set
-                    if self._keyboard_callback:
-                        try:
-                            self._keyboard_callback()
-                        except Exception:
-                            pass
                 except Exception:
                     pass  # Ignore errors during refresh
                 # Faster refresh in log view for live-tail feel
-                time.sleep(0.15 if self._view_mode != "dashboard" else 0.5)
+                time.sleep(0.15 if self._view_mode != "dashboard" else 0.3)
         finally:
             # Show cursor when done
             sys.stdout.write("\033[?25h")

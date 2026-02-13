@@ -656,7 +656,7 @@ class ReterServer:
                     response = self._handle_request(raw_message)
                     self._query_socket.send(response)
 
-                # Handle keyboard input (Windows only)
+                # Handle keyboard input (all platforms)
                 if self._console:
                     self._handle_keyboard()
 
@@ -716,7 +716,6 @@ class ReterServer:
         # Initialize and START console FIRST so we can show progress during init
         self._init_console()
         if self._console:
-            self._console._keyboard_callback = self._handle_keyboard
             self._console.start()
 
         try:
