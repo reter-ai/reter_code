@@ -24,8 +24,35 @@ def _early_setup():
     os.environ['RETER_PROJECT_ROOT'] = project_path
 
 
+def _check_windows_prerequisites():
+    """Check Windows-specific prerequisites and print helpful messages."""
+    if sys.platform != 'win32':
+        return
+    import ctypes
+    for dll in ('msvcp140.dll', 'vcruntime140.dll'):
+        try:
+            ctypes.WinDLL(dll)
+        except OSError:
+            print(
+                f"\n[ERROR] {dll} not found — Microsoft Visual C++ Redistributable is required.\n"
+                "\n"
+                "Install it with Chocolatey:\n"
+                "\n"
+                "    choco install vcredist140\n"
+                "\n"
+                "Or download manually from:\n"
+                "\n"
+                "    https://aka.ms/vs/17/release/vc_redist.x64.exe\n"
+                "\n"
+                "Then restart your terminal and try again.\n",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+
 def main():
     """Server entry point with early env setup."""
     _early_setup()
+    _check_windows_prerequisites()
     from .server.reter_server import main as server_main
     server_main()
