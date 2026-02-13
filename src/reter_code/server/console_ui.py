@@ -124,6 +124,12 @@ class ConsoleUI:
         self._source_tree_cache: Optional[List[tuple]] = None
         self._source_tree_count: int = 0
 
+        # Cached values (computed once, not every render)
+        self._cached_core_version: Optional[str] = None
+        self._cached_build_ts: Optional[str] = None
+        self._cached_languages: Optional[str] = None
+        self._cache_populated: bool = False
+
     def __rich__(self) -> Layout:
         """Return layout for Rich rendering."""
         return self._build_layout()
@@ -137,11 +143,13 @@ class ConsoleUI:
 
     def _refresh_loop(self) -> None:
         """Background thread that refreshes the display."""
+        import io
         import os
         import sys
         import time
 
         last_size = (0, 0)
+        render_console = None  # Reuse Console across frames
 
         # Hide cursor at start
         sys.stdout.write("\033[?25l")
@@ -163,27 +171,28 @@ class ConsoleUI:
                     size_changed = current_size != last_size
                     last_size = current_size
 
-                    # Only do full clear on resize, otherwise just move cursor home
+                    # Only do full clear on resize
                     if size_changed and current_size != (0, 0):
-                        if sys.platform == 'win32':
-                            os.system('cls')
-                        else:
-                            os.system('clear')
+                        sys.stdout.write("\033[2J")  # ANSI clear (no subprocess)
+                        render_console = None  # Force new Console with new size
 
-                    # Move cursor to home position (top-left)
-                    sys.stdout.write("\033[H")
+                    # Reuse Console unless size changed
+                    if render_console is None or size_changed:
+                        render_console = Console(
+                            width=width, height=height - 1,
+                            force_terminal=True, file=io.StringIO()
+                        )
+
+                    # Render to string buffer (fast, no I/O)
+                    render_console.file = io.StringIO()
+                    render_console.print(self._build_layout(), height=height - 1, end="")
+                    output = render_console.file.getvalue()
+
+                    # Single write to stdout (minimizes flicker)
+                    sys.stdout.write("\033[H" + output + "\033[J")
                     sys.stdout.flush()
 
-                    # Create console with explicit size (height-1 leaves one blank line but fits)
-                    self.console = Console(width=width, height=height - 1, force_terminal=True)
-                    # Print the layout with height constraint
-                    self.console.print(self._build_layout(), height=height - 1, end="")
-
-                    # Clear any remaining lines below
-                    sys.stdout.write("\033[J")
-                    sys.stdout.flush()
-
-                    # Poll keyboard if callback is set (works during init too)
+                    # Poll keyboard if callback is set
                     if self._keyboard_callback:
                         try:
                             self._keyboard_callback()
@@ -290,27 +299,34 @@ class ConsoleUI:
         table.add_row("Errors", str(stats.get("errors", 0)))
         table.add_row("Avg Time", f"{stats.get('avg_request_time_ms', 0):.1f}ms")
 
-        # C++ core version (from installed wheel)
-        try:
-            from importlib.metadata import version as pkg_version
-            core_ver = pkg_version("reter_core")
+        # Populate cache once (expensive lookups)
+        if not self._cache_populated:
+            try:
+                from importlib.metadata import version as pkg_version
+                self._cached_core_version = pkg_version("reter_core")
+                from reter import owl_rete_cpp
+                self._cached_build_ts = getattr(owl_rete_cpp, "__build_timestamp__", None)
+            except Exception:
+                pass
+            try:
+                from ..reter_loaders import LANGUAGE_CONFIGS
+                langs = sorted(LANGUAGE_CONFIGS.keys())
+                self._cached_languages = f"{len(langs)}: {', '.join(langs)}"
+            except Exception:
+                pass
+            self._cache_populated = True
+
+        # C++ core version
+        if self._cached_core_version:
             table.add_row("", "")
-            table.add_row("Core", core_ver)
-            from reter import owl_rete_cpp
-            build_ts = getattr(owl_rete_cpp, "__build_timestamp__", None)
-            if build_ts:
-                table.add_row("Built", build_ts)
-        except Exception:
-            pass
+            table.add_row("Core", self._cached_core_version)
+            if self._cached_build_ts:
+                table.add_row("Built", self._cached_build_ts)
 
         # Supported languages
-        try:
-            from ..reter_loaders import LANGUAGE_CONFIGS
-            langs = sorted(LANGUAGE_CONFIGS.keys())
+        if self._cached_languages:
             table.add_row("", "")
-            table.add_row("Languages", f"{len(langs)}: {', '.join(langs)}")
-        except Exception:
-            pass
+            table.add_row("Languages", self._cached_languages)
 
         # Config
         try:
