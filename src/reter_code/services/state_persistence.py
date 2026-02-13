@@ -24,10 +24,11 @@ def check_reter_core_integrity(reter_code_dir: str) -> bool:
     """Check if reter_core binary changed since last snapshot.
 
     Computes MD5 of the reter_core .pyd/.so and compares with stored hash.
-    If different, returns True to signal the caller to prompt the user.
-    Does NOT purge automatically — call purge_stale_state() after confirmation.
 
-    Returns True if binary changed (stale state detected).
+    Returns:
+        True if binary changed AND stale state exists (needs purge).
+        False if unchanged, or if this is a first run (no prior state).
+        On first run, silently writes the MD5 file.
     """
     import hashlib
     from reter import owl_rete_cpp
@@ -41,8 +42,12 @@ def check_reter_core_integrity(reter_code_dir: str) -> bool:
     if md5_file.exists():
         if md5_file.read_text().strip() == current_md5:
             return False  # No change
+        return True  # Binary changed, stale state exists
 
-    return True
+    # First run — no prior MD5 file. Write it silently.
+    reter_dir.mkdir(parents=True, exist_ok=True)
+    md5_file.write_text(current_md5)
+    return False
 
 
 def purge_stale_state(reter_code_dir: str) -> None:
