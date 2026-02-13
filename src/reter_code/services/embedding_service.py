@@ -16,19 +16,27 @@ from typing import Callable, List, Dict, Optional, Any
 from collections import OrderedDict
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
 
 from ..logging_config import configure_logger_for_debug_trace
 logger = configure_logger_for_debug_trace(__name__)
 
-# Provider availability
-_SENTENCE_TRANSFORMERS_AVAILABLE = True  # Imported eagerly above
+# Provider availability — lazy import to avoid pulling in torch at startup
+SentenceTransformer = None  # Set on first use
+_SENTENCE_TRANSFORMERS_AVAILABLE: Optional[bool] = None
 _VOYAGE_AVAILABLE: Optional[bool] = None
 _OPENAI_AVAILABLE: Optional[bool] = None
 
 
 def _check_sentence_transformers() -> bool:
-    """Check for sentence-transformers availability."""
+    """Lazy check for sentence-transformers availability."""
+    global _SENTENCE_TRANSFORMERS_AVAILABLE, SentenceTransformer
+    if _SENTENCE_TRANSFORMERS_AVAILABLE is None:
+        try:
+            from sentence_transformers import SentenceTransformer as _ST
+            SentenceTransformer = _ST
+            _SENTENCE_TRANSFORMERS_AVAILABLE = True
+        except ImportError:
+            _SENTENCE_TRANSFORMERS_AVAILABLE = False
     return _SENTENCE_TRANSFORMERS_AVAILABLE
 
 
@@ -198,6 +206,13 @@ class EmbeddingService:
             self.embedding_dim = len(test_emb)
             log(f"_init_local: Complete! dim={self.embedding_dim}")
             return
+
+        # Lazy import of sentence_transformers (avoids pulling torch at startup)
+        if not _check_sentence_transformers():
+            raise ImportError(
+                "sentence-transformers package is required for local embeddings. "
+                "Install with: pip install sentence-transformers"
+            )
 
         log("_init_local: Starting fresh load...")
 
