@@ -35,10 +35,12 @@ def _check_sentence_transformers() -> bool:
             try:
                 from sentence_transformers import SentenceTransformer as _ST
             except NameError:
-                # Workaround: transformers>=4.48 uses nn.Module in a type
-                # annotation without import guard, fails on Python <3.12
+                # Workaround: transformers>=4.48 uses torch/nn in type
+                # annotations without import guard, fails on Python <3.12
                 import builtins, sys
+                import torch
                 import torch.nn as nn
+                builtins.torch = torch
                 builtins.nn = nn
                 to_clear = [k for k in sys.modules
                             if k.startswith(('sentence_transformers',
@@ -48,6 +50,7 @@ def _check_sentence_transformers() -> bool:
                 for k in to_clear:
                     del sys.modules[k]
                 from sentence_transformers import SentenceTransformer as _ST
+                del builtins.torch
                 del builtins.nn
             SentenceTransformer = _ST
             _SENTENCE_TRANSFORMERS_AVAILABLE = True
