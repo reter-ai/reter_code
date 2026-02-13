@@ -27,6 +27,7 @@ dependencies = [
     "fastmcp>=2.0.0",
     "reter>=0.1.5",
     "pyarrow>=10.0.0",
+    "lark>=1.1.0",
     "sentence-transformers>=2.0.0",
     "faiss-cpu>=1.7.0",
     "anthropic>=0.30.0",
