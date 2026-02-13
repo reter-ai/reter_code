@@ -419,17 +419,14 @@ class ReterServer:
             logger.debug(f"Error updating console stats: {e}")
 
     def _setup_unix_raw_mode(self) -> None:
-        """Enable raw non-blocking stdin on Unix/macOS (called once)."""
+        """Enable raw cbreak stdin on Unix/macOS (called once)."""
         if sys.platform == 'win32' or getattr(self, '_unix_raw_mode', False):
             return
         try:
             import tty, termios
             self._orig_termios = termios.tcgetattr(sys.stdin)
             tty.setcbreak(sys.stdin.fileno())
-            # Set non-blocking
-            import fcntl
-            flags = fcntl.fcntl(sys.stdin, fcntl.F_GETFL)
-            fcntl.fcntl(sys.stdin, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+            self._stdin_fd = sys.stdin.fileno()
             self._unix_raw_mode = True
         except Exception:
             pass
@@ -444,34 +441,46 @@ class ReterServer:
                 pass
             self._unix_raw_mode = False
 
+    def _read_byte_unix(self, timeout: float = 0) -> Optional[bytes]:
+        """Read one byte from stdin using select+os.read (bypasses Python buffering)."""
+        import select
+        fd = getattr(self, '_stdin_fd', None)
+        if fd is None:
+            return None
+        try:
+            if select.select([fd], [], [], timeout)[0]:
+                return os.read(fd, 1)
+        except (OSError, ValueError):
+            pass
+        return None
+
     def _read_key_unix(self) -> Optional[str]:
         """Read a key from stdin on Unix/macOS. Returns None if nothing available."""
-        try:
-            ch = sys.stdin.read(1)
-            if not ch:
-                return None
-            if ch == '\x1b':
-                # Could be ESC or start of escape sequence
-                seq = sys.stdin.read(1)
-                if not seq:
-                    return 'ESC'
-                if seq == '[':
-                    code = sys.stdin.read(1)
-                    if code == 'A': return 'UP'
-                    if code == 'B': return 'DOWN'
-                    if code == 'H': return 'HOME'
-                    if code == 'F': return 'END'
-                    if code == '5':
-                        sys.stdin.read(1)  # consume '~'
-                        return 'PGUP'
-                    if code == '6':
-                        sys.stdin.read(1)  # consume '~'
-                        return 'PGDN'
-                    return None
-                return 'ESC'
-            return ch
-        except (BlockingIOError, IOError):
+        b = self._read_byte_unix(0)
+        if not b:
             return None
+        if b == b'\x1b':
+            # Could be ESC or start of escape sequence
+            seq = self._read_byte_unix(0.05)
+            if not seq:
+                return 'ESC'
+            if seq == b'[':
+                code = self._read_byte_unix(0.05)
+                if not code:
+                    return None
+                if code == b'A': return 'UP'
+                if code == b'B': return 'DOWN'
+                if code == b'H': return 'HOME'
+                if code == b'F': return 'END'
+                if code == b'5':
+                    self._read_byte_unix(0.05)  # consume '~'
+                    return 'PGUP'
+                if code == b'6':
+                    self._read_byte_unix(0.05)  # consume '~'
+                    return 'PGDN'
+                return None
+            return 'ESC'
+        return b.decode('utf-8', errors='replace')
 
     def _handle_keyboard(self) -> None:
         """Handle keyboard input for manual actions (cross-platform)."""
