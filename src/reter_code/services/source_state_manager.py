@@ -32,7 +32,7 @@ import hashlib
 import json
 import sys
 import time
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Set, NamedTuple
 from dataclasses import dataclass, field
@@ -203,7 +203,7 @@ class SourceStateManager:
 
     def save(self) -> None:
         """Save state to JSON file."""
-        self._state["updated_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        self._state["updated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         self._state["gitignore_hash"] = self._gitignore_hash
         self._state["gitignore_files"] = self._gitignore_files
 

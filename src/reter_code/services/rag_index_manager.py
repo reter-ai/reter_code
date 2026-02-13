@@ -10,7 +10,7 @@ import hashlib
 import json
 import logging
 import time
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple, Callable, Set, TYPE_CHECKING
 
@@ -433,8 +433,8 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             "embedding_model": self._embedding_service.model_name,
             "embedding_provider": self._embedding_service.provider,
             "embedding_dimension": self._embedding_service.embedding_dim,
-            "created_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-            "updated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "total_vectors": 0,
             "sources": {},
             "vectors": {},
@@ -486,7 +486,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             return
 
         # Update metadata
-        self._metadata["updated_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        self._metadata["updated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         self._metadata["total_vectors"] = self._faiss_wrapper.total_vectors
 
         # Save FAISS index
@@ -563,7 +563,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
 
         data: Dict[str, Any] = {
             "version": "1.2",
-            "updated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         }
         for lang_key, _, _, _ in RAG_LANGUAGE_CONFIG:
             data[lang_key] = lang_files[lang_key]
@@ -844,7 +844,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                     "file_type": file_type,
                     "md5": md5_hash,
                     "rel_path": rel_path,
-                    "indexed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+                    "indexed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                     "vector_ids": source_vector_ids,
                 }
 
@@ -1389,7 +1389,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                     "file_type": file_type,
                     "md5": md5_hash,
                     "rel_path": rel_path,
-                    "indexed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+                    "indexed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                     "vector_ids": source_vector_ids,
                 }
 
@@ -1700,7 +1700,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                     "file_type": source_type,
                     "md5": md5_hash,
                     "rel_path": rel_path,
-                    "indexed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+                    "indexed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                     "vector_ids": vids,
                 }
             else:
@@ -1894,7 +1894,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             "file_type": language,
             "md5": md5_hash,
             "rel_path": rel_path,
-            "indexed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "indexed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "vector_ids": vector_ids,
         }
 
@@ -2162,7 +2162,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             "file_type": "html",
             "md5": md5_hash,
             "rel_path": rel_path,
-            "indexed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "indexed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "vector_ids": vector_ids,
         }
 
@@ -2275,7 +2275,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             "file_type": "python_comment",
             "md5": md5_hash,
             "rel_path": rel_path,
-            "indexed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "indexed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "vector_ids": vector_ids,
         }
 
@@ -2398,7 +2398,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             "file_type": "python_literal",
             "md5": md5_hash,
             "rel_path": rel_path,
-            "indexed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "indexed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "vector_ids": vector_ids,
         }
 
@@ -2525,7 +2525,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         # Track as bulk literal source
         self._metadata["sources"]["literals:bulk"] = {
             "file_type": "python_literal_bulk",
-            "indexed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "indexed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "vector_ids": vector_ids,
             "total_literals": len(texts),
         }
@@ -2651,7 +2651,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             "file_type": "javascript_literal",
             "md5": md5_hash,
             "rel_path": rel_path,
-            "indexed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "indexed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "vector_ids": vector_ids,
         }
 
@@ -2779,7 +2779,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         # Track as bulk literal source
         self._metadata["sources"]["js_literals:bulk"] = {
             "file_type": "javascript_literal_bulk",
-            "indexed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "indexed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "vector_ids": vector_ids,
             "total_literals": len(texts),
         }
@@ -2851,7 +2851,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             "file_type": "markdown",
             "md5": md5_hash or "",
             "rel_path": rel_path,
-            "indexed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "indexed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "vector_ids": vector_ids,
         }
 
