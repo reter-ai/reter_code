@@ -77,6 +77,11 @@ This separation means the expensive RETE network and RAG index stay alive across
 | Python API | `reter` | `Reter` class, query result sets, CLI |
 | C++ Engine | `reter_core` | RETE network, OWL RL rules, language parsers (closed source) |
 
+## Prerequisites
+
+- **Python 3.10+** and [uv](https://docs.astral.sh/uv/) (recommended) or pip
+- **Windows only:** [Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe) — required by PyTorch (used for code embeddings). Download and run the installer if you get a `c10.dll` error.
+
 ## Quick Start
 
 ### Option A: Persistent Install (Recommended)
@@ -89,7 +94,9 @@ uv tool install --from git+https://github.com/reter-ai/reter_code \
   reter_code
 ```
 
-> **Troubleshooting:** If `uv` tries to build `faiss-cpu` or `pyarrow` from source (swig/cmake errors), add `--no-build-package faiss-cpu --no-build-package pyarrow` to force pre-built wheels.
+> **Troubleshooting:**
+> - **swig/cmake errors** — `uv` is building `faiss-cpu` or `pyarrow` from source. Add `--no-build-package faiss-cpu --no-build-package pyarrow` to force pre-built wheels.
+> - **`c10.dll` not found (Windows)** — Install the [VC++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe) and restart your terminal.
 
 Then start the server and add MCP:
 
