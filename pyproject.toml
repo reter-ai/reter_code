@@ -25,7 +25,7 @@ classifiers = [
 ]
 dependencies = [
     "fastmcp>=2.0.0",
-    "reter>=0.1.5",
+    "reter @ git+https://github.com/reter-ai/reter.git",
     "pyarrow>=10.0.0",
     "lark>=1.1.0",
     "pydantic>=2.0.0",
