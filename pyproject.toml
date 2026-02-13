@@ -63,6 +63,7 @@ reter_code = [
     "resources/**/*",
     "cadsl/tools/**/*.cadsl",
     "cadsl/*.lark",
+    "server/view/*",
 ]
 
 [tool.pytest.ini_options]
