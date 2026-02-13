@@ -32,7 +32,23 @@ def _check_sentence_transformers() -> bool:
     global _SENTENCE_TRANSFORMERS_AVAILABLE, SentenceTransformer
     if _SENTENCE_TRANSFORMERS_AVAILABLE is None:
         try:
-            from sentence_transformers import SentenceTransformer as _ST
+            try:
+                from sentence_transformers import SentenceTransformer as _ST
+            except NameError:
+                # Workaround: transformers>=4.48 uses nn.Module in a type
+                # annotation without import guard, fails on Python <3.12
+                import builtins, sys
+                import torch.nn as nn
+                builtins.nn = nn
+                to_clear = [k for k in sys.modules
+                            if k.startswith(('sentence_transformers',
+                                             'transformers.integrations',
+                                             'transformers.conversion',
+                                             'transformers.core_model'))]
+                for k in to_clear:
+                    del sys.modules[k]
+                from sentence_transformers import SentenceTransformer as _ST
+                del builtins.nn
             SentenceTransformer = _ST
             _SENTENCE_TRANSFORMERS_AVAILABLE = True
         except ImportError:
