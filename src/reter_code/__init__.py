@@ -11,7 +11,7 @@ import warnings
 warnings.filterwarnings("ignore", message="builtin type Swig", category=DeprecationWarning)
 warnings.filterwarnings("ignore", message="builtin type swig", category=DeprecationWarning)
 
-__version__ = "0.1.4"
+__version__ = "0.1.5"
 __author__ = "Reter.AI"
 
 from .mcp_server import create_server, ReterCodeServer, main
