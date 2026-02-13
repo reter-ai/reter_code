@@ -161,19 +161,7 @@ class ReterServer:
                 try:
                     # Load the SentenceTransformer model
                     import os
-                    # Workaround: transformers>=4.48 uses torch/nn in type
-                    # annotations without import guard, fails on Python <3.12.
-                    # Inject into builtins before import so all annotations resolve.
-                    import builtins
-                    import torch
-                    import torch.nn as nn
-                    builtins.torch = torch
-                    builtins.nn = nn
-                    try:
-                        from sentence_transformers import SentenceTransformer
-                    finally:
-                        builtins.__dict__.pop('torch', None)
-                        builtins.__dict__.pop('nn', None)
+                    from sentence_transformers import SentenceTransformer
                     cache_dir = os.environ.get('TRANSFORMERS_CACHE', None)
                     logger.debug("[RAG-INIT] Creating SentenceTransformer...")
                     preloaded_model = SentenceTransformer(model_name, cache_folder=cache_dir)
