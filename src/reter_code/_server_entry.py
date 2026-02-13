@@ -50,9 +50,21 @@ def _check_windows_prerequisites():
             sys.exit(1)
 
 
+def _fix_macos_openmp():
+    """Prevent crash from dual OpenMP runtimes on macOS.
+
+    Intel MKL (via torch/faiss) ships libiomp5 while Homebrew/system
+    provides libomp. Both loaded simultaneously causes SIGSEGV in
+    __kmp_suspend_64. KMP_DUPLICATE_LIB_OK suppresses the fatal check.
+    """
+    if sys.platform == 'darwin':
+        os.environ.setdefault('KMP_DUPLICATE_LIB_OK', 'TRUE')
+
+
 def main():
     """Server entry point with early env setup."""
     _early_setup()
     _check_windows_prerequisites()
+    _fix_macos_openmp()
     from .server.reter_server import main as server_main
     server_main()
