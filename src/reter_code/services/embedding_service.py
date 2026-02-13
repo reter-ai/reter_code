@@ -32,7 +32,19 @@ def _check_sentence_transformers() -> bool:
     global _SENTENCE_TRANSFORMERS_AVAILABLE, SentenceTransformer
     if _SENTENCE_TRANSFORMERS_AVAILABLE is None:
         try:
-            from sentence_transformers import SentenceTransformer as _ST
+            # Workaround: transformers>=4.48 uses torch/nn in type
+            # annotations without import guard, fails on Python <3.12.
+            # Inject into builtins before import so all annotations resolve.
+            import builtins
+            import torch
+            import torch.nn as nn
+            builtins.torch = torch
+            builtins.nn = nn
+            try:
+                from sentence_transformers import SentenceTransformer as _ST
+            finally:
+                builtins.__dict__.pop('torch', None)
+                builtins.__dict__.pop('nn', None)
             SentenceTransformer = _ST
             _SENTENCE_TRANSFORMERS_AVAILABLE = True
         except ImportError:
