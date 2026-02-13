@@ -81,8 +81,18 @@ This separation means the expensive RETE network and RAG index stay alive across
 
 ### All platforms
 
-- **Python 3.10+**
 - [**uv**](https://docs.astral.sh/uv/) — fast Python package manager (recommended over pip)
+
+### Python version
+
+| Platform | Supported Python |
+|----------|-----------------|
+| Windows (x64) | 3.10 – 3.13 |
+| macOS (Apple Silicon) | 3.10 – 3.13 |
+| macOS (Intel x86_64) | 3.11 – 3.12 |
+| Linux (x64) | 3.10 – 3.13 |
+
+> **macOS Intel note:** PyTorch dropped x86_64 macOS support in 2.5+, and older versions don't have Python 3.13 wheels. Use `--python 3.12` when installing with uv.
 
 ### Windows
 
@@ -116,9 +126,19 @@ uv tool install --from git+https://github.com/reter-ai/reter_code \
   reter_code
 ```
 
+**macOS Intel (x86_64)** — add `--python 3.12` to avoid PyTorch resolution failures:
+
+```bash
+uv tool install --python 3.12 \
+  --from git+https://github.com/reter-ai/reter_code \
+  --find-links https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html \
+  reter_code
+```
+
 > **Troubleshooting:**
 > - **swig/cmake errors** — `uv` is building `faiss-cpu` or `pyarrow` from source. Add `--no-build-package faiss-cpu --no-build-package pyarrow` to force pre-built wheels.
 > - **`c10.dll` not found (Windows)** — Install the VC++ Redistributable (see [Prerequisites](#windows)) and restart your terminal.
+> - **torch resolution error (macOS Intel)** — PyTorch has no wheels for x86_64 macOS + Python 3.13. Use `--python 3.12`.
 
 Then start the server and add MCP:
 
