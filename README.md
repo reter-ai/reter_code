@@ -79,8 +79,30 @@ This separation means the expensive RETE network and RAG index stay alive across
 
 ## Prerequisites
 
-- **Python 3.10+** and [uv](https://docs.astral.sh/uv/) (recommended) or pip
-- **Windows only:** [Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe) — required by PyTorch (used for code embeddings). Download and run the installer if you get a `c10.dll` error.
+### All platforms
+
+- **Python 3.10+**
+- [**uv**](https://docs.astral.sh/uv/) — fast Python package manager (recommended over pip)
+
+### Windows
+
+Install [uv](https://docs.astral.sh/uv/) and the Visual C++ runtime. The easiest way is with [Chocolatey](https://chocolatey.org/install):
+
+```powershell
+choco install uv vcredist140
+```
+
+Or install manually:
+- **uv** — `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
+- **VC++ Redistributable** — download from [aka.ms/vs/17/release/vc_redist.x64.exe](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+
+> The VC++ Redistributable is required by PyTorch (used for code embeddings). Without it you'll get a `c10.dll` error on startup.
+
+### macOS / Linux
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
 ## Quick Start
 
@@ -96,7 +118,7 @@ uv tool install --from git+https://github.com/reter-ai/reter_code \
 
 > **Troubleshooting:**
 > - **swig/cmake errors** — `uv` is building `faiss-cpu` or `pyarrow` from source. Add `--no-build-package faiss-cpu --no-build-package pyarrow` to force pre-built wheels.
-> - **`c10.dll` not found (Windows)** — Install the [VC++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe) and restart your terminal.
+> - **`c10.dll` not found (Windows)** — Install the VC++ Redistributable (see [Prerequisites](#windows)) and restart your terminal.
 
 Then start the server and add MCP:
 
