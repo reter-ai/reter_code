@@ -81,13 +81,15 @@ This separation means the expensive RETE network and RAG index stay alive across
 
 ### All platforms
 
-- [**uv**](https://docs.astral.sh/uv/) — fast Python package manager (recommended over pip)
+- [**uv**](https://docs.astral.sh/uv/) — fast Python package manager
+- [**git**](https://git-scm.com/) — required to fetch packages from GitHub
 
 ### Python version
 
 | Platform | Supported Python |
 |----------|-----------------|
 | Windows (x64) | 3.10 – 3.14 |
+| Windows (WSL2) | 3.10 – 3.14 |
 | macOS (Apple Silicon) | 3.10 – 3.14 |
 | macOS (Intel x86_64) | 3.11 – 3.12 |
 | Linux (x64) | 3.10 – 3.14 |
@@ -96,22 +98,57 @@ This separation means the expensive RETE network and RAG index stay alive across
 
 ### Windows
 
-Install [uv](https://docs.astral.sh/uv/) and the Visual C++ runtime. The easiest way is with [Chocolatey](https://chocolatey.org/install):
+Install with [Chocolatey](https://chocolatey.org/install):
 
 ```powershell
-choco install uv vcredist140
+choco install uv git vcredist140
 ```
 
 Or install manually:
 - **uv** — `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
+- **git** — download from [git-scm.com/download/win](https://git-scm.com/download/win)
 - **VC++ Redistributable** — download from [aka.ms/vs/17/release/vc_redist.x64.exe](https://aka.ms/vs/17/release/vc_redist.x64.exe)
 
 > The VC++ Redistributable is required by PyTorch (used for code embeddings). Without it you'll get a `c10.dll` error on startup.
 
-### macOS / Linux
+### Windows (WSL2)
+
+Works the same as native Linux. Inside your WSL2 terminal:
 
 ```bash
+# uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# git (Ubuntu/Debian — default WSL distro)
+sudo apt update && sudo apt install git
+```
+
+### macOS
+
+```bash
+brew install uv git
+```
+
+Or without Homebrew:
+
+```bash
+# uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# git — included with Xcode Command Line Tools
+xcode-select --install
+```
+
+### Linux
+
+```bash
+# uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# git (Debian/Ubuntu)
+sudo apt install git
+
+# git (Fedora/RHEL)
+sudo dnf install git
 ```
 
 ## Quick Start
