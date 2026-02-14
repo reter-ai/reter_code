@@ -257,7 +257,7 @@ function wrapMermaidContainers() {
       '<button class="zoom-in" title="Zoom in">+</button>' +
       '<button class="zoom-out" title="Zoom out">&minus;</button>' +
       '<span class="mermaid-zoom-label">100%</span>' +
-      '<button class="zoom-reset" title="Reset">&#8634;</button>';
+      '<button class="zoom-reset" title="Fit to view">&#8634;</button>';
 
     // Viewport + inner
     const viewport = document.createElement('div');
@@ -265,21 +265,67 @@ function wrapMermaidContainers() {
     const inner = document.createElement('div');
     inner.className = 'mermaid-inner';
 
+    // Bottom resize splitter
+    const resizer = document.createElement('div');
+    resizer.className = 'mermaid-resizer';
+    resizer.title = 'Drag to resize';
+
     // Move SVG content into inner
     while (container.firstChild) inner.appendChild(container.firstChild);
     viewport.appendChild(inner);
     wrapper.appendChild(toolbar);
     wrapper.appendChild(viewport);
+    wrapper.appendChild(resizer);
     container.replaceWith(wrapper);
 
     // State
     let scale = 1, panX = 0, panY = 0, dragging = false, startX, startY;
+    let fitScale = 1; // scale that fits the SVG to the viewport
     const MIN_SCALE = 0.1, MAX_SCALE = 5;
     const label = toolbar.querySelector('.mermaid-zoom-label');
 
     function applyTransform() {
       inner.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
       label.textContent = Math.round(scale * 100) + '%';
+    }
+
+    // Fit diagram to viewport, centered (never enlarge beyond 100%)
+    let userResized = false;
+    function fitToView() {
+      const svg = inner.querySelector('svg');
+      if (!svg) return;
+      const vw = viewport.clientWidth;
+      if (!vw) return;
+      // Get SVG intrinsic size from viewBox or bounding box
+      const vb = svg.viewBox.baseVal;
+      const svgW = (vb && vb.width) || svg.getBBox().width || svg.clientWidth;
+      const svgH = (vb && vb.height) || svg.getBBox().height || svg.clientHeight;
+      if (!svgW || !svgH) return;
+      // Fix SVG to its intrinsic size so transform scaling works predictably
+      svg.style.width = svgW + 'px';
+      svg.style.height = svgH + 'px';
+      svg.removeAttribute('width');
+      // Get available height
+      let vh = viewport.clientHeight;
+      if (!userResized && vh < 100) {
+        // No CSS height (mermaid in markdown) — compute from position
+        const vpRect = viewport.getBoundingClientRect();
+        vh = Math.max(200, window.innerHeight - vpRect.top - 6);
+        viewport.style.height = vh + 'px';
+      }
+      // Fit within both dimensions, capped at 100% (never enlarge)
+      const pad = 16;
+      const availW = vw - pad * 2;
+      const availH = vh - pad * 2;
+      const ws = availW / svgW, hs = availH / svgH;
+      fitScale = Math.min(ws, hs, 1.0);
+      scale = fitScale;
+      // Center diagram in viewport
+      const scaledW = svgW * scale;
+      const scaledH = svgH * scale;
+      panX = (vw - scaledW) / 2;
+      panY = (vh - scaledH) / 2;
+      applyTransform();
     }
 
     function zoomAt(cx, cy, factor) {
@@ -329,8 +375,41 @@ function wrapMermaidContainers() {
       zoomAt(rect.width / 2, rect.height / 2, 1 / 1.3);
     });
     toolbar.querySelector('.zoom-reset').addEventListener('click', () => {
-      scale = 1; panX = 0; panY = 0;
-      applyTransform();
+      userResized = false;
+      fitToView();
+    });
+
+    // Bottom resize drag
+    let resizing = false, resizeStartY = 0, resizeStartH = 0;
+    resizer.addEventListener('mousedown', e => {
+      e.preventDefault();
+      resizing = true;
+      resizeStartY = e.clientY;
+      resizeStartH = viewport.offsetHeight;
+      resizer.classList.add('dragging');
+      document.body.style.cursor = 'row-resize';
+      document.body.style.userSelect = 'none';
+    });
+    window.addEventListener('mousemove', e => {
+      if (!resizing) return;
+      const newH = Math.max(100, resizeStartH + (e.clientY - resizeStartY));
+      viewport.style.height = newH + 'px';
+    });
+    window.addEventListener('mouseup', () => {
+      if (!resizing) return;
+      resizing = false;
+      userResized = true;
+      resizer.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      fitToView();
+    });
+
+    // Initial fit — defer to next frame so CSS flex layout is computed
+    requestAnimationFrame(() => {
+      // Force reflow to ensure clientHeight is accurate
+      void wrapper.offsetHeight;
+      fitToView();
     });
   });
 }
@@ -346,7 +425,10 @@ async function handleMessage(msg) {
     for (const code of codes) {
       const container = document.createElement('div');
       container.className = 'mermaid-container';
-      container.innerHTML = '<pre class="mermaid">' + code.textContent + '</pre>';
+      const pre = document.createElement('pre');
+      pre.className = 'mermaid';
+      pre.textContent = code.textContent;
+      container.appendChild(pre);
       code.parentElement.replaceWith(container);
     }
     if (el.querySelector('.mermaid')) {
@@ -355,8 +437,14 @@ async function handleMessage(msg) {
     }
 
   } else if (msg.type === 'mermaid') {
-    el.innerHTML = '<div class="mermaid-container"><pre class="mermaid">'
-      + (msg.content || '') + '</pre></div>';
+    el.innerHTML = '';
+    const container = document.createElement('div');
+    container.className = 'mermaid-container';
+    const pre = document.createElement('pre');
+    pre.className = 'mermaid';
+    pre.textContent = msg.content || '';
+    container.appendChild(pre);
+    el.appendChild(container);
     await mermaid.run({ nodes: el.querySelectorAll('.mermaid') });
     wrapMermaidContainers();
 

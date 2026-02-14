@@ -86,16 +86,30 @@ class ViewServer:
     # -- routes ---------------------------------------------------------------
 
     async def _handle_index(self, request: web.Request) -> web.Response:
+        import time
         html = (_VIEW_DIR / "index.html").read_text(encoding="utf-8")
-        return web.Response(text=html, content_type="text/html")
+        html = html.replace("/app.js", f"/app.js?v={int(time.time())}")
+        return web.Response(
+            text=html,
+            content_type="text/html",
+            headers={"Cache-Control": "no-cache"},
+        )
 
     async def _handle_style(self, request: web.Request) -> web.Response:
         css = (_VIEW_DIR / "style.css").read_text(encoding="utf-8")
-        return web.Response(text=css, content_type="text/css")
+        return web.Response(
+            text=css,
+            content_type="text/css",
+            headers={"Cache-Control": "no-cache"},
+        )
 
     async def _handle_app_js(self, request: web.Request) -> web.Response:
         js = (_VIEW_DIR / "app.js").read_text(encoding="utf-8")
-        return web.Response(text=js, content_type="application/javascript")
+        return web.Response(
+            text=js,
+            content_type="application/javascript",
+            headers={"Cache-Control": "no-cache"},
+        )
 
     async def _handle_favicon(self, request: web.Request) -> web.Response:
         svg = (_VIEW_DIR / "favico.svg").read_text(encoding="utf-8")

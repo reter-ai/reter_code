@@ -180,16 +180,31 @@ class ReterCodeServer:
         # Initialize FastMCP with Anthropic sampling handler
         self.app = FastMCP(
             "reter",
-            instructions="""Reter Code is an AI-powered code reasoning MCP server.
+            instructions="""Reter Code is an AI-powered code reasoning MCP server that maintains an indexed knowledge graph of the codebase.
 
-CRITICAL: Call `session(action="context")` at the START of every conversation to restore your reasoning state.
+CRITICAL RULES:
+1. Call `session(action="context")` at the START of every conversation to restore state.
+2. When the knowledge base has sources loaded (check `system(action="status")` → `total_sources > 0`), ALWAYS use RETER tools INSTEAD OF bash/grep/glob/read for code understanding tasks. RETER already has the codebase indexed — do not re-read files manually.
 
-Key tools:
+When the user asks about code, use these tools FIRST:
+- `code_inspection` - Explore structure: list_modules, list_classes, describe_class, get_architecture, find_usages, analyze_dependencies, predict_impact
+- `natural_language_query` - Ask any question about code in plain English (translates to CADSL automatically)
+- `semantic_search` - Find code by meaning, not just keywords
+- `reql` - Direct queries against the knowledge graph
+- `diagram` - Visualize: class_hierarchy, sequence, dependencies, call_graph, coupling
+- `recommender` - Code quality: refactoring smells, test coverage gaps
+
+For reasoning and planning, use:
 - `thinking` - Record reasoning steps with design doc sections (context, goals, design, alternatives, risks, implementation, tasks)
-- `session` - Manage reasoning sessions (start, context, end)
-- `diagram` - Generate UML diagrams (gantt, class, sequence)
-- `code_inspection` - Python/JS/C#/C++ code analysis
-- `recommender` - Refactoring and test coverage recommendations
+- `session` - Manage sessions (start, context, end)
+
+Intent → tool mapping:
+- "What's in the codebase?" → `code_inspection(action="get_architecture")` or `code_inspection(action="list_modules")`
+- "Find X" / "Where is X?" → `semantic_search(query="X")` or `natural_language_query(question="...")`
+- "How does X work?" → `code_inspection(action="describe_class", target="X")` + `diagram(diagram_type="sequence", target="X")`
+- "What depends on X?" → `code_inspection(action="analyze_dependencies")` or `code_inspection(action="predict_impact", target="X")`
+- "Show me the class hierarchy" → `diagram(diagram_type="class_hierarchy")`
+- "What should I refactor?" → `recommender(recommender_type="refactoring")`
 
 Design doc workflow:
 1. thinking(section="context") - Document problem/background

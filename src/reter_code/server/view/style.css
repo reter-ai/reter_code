@@ -335,17 +335,39 @@ body {
 .mermaid-viewport {
   overflow: hidden;
   cursor: grab;
-  min-height: 200px;
+}
+/* Standalone mermaid (only child of #content): fill available height */
+#content:has(> .mermaid-wrapper:only-child) {
+  padding: 0;
+}
+#content > .mermaid-wrapper:only-child {
+  height: calc(100vh - 60px);
+  display: flex;
+  flex-direction: column;
+  border: none;
+  margin: 0;
+}
+#content > .mermaid-wrapper:only-child .mermaid-viewport {
+  flex: 1;
 }
 .mermaid-viewport.grabbing { cursor: grabbing; }
 .mermaid-viewport .mermaid-inner {
   transform-origin: 0 0;
   display: inline-block;
-  padding: 24px;
-  min-width: 100%;
-  text-align: center;
 }
 .mermaid-viewport svg { max-width: none; height: auto; }
+
+/* Bottom resize splitter */
+.mermaid-resizer {
+  height: 6px;
+  cursor: row-resize;
+  background: var(--color-border);
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.mermaid-resizer:hover, .mermaid-resizer.dragging {
+  background: var(--color-link);
+}
 
 /* Zoom toolbar */
 .mermaid-toolbar {
