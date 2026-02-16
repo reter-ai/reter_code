@@ -45,6 +45,7 @@ LANGUAGE_CONFIGS = {
     "lua": ("load_lua_from_string", ["*.lua"], ["build", ".luarocks"]),
     "xaml": ("load_xaml_from_string", ["*.xaml"], ["bin", "obj", ".vs"]),
     "bash": ("load_bash_from_string", ["*.sh", "*.bash", "*.zsh", "*.ksh"], [".git"]),
+    "eval": ("load_eval_from_string", ["*.eval"], []),
 }
 
 

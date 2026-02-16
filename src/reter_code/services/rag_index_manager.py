@@ -82,6 +82,7 @@ RAG_LANGUAGE_CONFIG = [
     ("lua",        "lua:",    "Lua",          (".lua",)),
     ("xaml",       "xaml:",   "XAML",         (".xaml",)),
     ("bash",       "bash:",   "Bash",         (".sh", ".bash", ".zsh", ".ksh")),
+    ("eval",       "eval:",   "Eval",         (".eval",)),
 ]
 
 # Build derived data structures from config
@@ -803,6 +804,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             ("scala", "Scala"), ("haskell", "Haskell"), ("kotlin", "Kotlin"),
             ("r", "R"), ("ruby", "Ruby"), ("dart", "Dart"), ("delphi", "Delphi"),
             ("ada", "Ada"), ("lua", "Lua"), ("xaml", "XAML"), ("bash", "Bash"),
+            ("eval", "Eval"),
         ]
         for lang_key, lang_display in _generic_langs:
             lang_changes = getattr(changes, lang_key, None)
@@ -1315,6 +1317,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             ("lua", "lua:", "Lua"),
             ("xaml", "xaml:", "XAML"),
             ("bash", "bash:", "Bash"),
+            ("eval", "eval:", "Eval"),
         ]
         for lang_key, lang_prefix, lang_display in _generic_sync_langs:
             lang_to_add = to_add_by_lang[lang_key]

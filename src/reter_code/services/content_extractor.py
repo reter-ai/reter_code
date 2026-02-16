@@ -39,6 +39,7 @@ _COMMENT_SYNTAX = {
     "xaml": {"line": None, "block": ("<!--", "-->")},
     "html": {"line": None, "block": ("<!--", "-->")},
     "bash": {"line": "#", "block": None},
+    "eval": {"line": "//", "block": ("/*", "*/")},
 }
 
 

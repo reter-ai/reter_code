@@ -649,6 +649,16 @@ class RAGCollectorMixin:
         """Collect Bash entities for batched indexing."""
         return self._collect_entities(entities, source_id, project_root, "bash", chunk_config)
 
+    def _collect_eval_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect Eval entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "eval", chunk_config)
+
     def _collect_markdown_chunks(
         self,
         chunks: List[Any],

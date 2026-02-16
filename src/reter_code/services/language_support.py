@@ -56,6 +56,7 @@ class Language(Enum):
     LUA = "lua"         # Lua
     XAML = "xaml"       # XAML (WPF/UWP/MAUI)
     BASH = "bash"       # Bash/Shell
+    EVAL = "eval"       # Eval (Scheme-based)
 
     @classmethod
     def from_string(cls, value) -> "Language":
@@ -119,10 +120,11 @@ class Language(Enum):
             "xaml": cls.XAML,
             "bash": cls.BASH,
             "sh": cls.BASH,
+            "eval": cls.EVAL,
         }
         if value_lower in mapping:
             return mapping[value_lower]
-        raise ValueError(f"Unsupported language: {value}. Supported: oo, python, javascript, html, csharp, c, cpp, java, go, rust, erlang, php, objc, swift, vb6, scala, haskell, kotlin, r, ruby, dart, delphi, ada, lua, xaml, bash")
+        raise ValueError(f"Unsupported language: {value}. Supported: oo, python, javascript, html, csharp, c, cpp, java, go, rust, erlang, php, objc, swift, vb6, scala, haskell, kotlin, r, ruby, dart, delphi, ada, lua, xaml, bash, eval")
 
 
 # Type alias for language parameter
@@ -139,6 +141,7 @@ LanguageType = Literal[
     "lua",
     "xaml",
     "bash", "sh",
+    "eval",
     "all", "generic"
 ]
 
@@ -214,6 +217,7 @@ class LanguageSupport:
         Language.LUA: "lua",
         Language.XAML: "xaml",
         Language.BASH: "bash",
+        Language.EVAL: "eval",
     }
 
     # Entity concept mappings (some entities have different names per language)
@@ -352,7 +356,7 @@ class LanguageSupport:
         return [
             "oo", "python", "javascript", "html", "csharp", "c", "cpp",
             "java", "go", "rust", "erlang", "php", "objc", "swift",
-            "vb6", "scala", "haskell", "kotlin", "r", "ruby", "dart", "delphi", "ada", "lua", "xaml", "bash",
+            "vb6", "scala", "haskell", "kotlin", "r", "ruby", "dart", "delphi", "ada", "lua", "xaml", "bash", "eval",
         ]
 
     @classmethod

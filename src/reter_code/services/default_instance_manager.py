@@ -881,6 +881,7 @@ class DefaultInstanceManager:
             (self.LUA_EXTENSIONS, "lua"),
             (self.XAML_EXTENSIONS, "xaml"),
             (self.BASH_EXTENSIONS, "bash"),
+            (self.EVAL_EXTENSIONS, "eval"),
         ]
 
         def _lang_for_ext(rel_path: str) -> Optional[str]:
@@ -1101,6 +1102,7 @@ class DefaultInstanceManager:
     LUA_EXTENSIONS = {".lua"}
     XAML_EXTENSIONS = {".xaml"}
     BASH_EXTENSIONS = {".sh", ".bash", ".zsh", ".ksh"}
+    EVAL_EXTENSIONS = {".eval"}
     ALL_CODE_EXTENSIONS = (
         PYTHON_EXTENSIONS | JAVASCRIPT_EXTENSIONS | HTML_EXTENSIONS |
         CSHARP_EXTENSIONS | C_EXTENSIONS | CPP_EXTENSIONS | JAVA_EXTENSIONS |
@@ -1109,7 +1111,8 @@ class DefaultInstanceManager:
         VB6_EXTENSIONS | SCALA_EXTENSIONS | HASKELL_EXTENSIONS |
         KOTLIN_EXTENSIONS | R_EXTENSIONS | RUBY_EXTENSIONS |
         DART_EXTENSIONS | DELPHI_EXTENSIONS | ADA_EXTENSIONS |
-        LUA_EXTENSIONS | XAML_EXTENSIONS | BASH_EXTENSIONS
+        LUA_EXTENSIONS | XAML_EXTENSIONS | BASH_EXTENSIONS |
+        EVAL_EXTENSIONS
     )
 
     def _scan_project_files(self) -> Dict[str, Tuple[str, str]]:
@@ -1483,6 +1486,8 @@ class DefaultInstanceManager:
             reter.load_xaml_file(abs_path, base)
         elif ext in self.BASH_EXTENSIONS:
             reter.load_bash_file(abs_path, base)
+        elif ext in self.EVAL_EXTENSIONS:
+            reter.load_eval_file(abs_path, base)
         else:
             raise ValueError(f"Unsupported file type: {rel_path}")
 
@@ -1593,6 +1598,7 @@ class DefaultInstanceManager:
             (self.LUA_EXTENSIONS, "lua"),
             (self.XAML_EXTENSIONS, "xaml"),
             (self.BASH_EXTENSIONS, "bash"),
+            (self.EVAL_EXTENSIONS, "eval"),
         ]
 
         def _lang_for_ext(rel_path: str) -> Optional[str]:

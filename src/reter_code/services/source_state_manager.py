@@ -145,6 +145,7 @@ class SourceStateManager:
     LUA_EXTENSIONS = {".lua"}
     XAML_EXTENSIONS = {".xaml"}
     BASH_EXTENSIONS = {".sh", ".bash", ".zsh", ".ksh"}
+    EVAL_EXTENSIONS = {".eval"}
     MARKDOWN_EXTENSIONS = {".md", ".markdown"}
     ALL_CODE_EXTENSIONS = (
         PYTHON_EXTENSIONS | JAVASCRIPT_EXTENSIONS | HTML_EXTENSIONS |
@@ -154,7 +155,8 @@ class SourceStateManager:
         VB6_EXTENSIONS | SCALA_EXTENSIONS | HASKELL_EXTENSIONS |
         KOTLIN_EXTENSIONS | R_EXTENSIONS | RUBY_EXTENSIONS |
         DART_EXTENSIONS | DELPHI_EXTENSIONS | ADA_EXTENSIONS |
-        LUA_EXTENSIONS | XAML_EXTENSIONS | BASH_EXTENSIONS
+        LUA_EXTENSIONS | XAML_EXTENSIONS | BASH_EXTENSIONS |
+        EVAL_EXTENSIONS
     )
 
     def __init__(self, state_file_path: Path, project_root: Path):

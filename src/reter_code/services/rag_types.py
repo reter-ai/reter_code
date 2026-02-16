@@ -58,6 +58,7 @@ class SyncChanges:
     lua: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
     xaml: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
     bash: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    eval: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
     markdown: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
 
     @classmethod
@@ -110,7 +111,7 @@ class SyncChanges:
             self.python, self.javascript, self.html, self.csharp, self.c, self.cpp,
             self.java, self.go, self.rust, self.erlang, self.php,
             self.objc, self.swift, self.vb6, self.scala, self.haskell,
-            self.kotlin, self.r, self.ruby, self.dart, self.delphi, self.ada, self.lua, self.xaml, self.bash, self.markdown,
+            self.kotlin, self.r, self.ruby, self.dart, self.delphi, self.ada, self.lua, self.xaml, self.bash, self.eval, self.markdown,
         ):
             if lang_changes.changed or lang_changes.deleted:
                 return True
