@@ -24,6 +24,7 @@ LANGUAGE_CONFIGS = {
     "javascript": ("load_javascript_from_string", ["*.js", "*.mjs", "*.jsx"], ["node_modules"]),
     "html": ("load_html_from_string", ["*.html", "*.htm"], ["node_modules"]),
     "csharp": ("load_csharp_from_string", ["*.cs"], ["bin", "obj"]),
+    "c": ("load_cpp_from_string", ["*.c"], ["CMakeFiles", "build", "cmake-build-"]),
     "cpp": ("load_cpp_from_string", ["*.cpp", "*.cc", "*.cxx", "*.c++", "*.hpp", "*.hh", "*.hxx", "*.h++", "*.h"], ["CMakeFiles", "build", "cmake-build-"]),
     "java": ("load_java_from_string", ["*.java"], ["build", "target", ".gradle", "out"]),
     "go": ("load_go_from_string", ["*.go"], ["vendor", "testdata", ".git"]),
@@ -35,6 +36,15 @@ LANGUAGE_CONFIGS = {
     "vb6": ("load_vb6_from_string", ["*.bas", "*.cls", "*.frm"], []),
     "scala": ("load_scala_from_string", ["*.scala", "*.sc"], ["target", ".bsp", ".metals"]),
     "haskell": ("load_haskell_from_string", ["*.hs", "*.lhs"], [".stack-work", "dist-newstyle", "dist"]),
+    "kotlin": ("load_kotlin_from_string", ["*.kt", "*.kts"], ["build", ".gradle", ".idea"]),
+    "r": ("load_r_from_string", ["*.r", "*.R"], ["renv", ".Rproj.user", "packrat"]),
+    "ruby": ("load_ruby_from_string", ["*.rb", "*.rake", "*.gemspec"], ["vendor", ".bundle", "tmp"]),
+    "dart": ("load_dart_from_string", ["*.dart"], ["build", ".dart_tool", ".pub-cache"]),
+    "delphi": ("load_delphi_from_string", ["*.pas", "*.dpr", "*.dpk", "*.inc"], ["__history", "__recovery", "DCU"]),
+    "ada": ("load_ada_from_string", ["*.adb", "*.ads", "*.ada"], ["obj", ".alire"]),
+    "lua": ("load_lua_from_string", ["*.lua"], ["build", ".luarocks"]),
+    "xaml": ("load_xaml_from_string", ["*.xaml"], ["bin", "obj", ".vs"]),
+    "bash": ("load_bash_from_string", ["*.sh", "*.bash", "*.zsh", "*.ksh"], [".git"]),
 }
 
 
@@ -190,6 +200,17 @@ class ReterLoaderMixin:
     def load_csharp_directory(self, directory, recursive=True, exclude_patterns=None, progress_callback=None):
         return self._load_lang_directory("csharp", directory, recursive, exclude_patterns, progress_callback)
 
+    # --- C ---
+
+    def load_c_file(self, filepath, base_path=None):
+        return self._load_lang_file("c", filepath, base_path)
+
+    def load_c_code(self, code, source="module", progress_callback=None):
+        return self._load_lang_code("c", code, source, progress_callback)
+
+    def load_c_directory(self, directory, recursive=True, exclude_patterns=None, progress_callback=None):
+        return self._load_lang_directory("c", directory, recursive, exclude_patterns, progress_callback)
+
     # --- C++ ---
 
     def load_cpp_file(self, filepath, base_path=None):
@@ -310,6 +331,94 @@ class ReterLoaderMixin:
 
     def load_haskell_directory(self, directory, recursive=True, exclude_patterns=None, progress_callback=None):
         return self._load_lang_directory("haskell", directory, recursive, exclude_patterns, progress_callback)
+
+    # --- Kotlin ---
+
+    def load_kotlin_file(self, filepath, base_path=None):
+        return self._load_lang_file("kotlin", filepath, base_path)
+
+    def load_kotlin_code(self, code, source="module", progress_callback=None):
+        return self._load_lang_code("kotlin", code, source, progress_callback)
+
+    def load_kotlin_directory(self, directory, recursive=True, exclude_patterns=None, progress_callback=None):
+        return self._load_lang_directory("kotlin", directory, recursive, exclude_patterns, progress_callback)
+
+    # --- R ---
+
+    def load_r_file(self, filepath, base_path=None):
+        return self._load_lang_file("r", filepath, base_path)
+
+    def load_r_code(self, code, source="module", progress_callback=None):
+        return self._load_lang_code("r", code, source, progress_callback)
+
+    def load_r_directory(self, directory, recursive=True, exclude_patterns=None, progress_callback=None):
+        return self._load_lang_directory("r", directory, recursive, exclude_patterns, progress_callback)
+
+    # --- Ruby ---
+
+    def load_ruby_file(self, filepath, base_path=None):
+        return self._load_lang_file("ruby", filepath, base_path)
+
+    def load_ruby_code(self, code, source="module", progress_callback=None):
+        return self._load_lang_code("ruby", code, source, progress_callback)
+
+    def load_ruby_directory(self, directory, recursive=True, exclude_patterns=None, progress_callback=None):
+        return self._load_lang_directory("ruby", directory, recursive, exclude_patterns, progress_callback)
+
+    # --- Dart ---
+
+    def load_dart_file(self, filepath, base_path=None):
+        return self._load_lang_file("dart", filepath, base_path)
+
+    def load_dart_code(self, code, source="module", progress_callback=None):
+        return self._load_lang_code("dart", code, source, progress_callback)
+
+    def load_dart_directory(self, directory, recursive=True, exclude_patterns=None, progress_callback=None):
+        return self._load_lang_directory("dart", directory, recursive, exclude_patterns, progress_callback)
+
+    # --- Delphi ---
+
+    def load_delphi_file(self, filepath, base_path=None):
+        return self._load_lang_file("delphi", filepath, base_path)
+
+    def load_delphi_code(self, code, source="unit", progress_callback=None):
+        return self._load_lang_code("delphi", code, source, progress_callback)
+
+    def load_delphi_directory(self, directory, recursive=True, exclude_patterns=None, progress_callback=None):
+        return self._load_lang_directory("delphi", directory, recursive, exclude_patterns, progress_callback)
+
+    # --- Ada ---
+
+    def load_ada_file(self, filepath, base_path=None):
+        return self._load_lang_file("ada", filepath, base_path)
+
+    def load_ada_code(self, code, source="unit", progress_callback=None):
+        return self._load_lang_code("ada", code, source, progress_callback)
+
+    def load_ada_directory(self, directory, recursive=True, exclude_patterns=None, progress_callback=None):
+        return self._load_lang_directory("ada", directory, recursive, exclude_patterns, progress_callback)
+
+    # --- Lua ---
+
+    def load_lua_file(self, filepath, base_path=None):
+        return self._load_lang_file("lua", filepath, base_path)
+
+    def load_lua_code(self, code, source="script", progress_callback=None):
+        return self._load_lang_code("lua", code, source, progress_callback)
+
+    def load_lua_directory(self, directory, recursive=True, exclude_patterns=None, progress_callback=None):
+        return self._load_lang_directory("lua", directory, recursive, exclude_patterns, progress_callback)
+
+    # --- XAML ---
+
+    def load_xaml_file(self, filepath, base_path=None):
+        return self._load_lang_file("xaml", filepath, base_path)
+
+    def load_xaml_code(self, code, source="document", progress_callback=None):
+        return self._load_lang_code("xaml", code, source, progress_callback)
+
+    def load_xaml_directory(self, directory, recursive=True, exclude_patterns=None, progress_callback=None):
+        return self._load_lang_directory("xaml", directory, recursive, exclude_patterns, progress_callback)
 
 
 __all__ = [

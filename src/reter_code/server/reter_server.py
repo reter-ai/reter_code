@@ -139,7 +139,10 @@ class ReterServer:
                 "default",
                 progress_callback=self._console
             )
-            self._rag_manager = RAGIndexManager(self._persistence)
+            self._rag_manager = RAGIndexManager(
+                self._persistence,
+                gitignore_filter=self._default_manager.is_excluded,
+            )
 
             # Link RAG manager to default instance manager for sync
             self._default_manager.set_rag_manager(self._rag_manager)
@@ -235,6 +238,7 @@ class ReterServer:
 
         # Query socket (REQ/REP pattern)
         self._query_socket = self._context.socket(zmq.REP)
+        self._query_socket.setsockopt(zmq.LINGER, 0)
 
         # Bind to configured endpoint
         if self.config.query_port == 0:
@@ -248,6 +252,7 @@ class ReterServer:
 
         # Event socket (PUB/SUB pattern)
         self._event_socket = self._context.socket(zmq.PUB)
+        self._event_socket.setsockopt(zmq.LINGER, 0)
 
         if self.config.event_port == 0:
             # Dynamic port allocation
@@ -683,7 +688,12 @@ class ReterServer:
         """Setup signal handlers for graceful shutdown."""
         def signal_handler(signum, frame):
             logger.info(f"Received signal {signum}, shutting down...")
-            self.stop()
+            # Only set flag — don't call stop() from signal handler.
+            # stop() closes ZMQ sockets/context which blocks if called
+            # while poller.poll() is on the call stack.
+            # The event loop will exit on next poll cycle (≤100ms),
+            # then start()'s finally block calls stop() safely.
+            self._running = False
 
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)

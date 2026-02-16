@@ -35,6 +35,7 @@ class Language(Enum):
     JAVASCRIPT = "js"   # JavaScript
     HTML = "html"       # HTML documents
     CSHARP = "cs"       # C#
+    C = "c"             # C
     CPP = "cpp"         # C++
     JAVA = "java"       # Java
     GO = "go"           # Go
@@ -46,6 +47,15 @@ class Language(Enum):
     VB6 = "vb6"         # Visual Basic 6
     SCALA = "scala"     # Scala
     HASKELL = "haskell" # Haskell
+    KOTLIN = "kotlin"   # Kotlin
+    R = "r"             # R
+    RUBY = "ruby"       # Ruby
+    DART = "dart"       # Dart
+    DELPHI = "delphi"   # Delphi/Object Pascal
+    ADA = "ada"         # Ada
+    LUA = "lua"         # Lua
+    XAML = "xaml"       # XAML (WPF/UWP/MAUI)
+    BASH = "bash"       # Bash/Shell
 
     @classmethod
     def from_string(cls, value) -> "Language":
@@ -70,6 +80,7 @@ class Language(Enum):
             "cs": cls.CSHARP,
             "csharp": cls.CSHARP,
             "c#": cls.CSHARP,
+            "c": cls.C,
             "cpp": cls.CPP,
             "c++": cls.CPP,
             "cxx": cls.CPP,
@@ -91,19 +102,43 @@ class Language(Enum):
             "scala": cls.SCALA,
             "haskell": cls.HASKELL,
             "hs": cls.HASKELL,
+            "kotlin": cls.KOTLIN,
+            "kt": cls.KOTLIN,
+            "r": cls.R,
+            "ruby": cls.RUBY,
+            "rb": cls.RUBY,
+            "dart": cls.DART,
+            "delphi": cls.DELPHI,
+            "pascal": cls.DELPHI,
+            "pas": cls.DELPHI,
+            "dpr": cls.DELPHI,
+            "ada": cls.ADA,
+            "adb": cls.ADA,
+            "ads": cls.ADA,
+            "lua": cls.LUA,
+            "xaml": cls.XAML,
+            "bash": cls.BASH,
+            "sh": cls.BASH,
         }
         if value_lower in mapping:
             return mapping[value_lower]
-        raise ValueError(f"Unsupported language: {value}. Supported: oo, python, javascript, html, csharp, cpp, java, go, rust, erlang, php, objc, swift, vb6, scala, haskell")
+        raise ValueError(f"Unsupported language: {value}. Supported: oo, python, javascript, html, csharp, c, cpp, java, go, rust, erlang, php, objc, swift, vb6, scala, haskell, kotlin, r, ruby, dart, delphi, ada, lua, xaml, bash")
 
 
 # Type alias for language parameter
 LanguageType = Literal[
     "oo", "py", "python", "js", "javascript", "ts", "typescript",
-    "html", "htm", "cs", "csharp", "c#", "cpp", "c++", "cxx",
+    "html", "htm", "cs", "csharp", "c#", "c", "cpp", "c++", "cxx",
     "java", "go", "golang", "rust", "rs", "erlang", "erl",
     "php", "objc", "objective-c", "objectivec", "swift",
     "vb6", "vb", "visualbasic", "scala", "haskell", "hs",
+    "kotlin", "kt", "r", "ruby", "rb",
+    "dart",
+    "delphi", "pascal", "pas", "dpr",
+    "ada", "adb", "ads",
+    "lua",
+    "xaml",
+    "bash", "sh",
     "all", "generic"
 ]
 
@@ -158,6 +193,7 @@ class LanguageSupport:
         Language.JAVASCRIPT: "js",
         Language.HTML: "html",
         Language.CSHARP: "cs",
+        Language.C: "c",
         Language.CPP: "cpp",
         Language.JAVA: "java",
         Language.GO: "go",
@@ -169,6 +205,15 @@ class LanguageSupport:
         Language.VB6: "vb6",
         Language.SCALA: "scala",
         Language.HASKELL: "haskell",
+        Language.KOTLIN: "kotlin",
+        Language.R: "r",
+        Language.RUBY: "ruby",
+        Language.DART: "dart",
+        Language.DELPHI: "delphi",
+        Language.ADA: "ada",
+        Language.LUA: "lua",
+        Language.XAML: "xaml",
+        Language.BASH: "bash",
     }
 
     # Entity concept mappings (some entities have different names per language)
@@ -305,9 +350,9 @@ class LanguageSupport:
     def supported_languages(cls) -> List[str]:
         """Return list of supported language identifiers."""
         return [
-            "oo", "python", "javascript", "html", "csharp", "cpp",
+            "oo", "python", "javascript", "html", "csharp", "c", "cpp",
             "java", "go", "rust", "erlang", "php", "objc", "swift",
-            "vb6", "scala", "haskell",
+            "vb6", "scala", "haskell", "kotlin", "r", "ruby", "dart", "delphi", "ada", "lua", "xaml", "bash",
         ]
 
     @classmethod

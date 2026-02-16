@@ -50,6 +50,22 @@ from .reter_loaders import ReterLoaderMixin
 # Configure module logger to also write to debug_trace.log
 logger = configure_logger_for_debug_trace(__name__)
 
+# Guard: MCP process must never instantiate ReterWrapper — all ops go through ZeroMQ
+_block_reter_init = False
+
+
+def block_reter_init_in_this_process():
+    """Call from MCP server startup to prevent accidental ReterWrapper creation.
+
+    The MCP process must delegate all RETER operations to the ZeroMQ server.
+    If any code path accidentally tries to create a ReterWrapper here, it will
+    raise RuntimeError instead of loading the C++ RETE engine.
+    """
+    global _block_reter_init
+    _block_reter_init = True
+    logger.info("[ReterWrapper] Blocked RETER init in this process (MCP remote-only mode)")
+
+
 # Re-export for backward compatibility
 __all__ = [
     # Exceptions
@@ -68,6 +84,8 @@ __all__ = [
     "check_initialization",
     "safe_cpp_call",
     "generate_source_id",
+    # Guard
+    "block_reter_init_in_this_process",
     # Main class
     "ReterWrapper",
 ]
@@ -117,6 +135,11 @@ class ReterWrapper(ReterLoaderMixin):
             load_ontology: If True, automatically load code ontology.
                           Set to False when loading from snapshot (ontology already included).
         """
+        if _block_reter_init:
+            raise RuntimeError(
+                "ReterWrapper creation blocked in MCP process. "
+                "All RETER operations must go through the ZeroMQ server via ReterClient."
+            )
         logger.debug(f"ReterWrapper.__init__ starting... (load_ontology={load_ontology})")
         logger.debug("Creating Reter(variant='ai')...")
         try:

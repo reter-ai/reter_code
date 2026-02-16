@@ -124,6 +124,7 @@ class SourceStateManager:
     JAVASCRIPT_EXTENSIONS = {".js", ".mjs", ".jsx", ".ts", ".tsx"}
     HTML_EXTENSIONS = {".html", ".htm"}
     CSHARP_EXTENSIONS = {".cs"}
+    C_EXTENSIONS = {".c"}
     CPP_EXTENSIONS = {".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h++", ".h"}
     JAVA_EXTENSIONS = {".java"}
     GO_EXTENSIONS = {".go"}
@@ -135,13 +136,25 @@ class SourceStateManager:
     VB6_EXTENSIONS = {".bas", ".cls", ".frm"}
     SCALA_EXTENSIONS = {".scala", ".sc"}
     HASKELL_EXTENSIONS = {".hs", ".lhs"}
+    KOTLIN_EXTENSIONS = {".kt", ".kts"}
+    R_EXTENSIONS = {".r", ".R"}
+    RUBY_EXTENSIONS = {".rb", ".rake", ".gemspec"}
+    DART_EXTENSIONS = {".dart"}
+    DELPHI_EXTENSIONS = {".pas", ".dpr", ".dpk", ".inc"}
+    ADA_EXTENSIONS = {".adb", ".ads", ".ada"}
+    LUA_EXTENSIONS = {".lua"}
+    XAML_EXTENSIONS = {".xaml"}
+    BASH_EXTENSIONS = {".sh", ".bash", ".zsh", ".ksh"}
     MARKDOWN_EXTENSIONS = {".md", ".markdown"}
     ALL_CODE_EXTENSIONS = (
         PYTHON_EXTENSIONS | JAVASCRIPT_EXTENSIONS | HTML_EXTENSIONS |
-        CSHARP_EXTENSIONS | CPP_EXTENSIONS | JAVA_EXTENSIONS |
+        CSHARP_EXTENSIONS | C_EXTENSIONS | CPP_EXTENSIONS | JAVA_EXTENSIONS |
         GO_EXTENSIONS | RUST_EXTENSIONS | ERLANG_EXTENSIONS |
         PHP_EXTENSIONS | OBJC_EXTENSIONS | SWIFT_EXTENSIONS |
-        VB6_EXTENSIONS | SCALA_EXTENSIONS | HASKELL_EXTENSIONS
+        VB6_EXTENSIONS | SCALA_EXTENSIONS | HASKELL_EXTENSIONS |
+        KOTLIN_EXTENSIONS | R_EXTENSIONS | RUBY_EXTENSIONS |
+        DART_EXTENSIONS | DELPHI_EXTENSIONS | ADA_EXTENSIONS |
+        LUA_EXTENSIONS | XAML_EXTENSIONS | BASH_EXTENSIONS
     )
 
     def __init__(self, state_file_path: Path, project_root: Path):

@@ -133,6 +133,12 @@ class ReterCodeServer:
         import time as _time
         _init_start = _time.time()
 
+        # Block heavy resource creation in MCP process — all ops go through ZeroMQ
+        from .services.embedding_service import block_embedding_init_in_this_process
+        from .reter_wrapper import block_reter_init_in_this_process
+        block_embedding_init_in_this_process()
+        block_reter_init_in_this_process()
+
         # Documentation provider (static content, no RETER needed)
         self.doc_provider = DocumentationProvider()
 

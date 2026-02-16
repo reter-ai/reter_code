@@ -152,6 +152,13 @@ class EmbeddingService:
         if self._initialized:
             return
 
+        # Guard: MCP process must never load embedding models
+        if _block_embedding_init:
+            raise RuntimeError(
+                "EmbeddingService.initialize() blocked in MCP process. "
+                "All RAG/embedding operations must go through ZeroMQ server."
+            )
+
         # Simple spin-wait if another call is initializing
         # This is acceptable because:
         # 1. Initialization happens once at startup
@@ -687,6 +694,21 @@ class LightweightEmbeddingService(EmbeddingService):
 _embedding_service_singleton: Optional[EmbeddingService] = None
 _lightweight_singleton: Optional[EmbeddingService] = None
 
+# Guard: MCP process must never load embedding models — all RAG goes through ZeroMQ
+_block_embedding_init = False
+
+
+def block_embedding_init_in_this_process():
+    """Call from MCP server startup to prevent accidental embedding model loading.
+
+    The MCP process must delegate all RAG/embedding operations to the ZeroMQ server.
+    If any code path accidentally tries to create an EmbeddingService here, it will
+    raise RuntimeError instead of silently loading a 500MB model and blocking the event loop.
+    """
+    global _block_embedding_init
+    _block_embedding_init = True
+    logger.info("[Embedding] Blocked embedding init in this process (MCP remote-only mode)")
+
 
 def get_embedding_service(
     config: Optional[Dict[str, Any]] = None,
@@ -705,6 +727,14 @@ def get_embedding_service(
         Configured EmbeddingService instance (singleton)
     """
     global _embedding_service_singleton, _lightweight_singleton
+
+    if _block_embedding_init:
+        raise RuntimeError(
+            "EmbeddingService creation blocked in MCP process. "
+            "All RAG/embedding operations must go through the ZeroMQ server. "
+            "Use reter_client.cadsl_examples(action='search', ...) or "
+            "reter_client.similar_cadsl_tools() instead."
+        )
 
     if config is None:
         config = {}

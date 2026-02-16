@@ -21,8 +21,6 @@ Supported settings in reter_code.json:
     "rag_max_body_lines": 50,              // -> RETER_RAG_MAX_BODY_LINES
     "rag_batch_size": 32,                  // -> RETER_RAG_BATCH_SIZE
     "rag_index_markdown": true,            // -> RETER_RAG_INDEX_MARKDOWN
-    "rag_markdown_include": "**/*.md",     // -> RETER_RAG_MARKDOWN_INCLUDE
-    "rag_markdown_exclude": "node_modules/**",  // -> RETER_RAG_MARKDOWN_EXCLUDE
 
     // Code Chunking Configuration
     "rag_code_chunk_enabled": true,        // -> RETER_RAG_CODE_CHUNK_ENABLED
@@ -68,8 +66,6 @@ class ConfigLoader:
         "rag_max_body_lines": "RETER_RAG_MAX_BODY_LINES",
         "rag_batch_size": "RETER_RAG_BATCH_SIZE",
         "rag_index_markdown": "RETER_RAG_INDEX_MARKDOWN",
-        "rag_markdown_include": "RETER_RAG_MARKDOWN_INCLUDE",
-        "rag_markdown_exclude": "RETER_RAG_MARKDOWN_EXCLUDE",
         "rag_markdown_max_chunk_words": "RETER_RAG_MARKDOWN_MAX_CHUNK_WORDS",
         "rag_markdown_min_chunk_words": "RETER_RAG_MARKDOWN_MIN_CHUNK_WORDS",
         # Code chunking configuration
@@ -87,8 +83,6 @@ class ConfigLoader:
         "rag_max_body_lines": 50,
         "rag_batch_size": 32,
         "rag_index_markdown": True,
-        "rag_markdown_include": "**/*.md",
-        "rag_markdown_exclude": "node_modules/**",
         "rag_markdown_max_chunk_words": 500,
         "rag_markdown_min_chunk_words": 50,
         # Code chunking defaults

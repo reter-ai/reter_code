@@ -175,8 +175,21 @@ def get_example(name: str) -> str:
     return f"# Example: {category}/{name}.cadsl\n\n{content}"
 
 
-def search_examples(query: str, max_results: int = 10) -> str:
-    """Search for similar CADSL examples using semantic similarity."""
+def search_examples(query: str, max_results: int = 10, reter_client=None) -> str:
+    """Search for similar CADSL examples using semantic similarity.
+
+    Delegates to RETER server via ZeroMQ to avoid loading embedding model in MCP process.
+    Falls back to local execution only if no reter_client is available.
+    """
+    if reter_client is not None:
+        try:
+            result = reter_client.cadsl_examples(action="search", query=query, max_results=max_results)
+            if result.get("success"):
+                return result.get("content", "# No results found.")
+        except Exception as e:
+            logger.warning(f"search_examples via ZeroMQ failed: {e}, falling back to local")
+
+    # Fallback: local execution (only if no server connection)
     from .hybrid_query_engine import handle_search_examples
     return handle_search_examples(query, max_results)
 
@@ -558,7 +571,7 @@ def _create_query_tools(reter_client=None):
     async def search_examples_tool(args):
         query = args.get("query", "")
         max_results = args.get("max_results", 10)
-        content = search_examples(query, max_results)
+        content = await asyncio.to_thread(search_examples, query, max_results, reter_client)
         return {"content": [{"type": "text", "text": content}]}
 
     @tool("run_reql", "Execute a REQL query and return results (use to test queries)", {"query": str, "limit": int})

@@ -30,13 +30,14 @@ class SyncChanges:
     ::: This is-in-layer Utility-Layer.
     ::: This is a value-object.
 
-    Consolidates per-language change lists (16 languages + markdown)
+    Consolidates per-language change lists (19 languages + markdown)
     into a structured object organized by language.
     """
     python: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
     javascript: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
     html: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
     csharp: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    c: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
     cpp: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
     java: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
     go: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
@@ -48,6 +49,15 @@ class SyncChanges:
     vb6: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
     scala: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
     haskell: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    kotlin: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    r: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    ruby: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    dart: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    delphi: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    ada: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    lua: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    xaml: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
+    bash: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
     markdown: LanguageSourceChanges = field(default_factory=LanguageSourceChanges)
 
     @classmethod
@@ -97,10 +107,10 @@ class SyncChanges:
     def has_changes(self) -> bool:
         """Check if there are any changes to sync."""
         for lang_changes in (
-            self.python, self.javascript, self.html, self.csharp, self.cpp,
+            self.python, self.javascript, self.html, self.csharp, self.c, self.cpp,
             self.java, self.go, self.rust, self.erlang, self.php,
             self.objc, self.swift, self.vb6, self.scala, self.haskell,
-            self.markdown,
+            self.kotlin, self.r, self.ruby, self.dart, self.delphi, self.ada, self.lua, self.xaml, self.bash, self.markdown,
         ):
             if lang_changes.changed or lang_changes.deleted:
                 return True

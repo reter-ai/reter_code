@@ -318,9 +318,7 @@ Place a `reter_code.json` in your project root to configure the server. All sett
     "project_include": "**/*.*",
     "project_exclude": "**/__pycache__/*,**/node_modules/*",
     "tools_available": "full",
-    "rag_embedding_model": "flax-sentence-embeddings/st-codesearch-distilroberta-base",
-    "rag_markdown_include": "**/*.md",
-    "rag_markdown_exclude": "node_modules/**"
+    "rag_embedding_model": "flax-sentence-embeddings/st-codesearch-distilroberta-base"
 }
 ```
 
@@ -344,11 +342,11 @@ Place a `reter_code.json` in your project root to configure the server. All sett
 
 #### Markdown Indexing
 
+Markdown files (`*.md`) are indexed using the same `project_include` and `project_exclude` patterns as code files. No separate configuration is needed.
+
 | Key | Env Variable | Description | Default |
 |-----|-------------|-------------|---------|
 | `rag_index_markdown` | `RETER_RAG_INDEX_MARKDOWN` | Index markdown files into RAG | `true` |
-| `rag_markdown_include` | `RETER_RAG_MARKDOWN_INCLUDE` | Glob for markdown files to index | `**/*.md` |
-| `rag_markdown_exclude` | `RETER_RAG_MARKDOWN_EXCLUDE` | Glob for markdown files to skip | `node_modules/**` |
 | `rag_markdown_max_chunk_words` | `RETER_RAG_MARKDOWN_MAX_CHUNK_WORDS` | Max words per markdown chunk | `500` |
 | `rag_markdown_min_chunk_words` | `RETER_RAG_MARKDOWN_MIN_CHUNK_WORDS` | Min words per markdown chunk | `50` |
 
@@ -392,7 +390,7 @@ Place a `reter_code.json` in your project root to configure the server. All sett
 | `natural_language_query` | Ask refactoring questions in plain English — translates to CADSL automatically |
 | `reql` | Execute REQL queries directly against the knowledge graph |
 | `semantic_search` | Find semantically similar code using vector similarity (FAISS) |
-| `code_inspection` | Multi-language code analysis (15 languages) |
+| `code_inspection` | Multi-language code analysis (25 languages) |
 
 ### Visualization
 
@@ -542,9 +540,18 @@ Code analysis is available for:
 | Scala | `.scala`, `.sc` | Full support |
 | PHP | `.php` | Full support |
 | Haskell | `.hs`, `.lhs` | Full support |
+| Kotlin | `.kt`, `.kts` | Full support |
+| R | `.r`, `.R` | Full support |
+| Ruby | `.rb`, `.rake`, `.gemspec` | Full support |
+| Dart | `.dart` | Full support |
 | Erlang | `.erl`, `.hrl` | Full support |
 | Objective-C | `.m`, `.mm` | Full support |
 | Visual Basic 6 | `.bas`, `.cls`, `.frm` | Full support |
+| Delphi | `.pas`, `.dpr`, `.dpk`, `.inc` | Full support |
+| Ada | `.adb`, `.ads`, `.ada` | Full support |
+| Lua | `.lua` | Full support |
+| XAML | `.xaml` | Full support |
+| Bash | `.sh`, `.bash`, `.zsh`, `.ksh` | Full support |
 | HTML | `.html`, `.htm` | Full support |
 
 ---

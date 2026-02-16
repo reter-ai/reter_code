@@ -61,6 +61,7 @@ RAG_LANGUAGE_CONFIG = [
     ("javascript", "js:",     "JavaScript",   (".js", ".ts", ".jsx", ".tsx", ".mjs")),
     ("html",       "html:",   "HTML",         (".html", ".htm")),
     ("csharp",     "cs:",     "C#",           (".cs",)),
+    ("c",          "c:",      "C",            (".c",)),
     ("cpp",        "cpp:",    "C++",          (".cpp", ".cc", ".cxx", ".hpp", ".h")),
     ("java",       "java:",   "Java",         (".java",)),
     ("go",         "go:",     "Go",           (".go",)),
@@ -72,6 +73,15 @@ RAG_LANGUAGE_CONFIG = [
     ("vb6",        "vb6:",    "VB6",          (".bas", ".cls", ".frm")),
     ("scala",      "scala:",  "Scala",        (".scala",)),
     ("haskell",    "haskell:","Haskell",      (".hs", ".lhs")),
+    ("kotlin",     "kotlin:", "Kotlin",       (".kt", ".kts")),
+    ("r",          "r:",      "R",            (".r", ".R")),
+    ("ruby",       "ruby:",   "Ruby",         (".rb", ".rake", ".gemspec")),
+    ("dart",       "dart:",   "Dart",         (".dart",)),
+    ("delphi",     "delphi:", "Delphi",       (".pas", ".dpr", ".dpk", ".inc")),
+    ("ada",        "ada:",    "Ada",          (".adb", ".ads", ".ada")),
+    ("lua",        "lua:",    "Lua",          (".lua",)),
+    ("xaml",       "xaml:",   "XAML",         (".xaml",)),
+    ("bash",       "bash:",   "Bash",         (".sh", ".bash", ".zsh", ".ksh")),
 ]
 
 # Build derived data structures from config
@@ -115,7 +125,8 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
     def __init__(
         self,
         persistence: "StatePersistenceService",
-        config: Optional[Dict[str, Any]] = None
+        config: Optional[Dict[str, Any]] = None,
+        gitignore_filter: Optional[Any] = None
     ):
         """
         Initialize the RAG index manager.
@@ -123,9 +134,12 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         Args:
             persistence: StatePersistenceService for snapshot management
             config: Configuration dictionary (from reter.json)
+            gitignore_filter: Callable(rel_path_str) -> bool, returns True if path should
+                              be skipped. Covers project_include + project_exclude + .gitignore.
         """
         self._persistence = persistence
         self._config = config or {}
+        self._gitignore_filter = gitignore_filter
 
         # Check if RAG is enabled
         self._enabled = self._config.get("rag_enabled", True)
@@ -682,24 +696,26 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         # Update content extractor project root
         self._content_extractor.project_root = project_root
 
-        # 1. Remove vectors for deleted sources (all languages)
+        # 1. Remove vectors for deleted sources (all languages) + their comments
         for key, _, _, _ in RAG_LANGUAGE_CONFIG:
             lang_changes = getattr(changes, key, None)
             if lang_changes:
                 for source_id in lang_changes.deleted:
                     removed = self._remove_vectors_for_source(source_id)
+                    removed += self._remove_vectors_for_source(f"comments:{source_id}")
                     stats[f"{key}_vectors_removed"] += removed
 
         for rel_path in changes.markdown.deleted:
             removed = self._remove_vectors_for_markdown(rel_path)
             stats["markdown_vectors_removed"] += removed
 
-        # 2. Re-remove vectors for changed sources (they'll be re-indexed)
+        # 2. Re-remove vectors for changed sources (they'll be re-indexed) + their comments
         for key, _, _, _ in RAG_LANGUAGE_CONFIG:
             lang_changes = getattr(changes, key, None)
             if lang_changes:
                 for source_id in lang_changes.changed:
                     self._remove_vectors_for_source(source_id)
+                    self._remove_vectors_for_source(f"comments:{source_id}")
 
         for rel_path in changes.markdown.changed:
             self._remove_vectors_for_markdown(rel_path)
@@ -719,7 +735,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                     all_texts.extend(texts)
                     all_metadata.extend(metadata)
                 # Also collect comments
-                comment_texts, comment_metadata = self._collect_python_comments(entities, source_id, project_root)
+                comment_texts, comment_metadata = self._collect_comments(entities, source_id, project_root, language="python")
                 if comment_texts:
                     source_tracking.append((f"comments:{source_id}", "python_comment", len(all_texts), len(comment_texts)))
                     all_texts.extend(comment_texts)
@@ -738,7 +754,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 all_texts.extend(literal_texts)
                 all_metadata.extend(literal_metadata)
 
-        # 3c. Collect JavaScript entities and literals (special handling)
+        # 3c. Collect JavaScript entities, comments, and literals (special handling)
         for source_id in changes.javascript.changed:
             try:
                 entities = self._query_entities_for_source(reter, source_id, language="javascript")
@@ -747,6 +763,12 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                     source_tracking.append((source_id, "javascript", len(all_texts), len(texts)))
                     all_texts.extend(texts)
                     all_metadata.extend(metadata)
+                # Also collect comments
+                comment_texts, comment_metadata = self._collect_comments(entities, source_id, project_root, language="javascript")
+                if comment_texts:
+                    source_tracking.append((f"comments:{source_id}", "javascript_comment", len(all_texts), len(comment_texts)))
+                    all_texts.extend(comment_texts)
+                    all_metadata.extend(comment_metadata)
             except Exception as e:
                 logger.error(f"Error collecting JavaScript {source_id}: {e}")
                 stats["errors"].append(f"JavaScript: {source_id}: {e}")
@@ -773,12 +795,14 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 logger.error(f"Error collecting HTML {source_id}: {e}")
                 stats["errors"].append(f"HTML: {source_id}: {e}")
 
-        # 3e. Collect entities for all other code languages (generic pattern)
+        # 3e. Collect entities and comments for all other code languages (generic pattern)
         _generic_langs = [
             ("csharp", "C#"), ("cpp", "C++"), ("java", "Java"), ("go", "Go"),
             ("rust", "Rust"), ("erlang", "Erlang"), ("php", "PHP"),
             ("objc", "Objective-C"), ("swift", "Swift"), ("vb6", "VB6"),
-            ("scala", "Scala"), ("haskell", "Haskell"),
+            ("scala", "Scala"), ("haskell", "Haskell"), ("kotlin", "Kotlin"),
+            ("r", "R"), ("ruby", "Ruby"), ("dart", "Dart"), ("delphi", "Delphi"),
+            ("ada", "Ada"), ("lua", "Lua"), ("xaml", "XAML"), ("bash", "Bash"),
         ]
         for lang_key, lang_display in _generic_langs:
             lang_changes = getattr(changes, lang_key, None)
@@ -795,6 +819,12 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                         source_tracking.append((source_id, lang_key, len(all_texts), len(texts)))
                         all_texts.extend(texts)
                         all_metadata.extend(metadata)
+                    # Also collect comments
+                    comment_texts, comment_metadata = self._collect_comments(entities, source_id, project_root, language=lang_key)
+                    if comment_texts:
+                        source_tracking.append((f"comments:{source_id}", f"{lang_key}_comment", len(all_texts), len(comment_texts)))
+                        all_texts.extend(comment_texts)
+                        all_metadata.extend(comment_metadata)
                 except Exception as e:
                     logger.error(f"Error collecting {lang_display} {source_id}: {e}")
                     stats["errors"].append(f"{lang_display}: {source_id}: {e}")
@@ -1130,12 +1160,13 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             return stats
         logger.debug(f"[RAG] sync_sources: Initialized with {self._faiss_wrapper.total_vectors} existing vectors")
 
-        # Remove vectors for deleted/modified code files (all languages)
+        # Remove vectors for deleted/modified code files (all languages) + their comments
         for lang_key, lang_prefix, _, _ in RAG_LANGUAGE_CONFIG:
             for rel_path in to_remove_by_lang[lang_key]:
                 for source_id, info in list(self._metadata["sources"].items()):
                     if info.get("file_type") == lang_key and info.get("rel_path", "").replace("\\", "/") == rel_path:
                         removed = self._remove_vectors_for_source(source_id)
+                        removed += self._remove_vectors_for_source(f"comments:{source_id}")
                         stats[f"{lang_key}_removed"] += removed
                         break
                 self._indexed_files.pop(f"{lang_prefix}{rel_path}", None)
@@ -1172,7 +1203,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                             all_texts.extend(texts)
                             all_metadata.extend(metadata)
 
-                        c_texts, c_meta = self._prepare_python_comments(entities, source_id, project_root)
+                        c_texts, c_meta = self._prepare_comments(entities, source_id, project_root, language="python")
                         if c_texts:
                             source_tracking.append((f"comments:{source_id}", "python_comment", len(all_texts), len(c_texts)))
                             all_texts.extend(c_texts)
@@ -1200,7 +1231,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 all_texts.extend(literal_texts)
                 all_metadata.extend(literal_metadata)
 
-        # --- Phase 2: Collect JavaScript entities and literals (special handling) ---
+        # --- Phase 2: Collect JavaScript entities, comments, and literals (special handling) ---
         javascript_to_add = to_add_by_lang["javascript"]
         if javascript_to_add:
             logger.debug(f"[RAG] sync_sources: Querying entities for {len(javascript_to_add)} JavaScript files...")
@@ -1216,6 +1247,12 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                             source_tracking.append((source_id, "javascript", len(all_texts), len(texts)))
                             all_texts.extend(texts)
                             all_metadata.extend(metadata)
+
+                        c_texts, c_meta = self._prepare_comments(entities, source_id, project_root, language="javascript")
+                        if c_texts:
+                            source_tracking.append((f"comments:{source_id}", "javascript_comment", len(all_texts), len(c_texts)))
+                            all_texts.extend(c_texts)
+                            all_metadata.extend(c_meta)
 
                     self._indexed_files[f"js:{rel_path}"] = md5_hash
 
@@ -1261,7 +1298,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                     logger.debug(f"[RAG] sync_sources: Error collecting HTML {source_id}: {e}\n{traceback.format_exc()}")
                     stats["errors"].append(f"HTML: {source_id}: {e}")
 
-        # --- Phase 4: Collect entities for all other code languages (generic pattern) ---
+        # --- Phase 4: Collect entities and comments for all other code languages (generic pattern) ---
         _generic_sync_langs = [
             ("csharp", "cs:", "C#"), ("cpp", "cpp:", "C++"),
             ("java", "java:", "Java"), ("go", "go:", "Go"),
@@ -1269,6 +1306,15 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             ("php", "php:", "PHP"), ("objc", "objc:", "Objective-C"),
             ("swift", "swift:", "Swift"), ("vb6", "vb6:", "VB6"),
             ("scala", "scala:", "Scala"), ("haskell", "haskell:", "Haskell"),
+            ("kotlin", "kotlin:", "Kotlin"),
+            ("r", "r:", "R"),
+            ("ruby", "ruby:", "Ruby"),
+            ("dart", "dart:", "Dart"),
+            ("delphi", "delphi:", "Delphi"),
+            ("ada", "ada:", "Ada"),
+            ("lua", "lua:", "Lua"),
+            ("xaml", "xaml:", "XAML"),
+            ("bash", "bash:", "Bash"),
         ]
         for lang_key, lang_prefix, lang_display in _generic_sync_langs:
             lang_to_add = to_add_by_lang[lang_key]
@@ -1291,6 +1337,12 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                             source_tracking.append((source_id, lang_key, len(all_texts), len(texts)))
                             all_texts.extend(texts)
                             all_metadata.extend(metadata)
+
+                        c_texts, c_meta = self._prepare_comments(entities, source_id, project_root, language=lang_key)
+                        if c_texts:
+                            source_tracking.append((f"comments:{source_id}", f"{lang_key}_comment", len(all_texts), len(c_texts)))
+                            all_texts.extend(c_texts)
+                            all_metadata.extend(c_meta)
 
                     self._indexed_files[f"{lang_prefix}{rel_path}"] = md5_hash
 
@@ -1492,7 +1544,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             "python": "py", "javascript": "js", "csharp": "cs", "cpp": "cpp",
             "java": "java", "go": "go", "rust": "rust", "erlang": "erlang",
             "php": "php", "objc": "objc", "swift": "swift", "vb6": "vb6",
-            "scala": "scala", "haskell": "haskell",
+            "scala": "scala", "haskell": "haskell", "kotlin": "kotlin", "r": "r", "ruby": "ruby", "dart": "dart", "delphi": "delphi",
         }
         prefix = _lang_to_prefix.get(language, "py")
 
@@ -1518,7 +1570,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             ?entity has-name ?name .
             ?entity is-at-line ?line .
             ?entity has-end-line ?endLine .
-            OPTIONAL {{ ?entity has-docstring ?docstring }}
+            OPTIONAL {{ ?entity has-documentation ?docstring }}
         }}
         '''
         try:
@@ -1556,7 +1608,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             ?entity is-at-line ?line .
             ?entity has-end-line ?endLine .
             ?entity is-defined-in ?className .
-            OPTIONAL {{ ?entity has-docstring ?docstring }}
+            OPTIONAL {{ ?entity has-documentation ?docstring }}
         }}
         '''
         try:
@@ -1595,7 +1647,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             ?entity has-name ?name .
             ?entity is-at-line ?line .
             ?entity has-end-line ?endLine .
-            OPTIONAL {{ ?entity has-docstring ?docstring }}
+            OPTIONAL {{ ?entity has-documentation ?docstring }}
             FILTER(NOT EXISTS {{ ?entity type method }})
         }}
         '''
@@ -1709,14 +1761,21 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
 
         return len(texts)
 
-    def _prepare_python_comments(
+    def _prepare_comments(
         self,
         entities: List[Dict[str, Any]],
         source_id: str,
-        project_root: Path
+        project_root: Path,
+        language: str = "python"
     ) -> Tuple[List[str], List[Dict[str, Any]]]:
         """
-        Prepare Python comments for indexing (extract texts and metadata without generating embeddings).
+        Prepare comments for indexing (extract texts and metadata without generating embeddings).
+
+        Args:
+            entities: List of entity dicts for context
+            source_id: Source identifier (format: "md5|rel_path")
+            project_root: Project root path
+            language: Source language (python, java, cpp, etc.)
 
         Returns:
             Tuple of (texts, comment_metadata)
@@ -1746,7 +1805,8 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         try:
             comments = self._content_extractor.extract_comments(
                 str(abs_path),
-                entity_locations=entity_locations
+                entity_locations=entity_locations,
+                language=language
             )
         except Exception:
             return [], []
@@ -1757,6 +1817,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         # Only index special comments (TODO, FIXME, etc.)
         SPECIAL_COMMENT_TYPES = {'todo', 'fixme', 'bug', 'hack', 'note', 'warning', 'review', 'optimize', 'xxx'}
 
+        source_type = f"{language}_comment"
         texts = []
         comment_metadata = []
 
@@ -1772,7 +1833,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 "file": rel_path,
                 "line": comment.line_start,
                 "end_line": comment.line_end,
-                "source_type": "python_comment",
+                "source_type": source_type,
                 "comment_type": comment.comment_type,
                 "context_entity": comment.context_entity,
                 "is_standalone": comment.is_standalone,
@@ -1782,8 +1843,10 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
 
         return texts, comment_metadata
 
-    # Alias for batched indexing
-    _collect_python_comments = _prepare_python_comments
+    # Backward-compatible aliases
+    _prepare_python_comments = _prepare_comments
+    _collect_python_comments = _prepare_comments
+    _collect_comments = _prepare_comments
 
     def _index_entities(
         self,
@@ -2169,19 +2232,21 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         logger.debug(f"[RAG] _index_html_entities: Indexed {len(texts)} entities for {rel_path}")
         return len(texts)
 
-    def _index_python_comments(
+    def _index_comments(
         self,
         entities: List[Dict[str, Any]],
         source_id: str,
-        project_root: Path
+        project_root: Path,
+        language: str = "python"
     ) -> int:
         """
-        Index Python comments into FAISS.
+        Index comments into FAISS for any language.
 
         Args:
             entities: List of code entities for context
             source_id: Source ID (format: "md5|rel_path")
             project_root: Project root directory
+            language: Source language (python, java, cpp, etc.)
 
         Returns number of comment vectors added.
         """
@@ -2209,7 +2274,8 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         # Extract comments
         comments = self._content_extractor.extract_comments(
             str(abs_path),
-            entity_locations=entity_locations
+            entity_locations=entity_locations,
+            language=language
         )
 
         if not comments:
@@ -2218,6 +2284,8 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         # Only index special comments (TODO, FIXME, etc.), not regular inline/block comments
         # Regular comments should only be part of entity bodies, not indexed separately
         SPECIAL_COMMENT_TYPES = {'todo', 'fixme', 'bug', 'hack', 'note', 'warning', 'review', 'optimize', 'xxx'}
+
+        source_type = f"{language}_comment"
 
         # Build indexable texts
         texts = []
@@ -2236,7 +2304,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                 "file": rel_path,
                 "line": comment.line_start,
                 "end_line": comment.line_end,
-                "source_type": "python_comment",
+                "source_type": source_type,
                 "comment_type": comment.comment_type,
                 "context_entity": comment.context_entity,
                 "is_standalone": comment.is_standalone,
@@ -2272,7 +2340,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             md5_hash = ""
 
         self._metadata["sources"][comment_key] = {
-            "file_type": "python_comment",
+            "file_type": source_type,
             "md5": md5_hash,
             "rel_path": rel_path,
             "indexed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -2280,6 +2348,9 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         }
 
         return len(texts)
+
+    # Backward-compatible alias
+    _index_python_comments = _index_comments
 
     def _index_python_literals(
         self,
@@ -2931,9 +3002,17 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             # Apply scope filter
             source_type = meta.get("source_type", "python")
             # Code includes: python, javascript, html, csharp, cpp (and their literal variants)
-            code_types = ("python", "python_literal", "python_comment",
-                          "javascript", "javascript_literal", "html",
-                          "csharp", "cpp")
+            code_types = (
+                "python", "python_literal", "python_comment",
+                "javascript", "javascript_literal", "html",
+                "java", "csharp", "cpp", "go", "rust", "erlang",
+                "php", "objc", "swift", "vb6", "scala", "haskell", "kotlin", "r", "ruby", "dart", "delphi",
+                "java_comment", "csharp_comment", "cpp_comment",
+                "go_comment", "rust_comment", "erlang_comment",
+                "php_comment", "objc_comment", "swift_comment",
+                "vb6_comment", "scala_comment", "haskell_comment", "kotlin_comment", "r_comment", "ruby_comment", "dart_comment", "delphi_comment",
+                "javascript_comment",
+            )
             if search_scope == "code" and source_type not in code_types:
                 continue
             if search_scope == "docs" and source_type != "markdown":
@@ -3090,7 +3169,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             "python": "py", "javascript": "js", "csharp": "cs", "cpp": "cpp",
             "java": "java", "go": "go", "rust": "rust", "erlang": "erlang",
             "php": "php", "objc": "objc", "swift": "swift", "vb6": "vb6",
-            "scala": "scala", "haskell": "haskell",
+            "scala": "scala", "haskell": "haskell", "kotlin": "kotlin", "r": "r", "ruby": "ruby", "dart": "dart", "delphi": "delphi",
         }
         prefix = _lang_to_prefix.get(language, "py")
 
@@ -3104,7 +3183,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             ?entity is-at-line ?line .
             ?entity is-in-file ?inFile .
             ?entity has-end-line ?endLine .
-            OPTIONAL {{ ?entity has-docstring ?docstring }}
+            OPTIONAL {{ ?entity has-documentation ?docstring }}
         }}
         '''
         try:
@@ -3147,7 +3226,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             ?entity is-in-file ?inFile .
             ?entity has-end-line ?endLine .
             ?entity is-defined-in ?className .
-            OPTIONAL {{ ?entity has-docstring ?docstring }}
+            OPTIONAL {{ ?entity has-documentation ?docstring }}
         }}
         '''
         try:
@@ -3191,7 +3270,7 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
             ?entity is-at-line ?line .
             ?entity is-in-file ?inFile .
             ?entity has-end-line ?endLine .
-            OPTIONAL {{ ?entity has-docstring ?docstring }}
+            OPTIONAL {{ ?entity has-documentation ?docstring }}
             FILTER(NOT EXISTS {{ ?entity type method }})
         }}
         '''
@@ -3486,10 +3565,9 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
                     added = self._index_entities(entities, source_id, project_root, lang_key)
                     stats[f"{lang_key}_vectors"] += added
 
-                    # Python-specific: also index comments
-                    if lang_key == "python":
-                        comment_added = self._index_python_comments(entities, source_id, project_root)
-                        stats["python_vectors"] += comment_added
+                    # Index special comments (TODO, FIXME, etc.) for all languages
+                    comment_added = self._index_comments(entities, source_id, project_root, language=lang_key)
+                    stats[f"{lang_key}_vectors"] += comment_added
 
                     if progress_callback and (i + 1) % 5 == 0:
                         progress_callback(stats[f"{lang_key}_vectors"], len(entities_by_file), lang_key)
@@ -3568,38 +3646,24 @@ class RAGIndexManager(RAGAnalysisMixin, RAGCollectorMixin):
         return stats
 
     def _scan_markdown_files(self, project_root: Path) -> List[str]:
-        """Scan for markdown files to index."""
-        include_patterns = self._config.get("rag_markdown_include", "**/*.md")
-        if isinstance(include_patterns, str):
-            include_patterns = [p.strip() for p in include_patterns.split(",")]
+        """Scan for markdown files to index.
 
-        exclude_patterns = self._config.get("rag_markdown_exclude", "")
-        if isinstance(exclude_patterns, str):
-            exclude_patterns = [p.strip() for p in exclude_patterns.split(",") if p.strip()]
-
+        Uses gitignore_filter which covers project_include + project_exclude +
+        .gitignore — same rules as code files.
+        """
         md_files = []
-        processed = set()
 
-        for pattern in include_patterns:
-            for md_file in project_root.glob(pattern):
-                if not md_file.is_file():
+        for md_file in project_root.glob("**/*.md"):
+            if not md_file.is_file():
+                continue
+
+            rel_path = str(md_file.relative_to(project_root)).replace('\\', '/')
+
+            if self._gitignore_filter is not None:
+                if self._gitignore_filter(rel_path):
                     continue
 
-                rel_path = str(md_file.relative_to(project_root)).replace('\\', '/')
-                if rel_path in processed:
-                    continue
-
-                # Check exclusions
-                excluded = False
-                for exc_pattern in exclude_patterns:
-                    import fnmatch
-                    if fnmatch.fnmatch(rel_path, exc_pattern):
-                        excluded = True
-                        break
-
-                if not excluded:
-                    processed.add(rel_path)
-                    md_files.append(rel_path)
+            md_files.append(rel_path)
 
         return md_files
 

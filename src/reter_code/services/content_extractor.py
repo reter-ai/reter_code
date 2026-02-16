@@ -12,6 +12,35 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
+# Comment syntax definitions per language
+_COMMENT_SYNTAX = {
+    "python": {"line": "#", "block": None, "skip_docstrings": True},
+    "javascript": {"line": "//", "block": ("/*", "*/")},
+    "java": {"line": "//", "block": ("/*", "*/")},
+    "csharp": {"line": "//", "block": ("/*", "*/")},
+    "c": {"line": "//", "block": ("/*", "*/")},
+    "cpp": {"line": "//", "block": ("/*", "*/")},
+    "go": {"line": "//", "block": ("/*", "*/")},
+    "rust": {"line": "//", "block": ("/*", "*/")},
+    "php": {"line": "//", "block": ("/*", "*/")},
+    "objc": {"line": "//", "block": ("/*", "*/")},
+    "swift": {"line": "//", "block": ("/*", "*/")},
+    "scala": {"line": "//", "block": ("/*", "*/")},
+    "erlang": {"line": "%", "block": None},
+    "vb6": {"line": "'", "block": None, "string_delims": '"'},
+    "haskell": {"line": "--", "block": ("{-", "-}")},
+    "kotlin": {"line": "//", "block": ("/*", "*/")},
+    "r": {"line": "#", "block": None},
+    "ruby": {"line": "#", "block": ("=begin", "=end")},
+    "dart": {"line": "//", "block": ("/*", "*/")},
+    "delphi": {"line": "//", "block": ("{", "}")},
+    "ada": {"line": "--"},
+    "lua": {"line": "--", "block": ("--[[", "]]")},
+    "xaml": {"line": None, "block": ("<!--", "-->")},
+    "html": {"line": None, "block": ("<!--", "-->")},
+    "bash": {"line": "#", "block": None},
+}
+
 
 @dataclass
 class CodeEntity:
@@ -582,18 +611,21 @@ class ContentExtractor:
     def extract_comments(
         self,
         file_path: str,
-        entity_locations: Optional[List[Dict[str, Any]]] = None
+        entity_locations: Optional[List[Dict[str, Any]]] = None,
+        language: str = "python"
     ) -> List[CommentBlock]:
         """
-        Extract all comments from a Python file.
+        Extract all comments from a source file.
 
-        Identifies inline comments (#), block comments (consecutive # lines),
-        and special markers (TODO, FIXME, NOTE, WARNING, HACK, XXX).
+        Supports all languages via _COMMENT_SYNTAX definitions.
+        Identifies line comments, block comments, and special markers
+        (TODO, FIXME, NOTE, WARNING, HACK, XXX).
 
         Args:
-            file_path: Path to the Python source file
+            file_path: Path to the source file
             entity_locations: Optional list of code entity locations for context
                               Each dict should have: name, line_start, line_end, entity_type
+            language: Source language (python, java, csharp, cpp, javascript, go, etc.)
 
         Returns:
             List of CommentBlock objects
@@ -602,8 +634,16 @@ class ContentExtractor:
         if lines is None:
             return []
 
+        syntax = _COMMENT_SYNTAX.get(language, {"line": "//", "block": ("/*", "*/")})
+        line_prefix = syntax.get("line")
+        block_delims = syntax.get("block")
+        skip_docstrings = syntax.get("skip_docstrings", False)
+        string_delims = syntax.get("string_delims", "\"'")
+
         comments = []
         current_block: List[tuple] = []  # [(line_num, content), ...]
+        in_block_comment = False
+        block_comment_lines: List[tuple] = []
 
         # Special markers to detect
         special_markers = {
@@ -622,21 +662,85 @@ class ContentExtractor:
             line_num = i + 1  # 1-indexed
             stripped = line.strip()
 
-            # Skip docstrings (handled separately)
-            if stripped.startswith(('"""', "'''")):
+            # Skip Python docstrings (handled separately)
+            if skip_docstrings and stripped.startswith(('"""', "'''")):
                 continue
 
-            # Check for comment
-            if '#' in line:
-                # Find comment start (not inside string)
-                comment_start = self._find_comment_start(line)
+            # Handle block comments (/* ... */, {- ... -}, <!-- ... -->)
+            if block_delims:
+                block_start, block_end = block_delims
+
+                if in_block_comment:
+                    end_idx = line.find(block_end)
+                    if end_idx >= 0:
+                        # Block comment ends on this line
+                        text = line[:end_idx].strip()
+                        if text.startswith('*'):
+                            text = text[1:].strip()
+                        if text:
+                            block_comment_lines.append((line_num, text))
+                        in_block_comment = False
+                        # Flush block comment
+                        if block_comment_lines:
+                            comment = self._create_comment_block(
+                                block_comment_lines, file_path, special_markers, entity_locations
+                            )
+                            if comment:
+                                comments.append(comment)
+                            block_comment_lines = []
+                    else:
+                        # Still inside block comment
+                        text = stripped
+                        if text.startswith('*'):
+                            text = text[1:].strip()
+                        if text:
+                            block_comment_lines.append((line_num, text))
+                    continue
+
+                # Check for block comment start (not inside a string)
+                start_idx = self._find_token_start(line, block_start, string_delims)
+                if start_idx >= 0:
+                    # Flush any accumulated line comments first
+                    if current_block:
+                        comment = self._create_comment_block(
+                            current_block, file_path, special_markers, entity_locations
+                        )
+                        if comment:
+                            comments.append(comment)
+                        current_block = []
+
+                    rest = line[start_idx + len(block_start):]
+                    end_idx = rest.find(block_end)
+                    if end_idx >= 0:
+                        # Single-line block comment
+                        text = rest[:end_idx].strip()
+                        if text.startswith('*'):
+                            text = text[1:].strip()
+                        if text:
+                            comment = self._create_comment_block(
+                                [(line_num, text)], file_path, special_markers, entity_locations
+                            )
+                            if comment:
+                                comments.append(comment)
+                    else:
+                        # Multi-line block comment starts
+                        in_block_comment = True
+                        text = rest.strip()
+                        if text.startswith('*'):
+                            text = text[1:].strip()
+                        block_comment_lines = [(line_num, text)] if text else []
+                    continue
+
+            # Handle line comments (#, //, --, %, ')
+            if line_prefix:
+                comment_start = self._find_token_start(line, line_prefix, string_delims)
                 if comment_start >= 0:
-                    comment_text = line[comment_start + 1:].strip()
+                    comment_text = line[comment_start + len(line_prefix):].strip()
                     if comment_text:  # Skip empty comments
                         current_block.append((line_num, comment_text))
                     continue
 
-            # If we hit a non-comment line and have accumulated comments, flush them
+            # Non-comment line — flush accumulated line comments
             if current_block:
                 comment = self._create_comment_block(
                     current_block, file_path, special_markers, entity_locations
@@ -652,22 +756,34 @@ class ContentExtractor:
             )
             if comment:
                 comments.append(comment)
+        if block_comment_lines:
+            comment = self._create_comment_block(
+                block_comment_lines, file_path, special_markers, entity_locations
+            )
+            if comment:
+                comments.append(comment)
 
         return comments
 
-    def _find_comment_start(self, line: str) -> int:
+    def _find_token_start(self, line: str, token: str, string_delims: str = "\"'") -> int:
         """
-        Find the index of # that starts a comment (not inside a string).
+        Find the index of a comment token (not inside a string).
+
+        Handles single-char (#, %, ') and multi-char (//, --, /*, {-, <!--) tokens.
 
         Args:
             line: Line of code
+            token: Comment token to search for
+            string_delims: Characters that delimit strings (default: both " and ')
+                           For VB6, only " is a string delimiter since ' is comment.
 
         Returns:
-            Index of comment start, or -1 if no comment
+            Index of token start, or -1 if not found
         """
         in_string = False
         string_char = None
         escape_next = False
+        token_len = len(token)
 
         for i, char in enumerate(line):
             if escape_next:
@@ -678,7 +794,7 @@ class ContentExtractor:
                 escape_next = True
                 continue
 
-            if char in ('"', "'"):
+            if char in string_delims:
                 if not in_string:
                     in_string = True
                     string_char = char
@@ -686,7 +802,7 @@ class ContentExtractor:
                     in_string = False
                     string_char = None
 
-            if char == '#' and not in_string:
+            if not in_string and line[i:i + token_len] == token:
                 return i
 
         return -1

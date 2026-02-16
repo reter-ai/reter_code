@@ -439,6 +439,16 @@ class RAGCollectorMixin:
         """Collect C# entities for batched indexing."""
         return self._collect_entities(entities, source_id, project_root, "csharp", chunk_config)
 
+    def _collect_c_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect C entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "c", chunk_config)
+
     def _collect_cpp_entities(
         self,
         entities: List[Dict[str, Any]],
@@ -548,6 +558,96 @@ class RAGCollectorMixin:
     ) -> Tuple[List[str], List[Dict[str, Any]]]:
         """Collect Haskell entities for batched indexing."""
         return self._collect_entities(entities, source_id, project_root, "haskell", chunk_config)
+
+    def _collect_kotlin_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect Kotlin entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "kotlin", chunk_config)
+
+    def _collect_r_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect R entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "r", chunk_config)
+
+    def _collect_ruby_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect Ruby entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "ruby", chunk_config)
+
+    def _collect_dart_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect Dart entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "dart", chunk_config)
+
+    def _collect_delphi_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect Delphi entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "delphi", chunk_config)
+
+    def _collect_ada_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect Ada entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "ada", chunk_config)
+
+    def _collect_lua_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect Lua entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "lua", chunk_config)
+
+    def _collect_xaml_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect XAML entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "xaml", chunk_config)
+
+    def _collect_bash_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        source_id: str,
+        project_root: Path,
+        chunk_config: Optional[ChunkConfig] = None
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Collect Bash entities for batched indexing."""
+        return self._collect_entities(entities, source_id, project_root, "bash", chunk_config)
 
     def _collect_markdown_chunks(
         self,

@@ -21,7 +21,7 @@ Reter Code is an AI-powered MCP (Model Context Protocol) server for code reasoni
 - [project](./tools/project.md) - Project analytics (also in session context)
 
 #### Code Analysis
-- [code_inspection](./tools/code-inspection.md) - Python/JS/C#/C++ analysis (26 actions)
+- [code_inspection](./tools/code-inspection.md) - Multi-language code analysis, 24 languages (26 actions)
 - [recommender](./tools/recommender.md) - Refactoring recommendations (58 detectors)
 
 #### RAG/Search

@@ -107,9 +107,9 @@ class _FileChangeHandler(FileSystemEventHandler):
         except (ValueError, TypeError):
             return
 
-        # Check if it's a supported code file
+        # Check if it's a supported code file or markdown
         ext = file_path.suffix.lower()
-        if ext not in self._manager.ALL_CODE_EXTENSIONS:
+        if ext not in self._manager.ALL_CODE_EXTENSIONS and ext != ".md":
             return
 
         # Check if excluded
@@ -649,7 +649,7 @@ class DefaultInstanceManager:
             self._dirty = False
 
             # Apply changes using the optimized method
-            changes_made = self._apply_sync_changes(reter, changes)
+            changes_made = self._apply_sync_changes(reter, changes, rag_changed_files)
         else:
             # Fallback to old method if no state manager
             if self._progress_callback is None:
@@ -786,6 +786,11 @@ class DefaultInstanceManager:
             if progress_callback:
                 progress_callback.update_progress("Processing changes", idx + 1, total_pending)
 
+            # Skip non-code files (e.g. .md) — handled by RAG markdown sync separately
+            ext = Path(rel_path).suffix.lower()
+            if ext not in self.ALL_CODE_EXTENSIONS:
+                continue
+
             abs_path = self._project_root / rel_path
             cached = self._source_state.get_file(rel_path)
 
@@ -817,18 +822,27 @@ class DefaultInstanceManager:
 
         return changes
 
-    def _apply_sync_changes(self, reter: ReterWrapper, changes: SyncChanges) -> bool:
+    def _apply_sync_changes(
+        self,
+        reter: ReterWrapper,
+        changes: SyncChanges,
+        rag_changed_files: Optional[Set[str]] = None,
+    ) -> bool:
         """
         Apply sync changes from SourceStateManager to RETER.
 
         Args:
             reter: ReterWrapper instance
             changes: SyncChanges with files to add, modify, or delete
+            rag_changed_files: Optional set of changed file paths for targeted RAG/markdown sync
 
         Returns:
             True if any changes were made
         """
-        if not changes.has_changes:
+        has_code_changes = changes.has_changes
+        has_md_in_watcher = rag_changed_files and any(f.endswith(".md") for f in rag_changed_files)
+
+        if not has_code_changes and not has_md_in_watcher:
             return False
 
         added_count = 0
@@ -846,6 +860,7 @@ class DefaultInstanceManager:
             (self.JAVASCRIPT_EXTENSIONS, "javascript"),
             (self.HTML_EXTENSIONS, "html"),
             (self.CSHARP_EXTENSIONS, "csharp"),
+            (self.C_EXTENSIONS, "c"),
             (self.CPP_EXTENSIONS, "cpp"),
             (self.JAVA_EXTENSIONS, "java"),
             (self.GO_EXTENSIONS, "go"),
@@ -857,16 +872,15 @@ class DefaultInstanceManager:
             (self.VB6_EXTENSIONS, "vb6"),
             (self.SCALA_EXTENSIONS, "scala"),
             (self.HASKELL_EXTENSIONS, "haskell"),
-            (self.JAVA_EXTENSIONS, "java"),
-            (self.GO_EXTENSIONS, "go"),
-            (self.RUST_EXTENSIONS, "rust"),
-            (self.ERLANG_EXTENSIONS, "erlang"),
-            (self.PHP_EXTENSIONS, "php"),
-            (self.OBJC_EXTENSIONS, "objc"),
-            (self.SWIFT_EXTENSIONS, "swift"),
-            (self.VB6_EXTENSIONS, "vb6"),
-            (self.SCALA_EXTENSIONS, "scala"),
-            (self.HASKELL_EXTENSIONS, "haskell"),
+            (self.KOTLIN_EXTENSIONS, "kotlin"),
+            (self.R_EXTENSIONS, "r"),
+            (self.RUBY_EXTENSIONS, "ruby"),
+            (self.DART_EXTENSIONS, "dart"),
+            (self.DELPHI_EXTENSIONS, "delphi"),
+            (self.ADA_EXTENSIONS, "ada"),
+            (self.LUA_EXTENSIONS, "lua"),
+            (self.XAML_EXTENSIONS, "xaml"),
+            (self.BASH_EXTENSIONS, "bash"),
         ]
 
         def _lang_for_ext(rel_path: str) -> Optional[str]:
@@ -1018,35 +1032,28 @@ class DefaultInstanceManager:
             self._modification_count += modification_ops
             logger.debug(f"[default] Modification count: {self._modification_count} (threshold: {self.REBUILD_THRESHOLD})")
 
-        # Sync with RAG index if configured
+        # Sync with RAG index if configured (includes markdown change detection)
         if self._rag_manager and self._rag_manager.is_enabled and self._rag_manager.is_initialized:
-            has_changes = bool(changed_sources or deleted_sources)
-            if has_changes:
+            rag_changes = self._build_rag_sync_changes(
+                changed_sources, deleted_sources, rag_changed_files
+            )
+            if rag_changes.has_changes():
                 if self._progress_callback is None:
                     logger.info("[default] Syncing RAG index...")
                 try:
-                    _all_rag_langs = [
-                        "python", "javascript", "html", "csharp", "cpp",
-                        "java", "go", "rust", "erlang", "php",
-                        "objc", "swift", "vb6", "scala", "haskell",
-                    ]
-                    rag_changes = RAGSyncChanges(
-                        **{
-                            lang: LanguageSourceChanges(
-                                changed_sources.get(lang, []),
-                                deleted_sources.get(lang, []),
-                            )
-                            for lang in _all_rag_langs
-                        }
-                    )
                     rag_stats = self._rag_manager.sync_with_changes(
                         reter=reter,
                         project_root=self._project_root,
                         changes=rag_changes,
                     )
-                    total_added = sum(
-                        rag_stats.get(f'{lang}_vectors_added', 0)
-                        for lang in _all_rag_langs
+                    total_added = (
+                        sum(rag_stats.get(f'{lang}_vectors_added', 0)
+                            for lang in ["python", "javascript", "html", "csharp", "c", "cpp",
+                                         "java", "go", "rust", "erlang", "php",
+                                         "objc", "swift", "vb6", "scala", "haskell",
+                                         "kotlin", "r", "ruby", "dart", "delphi",
+                                         "ada", "lua", "xaml"])
+                        + rag_stats.get('markdown_vectors_added', 0)
                     )
                     if self._progress_callback is None:
                         logger.info(
@@ -1073,6 +1080,7 @@ class DefaultInstanceManager:
     JAVASCRIPT_EXTENSIONS = {".js", ".mjs", ".jsx", ".ts", ".tsx"}
     HTML_EXTENSIONS = {".html", ".htm"}
     CSHARP_EXTENSIONS = {".cs"}
+    C_EXTENSIONS = {".c"}
     CPP_EXTENSIONS = {".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h++", ".h"}
     JAVA_EXTENSIONS = {".java"}
     GO_EXTENSIONS = {".go"}
@@ -1084,12 +1092,24 @@ class DefaultInstanceManager:
     VB6_EXTENSIONS = {".bas", ".cls", ".frm"}
     SCALA_EXTENSIONS = {".scala", ".sc"}
     HASKELL_EXTENSIONS = {".hs", ".lhs"}
+    KOTLIN_EXTENSIONS = {".kt", ".kts"}
+    R_EXTENSIONS = {".r", ".R"}
+    RUBY_EXTENSIONS = {".rb", ".rake", ".gemspec"}
+    DART_EXTENSIONS = {".dart"}
+    DELPHI_EXTENSIONS = {".pas", ".dpr", ".dpk", ".inc"}
+    ADA_EXTENSIONS = {".adb", ".ads", ".ada"}
+    LUA_EXTENSIONS = {".lua"}
+    XAML_EXTENSIONS = {".xaml"}
+    BASH_EXTENSIONS = {".sh", ".bash", ".zsh", ".ksh"}
     ALL_CODE_EXTENSIONS = (
         PYTHON_EXTENSIONS | JAVASCRIPT_EXTENSIONS | HTML_EXTENSIONS |
-        CSHARP_EXTENSIONS | CPP_EXTENSIONS | JAVA_EXTENSIONS |
+        CSHARP_EXTENSIONS | C_EXTENSIONS | CPP_EXTENSIONS | JAVA_EXTENSIONS |
         GO_EXTENSIONS | RUST_EXTENSIONS | ERLANG_EXTENSIONS |
         PHP_EXTENSIONS | OBJC_EXTENSIONS | SWIFT_EXTENSIONS |
-        VB6_EXTENSIONS | SCALA_EXTENSIONS | HASKELL_EXTENSIONS
+        VB6_EXTENSIONS | SCALA_EXTENSIONS | HASKELL_EXTENSIONS |
+        KOTLIN_EXTENSIONS | R_EXTENSIONS | RUBY_EXTENSIONS |
+        DART_EXTENSIONS | DELPHI_EXTENSIONS | ADA_EXTENSIONS |
+        LUA_EXTENSIONS | XAML_EXTENSIONS | BASH_EXTENSIONS
     )
 
     def _scan_project_files(self) -> Dict[str, Tuple[str, str]]:
@@ -1247,6 +1267,127 @@ class DefaultInstanceManager:
 
         return False
 
+    def is_excluded(self, rel_path_str: str) -> bool:
+        """Check if a relative path should be skipped.
+
+        Checks both include patterns (if set, file must match at least one)
+        and exclude patterns (.gitignore + project_exclude).
+        Same rules as code files.
+
+        Args:
+            rel_path_str: Forward-slash normalized relative path string
+
+        Returns:
+            True if the path should be excluded
+        """
+        # If include patterns are set, file must match at least one
+        if self._include_patterns:
+            if not any(self._matches_pattern(rel_path_str, p) for p in self._include_patterns):
+                return True
+
+        return self._is_excluded(Path(rel_path_str))
+
+    def _detect_markdown_changes(
+        self,
+        changed_files: Optional[set] = None,
+    ) -> Tuple[List[str], List[str]]:
+        """Detect changed and deleted markdown files for RAG sync.
+
+        Compares current markdown files on disk against the RAG index's
+        tracked markdown files (via rag_files.json MD5 hashes).
+
+        Args:
+            changed_files: If provided, only check these files (targeted sync).
+                           If None, full scan.
+
+        Returns:
+            (changed_rel_paths, deleted_rel_paths) for markdown files
+        """
+        if not self._rag_manager:
+            return [], []
+
+        # Get indexed markdown MD5s from RAG manager's tracked files
+        indexed_markdown: Dict[str, str] = {}
+        for key, md5 in self._rag_manager._indexed_files.items():
+            if key.startswith("md:"):
+                indexed_markdown[key[3:]] = md5
+
+        # Scan current markdown files
+        current_markdown: Dict[str, str] = {}  # rel_path -> md5
+        md_files = self._rag_manager._scan_markdown_files(self._project_root)
+        for rel_path in md_files:
+            rel_path_normalized = rel_path.replace("\\", "/")
+
+            # If targeted sync and file not in changed set, use cached MD5
+            if changed_files and rel_path_normalized not in changed_files:
+                cached_md5 = indexed_markdown.get(rel_path_normalized)
+                if cached_md5:
+                    current_markdown[rel_path_normalized] = cached_md5
+                continue
+
+            try:
+                abs_path = self._project_root / rel_path
+                content = abs_path.read_text(encoding='utf-8')
+                md5_hash = hashlib.md5(content.encode('utf-8')).hexdigest()
+                current_markdown[rel_path_normalized] = md5_hash
+            except Exception:
+                pass
+
+        # Diff
+        changed: List[str] = []
+        deleted: List[str] = []
+
+        for rel_path, current_md5 in current_markdown.items():
+            indexed_md5 = indexed_markdown.get(rel_path)
+            if indexed_md5 is None or current_md5 != indexed_md5:
+                changed.append(rel_path)
+
+        for rel_path in indexed_markdown:
+            if rel_path not in current_markdown:
+                deleted.append(rel_path)
+
+        if changed or deleted:
+            logger.debug(f"[default] Markdown changes: +{len(changed)} -{len(deleted)}")
+
+        return changed, deleted
+
+    def _build_rag_sync_changes(
+        self,
+        changed_sources: Dict[str, List[str]],
+        deleted_sources: Dict[str, List[str]],
+        changed_files: Optional[set] = None,
+    ) -> RAGSyncChanges:
+        """Build RAGSyncChanges including markdown changes.
+
+        Args:
+            changed_sources: Dict of language -> list of changed source IDs
+            deleted_sources: Dict of language -> list of deleted source IDs
+            changed_files: Optional set of changed file paths for targeted sync
+
+        Returns:
+            RAGSyncChanges with code and markdown changes
+        """
+        _all_rag_langs = [
+            "python", "javascript", "html", "csharp", "c", "cpp",
+            "java", "go", "rust", "erlang", "php",
+            "objc", "swift", "vb6", "scala", "haskell", "kotlin", "r", "ruby",
+            "dart", "delphi", "ada", "lua", "xaml",
+        ]
+
+        # Detect markdown changes
+        md_changed, md_deleted = self._detect_markdown_changes(changed_files)
+
+        lang_kwargs = {
+            lang: LanguageSourceChanges(
+                changed_sources.get(lang, []),
+                deleted_sources.get(lang, []),
+            )
+            for lang in _all_rag_langs
+        }
+        lang_kwargs["markdown"] = LanguageSourceChanges(md_changed, md_deleted)
+
+        return RAGSyncChanges(**lang_kwargs)
+
     def _matches_pattern(self, path: str, pattern: str) -> bool:
         """Simple glob pattern matching - delegates to shared utility."""
         return matches_pattern(path, pattern)
@@ -1300,6 +1441,8 @@ class DefaultInstanceManager:
             reter.load_html_file(abs_path, base)
         elif ext in self.CSHARP_EXTENSIONS:
             reter.load_csharp_file(abs_path, base)
+        elif ext in self.C_EXTENSIONS:
+            reter.load_c_file(abs_path, base)
         elif ext in self.CPP_EXTENSIONS:
             reter.load_cpp_file(abs_path, base)
         elif ext in self.JAVA_EXTENSIONS:
@@ -1322,6 +1465,24 @@ class DefaultInstanceManager:
             reter.load_scala_file(abs_path, base)
         elif ext in self.HASKELL_EXTENSIONS:
             reter.load_haskell_file(abs_path, base)
+        elif ext in self.KOTLIN_EXTENSIONS:
+            reter.load_kotlin_file(abs_path, base)
+        elif ext in self.R_EXTENSIONS:
+            reter.load_r_file(abs_path, base)
+        elif ext in self.RUBY_EXTENSIONS:
+            reter.load_ruby_file(abs_path, base)
+        elif ext in self.DART_EXTENSIONS:
+            reter.load_dart_file(abs_path, base)
+        elif ext in self.DELPHI_EXTENSIONS:
+            reter.load_delphi_file(abs_path, base)
+        elif ext in self.ADA_EXTENSIONS:
+            reter.load_ada_file(abs_path, base)
+        elif ext in self.LUA_EXTENSIONS:
+            reter.load_lua_file(abs_path, base)
+        elif ext in self.XAML_EXTENSIONS:
+            reter.load_xaml_file(abs_path, base)
+        elif ext in self.BASH_EXTENSIONS:
+            reter.load_bash_file(abs_path, base)
         else:
             raise ValueError(f"Unsupported file type: {rel_path}")
 
@@ -1411,6 +1572,7 @@ class DefaultInstanceManager:
             (self.JAVASCRIPT_EXTENSIONS, "javascript"),
             (self.HTML_EXTENSIONS, "html"),
             (self.CSHARP_EXTENSIONS, "csharp"),
+            (self.C_EXTENSIONS, "c"),
             (self.CPP_EXTENSIONS, "cpp"),
             (self.JAVA_EXTENSIONS, "java"),
             (self.GO_EXTENSIONS, "go"),
@@ -1422,16 +1584,15 @@ class DefaultInstanceManager:
             (self.VB6_EXTENSIONS, "vb6"),
             (self.SCALA_EXTENSIONS, "scala"),
             (self.HASKELL_EXTENSIONS, "haskell"),
-            (self.JAVA_EXTENSIONS, "java"),
-            (self.GO_EXTENSIONS, "go"),
-            (self.RUST_EXTENSIONS, "rust"),
-            (self.ERLANG_EXTENSIONS, "erlang"),
-            (self.PHP_EXTENSIONS, "php"),
-            (self.OBJC_EXTENSIONS, "objc"),
-            (self.SWIFT_EXTENSIONS, "swift"),
-            (self.VB6_EXTENSIONS, "vb6"),
-            (self.SCALA_EXTENSIONS, "scala"),
-            (self.HASKELL_EXTENSIONS, "haskell"),
+            (self.KOTLIN_EXTENSIONS, "kotlin"),
+            (self.R_EXTENSIONS, "r"),
+            (self.RUBY_EXTENSIONS, "ruby"),
+            (self.DART_EXTENSIONS, "dart"),
+            (self.DELPHI_EXTENSIONS, "delphi"),
+            (self.ADA_EXTENSIONS, "ada"),
+            (self.LUA_EXTENSIONS, "lua"),
+            (self.XAML_EXTENSIONS, "xaml"),
+            (self.BASH_EXTENSIONS, "bash"),
         ]
 
         def _lang_for_ext(rel_path: str) -> Optional[str]:
@@ -1563,37 +1724,29 @@ class DefaultInstanceManager:
         if changes_made and self._progress_callback is None:
             logger.info(f"[default] Sync complete: +{added_count} ~{modified_count} -{deleted_count}")
 
-        # Sync with RAG index if configured
-        # NOTE: RAG sync is skipped during initial load to avoid slowing down startup.
-        # Use rag_reindex(force=True) to build the index after startup.
+        # Sync with RAG index if configured (includes markdown change detection)
         if self._rag_manager and self._rag_manager.is_enabled and self._rag_manager.is_initialized:
-            has_changes = bool(changed_sources or deleted_sources)
-            if has_changes:
+            # Full scan — no targeted file set for markdown
+            rag_changes = self._build_rag_sync_changes(
+                changed_sources, deleted_sources, changed_files=None
+            )
+            if rag_changes.has_changes():
                 if self._progress_callback is None:
                     logger.info("[default] Syncing RAG index...")
                 try:
-                    _all_rag_langs = [
-                        "python", "javascript", "html", "csharp", "cpp",
-                        "java", "go", "rust", "erlang", "php",
-                        "objc", "swift", "vb6", "scala", "haskell",
-                    ]
-                    rag_changes = RAGSyncChanges(
-                        **{
-                            lang: LanguageSourceChanges(
-                                changed_sources.get(lang, []),
-                                deleted_sources.get(lang, []),
-                            )
-                            for lang in _all_rag_langs
-                        }
-                    )
                     rag_stats = self._rag_manager.sync_with_changes(
                         reter=reter,
                         project_root=self._project_root,
                         changes=rag_changes,
                     )
-                    total_added = sum(
-                        rag_stats.get(f'{lang}_vectors_added', 0)
-                        for lang in _all_rag_langs
+                    total_added = (
+                        sum(rag_stats.get(f'{lang}_vectors_added', 0)
+                            for lang in ["python", "javascript", "html", "csharp", "c", "cpp",
+                                         "java", "go", "rust", "erlang", "php",
+                                         "objc", "swift", "vb6", "scala", "haskell",
+                                         "kotlin", "r", "ruby", "dart", "delphi",
+                                         "ada", "lua", "xaml"])
+                        + rag_stats.get('markdown_vectors_added', 0)
                     )
                     if self._progress_callback is None:
                         logger.info(
