@@ -429,7 +429,50 @@ class MarkdownIndexer:
         """
         Extract fenced code blocks.
 
-        Each code block becomes a separate chunk with language metadata.
+        Tries the grammar-based ``extract_code_fences`` first (handles ``~~~``
+        fences and non-word language tags like ``c++``).  Falls back to the
+        legacy regex on any failure.
+        """
+        try:
+            from reter_code.mermaid.markdown_validator import extract_code_fences
+            _, code_blocks, _ = extract_code_fences(content)
+
+            chunks: List[MarkdownChunk] = []
+            for cb in code_blocks:
+                code = cb.content.strip()
+                if not code or len(code.split()) < 3:
+                    continue
+
+                context_heading = None
+                for i in range(cb.start_line - 2, -1, -1):
+                    if i < len(lines):
+                        heading_match = self._heading_pattern.match(lines[i])
+                        if heading_match:
+                            context_heading = heading_match.group(2).strip()
+                            break
+
+                chunks.append(MarkdownChunk(
+                    file=file_path,
+                    chunk_type="code_block",
+                    content=code,
+                    line_start=cb.start_line,
+                    line_end=cb.end_line,
+                    language=cb.language or "text",
+                    heading=context_heading,
+                ))
+            return chunks
+        except Exception:
+            logger.debug("extract_code_fences failed, falling back to regex")
+            return self._extract_code_blocks_regex(file_path, content, lines)
+
+    def _extract_code_blocks_regex(
+        self,
+        file_path: str,
+        content: str,
+        lines: List[str]
+    ) -> List[MarkdownChunk]:
+        """
+        Regex fallback for fenced code block extraction.
         """
         chunks = []
 

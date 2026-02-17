@@ -1,0 +1,367 @@
+// ============================================================
+// Mermaid Syntax Validator — Lark Grammar (Earley)
+// Covers 13 most common diagram types (~95% of real usage).
+// ============================================================
+
+// ============================================================
+// 1. FLOWCHART / GRAPH
+// ============================================================
+
+flowchart_diagram: fc_header _NL fc_body
+fc_header: FC_KW DIRECTION?
+FC_KW: "flowchart" | "graph"
+DIRECTION: "TB" | "BT" | "LR" | "RL" | "TD"
+
+fc_body: (_NL | fc_stmt)*
+fc_stmt: fc_subgraph | fc_style | fc_class_def | fc_class_assign | fc_link_style | fc_click | fc_edge_chain | fc_node_decl | COMMENT
+
+fc_subgraph: "subgraph" REST_OF_LINE _NL fc_subgraph_dir? fc_body "end"
+fc_subgraph_dir: "direction" DIRECTION _NL
+
+fc_edge_chain: fc_node (fc_arrow fc_node)+
+fc_node_decl: fc_node
+
+fc_node: FC_ID fc_shape?
+fc_shape: "[" fc_label "]"
+       | "([" fc_label "])"
+       | "[[" fc_label "]]"
+       | "[(" fc_label ")]"
+       | "((" fc_label "))"
+       | "(((" fc_label ")))"
+       | ">" fc_label "]"
+       | "{" fc_label "}"
+       | "{{" fc_label "}}"
+       | "[/" fc_label "/]"
+       | "[/" fc_label "\\]"
+       | "[\\" fc_label "/]"
+       | "[\\" fc_label "\\]"
+       | "(" fc_label ")"
+       | fc_stadium
+       | fc_class_ref
+
+fc_stadium: "([" fc_label "])"
+
+fc_label: DQUOTED | SQUOTED | /[^\])}\\\n]+/
+
+fc_arrow: "-->" | "---" | "-.->" | "-..->" | "===>" | "==>" | "--" | "-.-" | "-..-" | "===" | "==" | "~~~"
+       | "-->|" REST_OF_LINE "|"
+       | "--|" REST_OF_LINE "|"
+       | "-.->|" REST_OF_LINE "|"
+       | "==>|" REST_OF_LINE "|"
+       | "-->" "|" REST_OF_LINE "|"
+       | "-- " REST_OF_LINE " -->"
+       | "-- " REST_OF_LINE " ---"
+       | "-. " REST_OF_LINE " .->"
+       | "== " REST_OF_LINE " ==>"
+
+fc_class_ref: ":::" FC_ID
+
+fc_style: "style" FC_ID REST_OF_LINE
+fc_class_def: "classDef" FC_ID REST_OF_LINE
+fc_class_assign: "class" REST_OF_LINE
+fc_link_style: "linkStyle" REST_OF_LINE
+fc_click: "click" REST_OF_LINE
+
+FC_ID: /[a-zA-Z_][a-zA-Z0-9_]*/
+
+// ============================================================
+// 2. SEQUENCE DIAGRAM
+// ============================================================
+
+sequence_diagram: "sequenceDiagram" _NL seq_body
+seq_body: (_NL | seq_stmt)*
+seq_stmt: seq_participant | seq_actor | seq_note | seq_activate | seq_deactivate
+       | seq_loop | seq_alt | seq_opt | seq_par | seq_critical | seq_break
+       | seq_rect | seq_autonumber | seq_message
+       | seq_title | seq_links | seq_link | seq_properties
+       | COMMENT
+
+seq_participant: "participant" SEQ_ID seq_alias? _NL?
+seq_actor: "actor" SEQ_ID seq_alias? _NL?
+seq_alias: "as" REST_OF_LINE
+
+seq_message: SEQ_ID seq_msg_arrow SEQ_ID ":" REST_OF_LINE
+
+seq_msg_arrow: "->>" seq_act?
+           | "-->>" seq_act?
+           | "->" seq_act?
+           | "-->" seq_act?
+           | "-x" | "--x"
+           | "-)" | "--)"
+           | "<<->>" | "<<-->>"
+seq_act: "+" | "-"
+
+seq_note: "Note" seq_note_pos SEQ_ID ("," SEQ_ID)? ":" REST_OF_LINE
+seq_note_pos: "right of" | "left of" | "over"
+
+seq_activate: "activate" SEQ_ID
+seq_deactivate: "deactivate" SEQ_ID
+seq_autonumber: "autonumber" REST_OF_LINE?
+
+seq_loop: "loop" REST_OF_LINE _NL seq_body "end"
+seq_alt: "alt" REST_OF_LINE _NL seq_body (seq_else)* "end"
+seq_else: "else" REST_OF_LINE? _NL seq_body
+seq_opt: "opt" REST_OF_LINE _NL seq_body "end"
+seq_par: "par" REST_OF_LINE _NL seq_body (seq_and)* "end"
+seq_and: "and" REST_OF_LINE _NL seq_body
+seq_critical: "critical" REST_OF_LINE _NL seq_body (seq_option)* "end"
+seq_option: "option" REST_OF_LINE _NL seq_body
+seq_break: "break" REST_OF_LINE _NL seq_body "end"
+seq_rect: "rect" REST_OF_LINE _NL seq_body "end"
+
+seq_title: "title" REST_OF_LINE
+seq_links: "links" SEQ_ID ":" REST_OF_LINE
+seq_link: "link" SEQ_ID ":" REST_OF_LINE
+seq_properties: "properties" SEQ_ID ":" REST_OF_LINE
+
+SEQ_ID: /[a-zA-Z_][a-zA-Z0-9_]*/
+
+// ============================================================
+// 3. CLASS DIAGRAM
+// ============================================================
+
+class_diagram: "classDiagram" (_NL | "-v2")? _NL? cls_body
+cls_body: (_NL | cls_stmt)*
+cls_stmt: cls_direction | cls_namespace | cls_class_block | cls_rel | cls_annotation_line
+       | cls_note_line | cls_style | cls_css_class | cls_link | cls_callback
+       | cls_member_line | COMMENT
+
+cls_direction: "direction" DIRECTION _NL?
+
+cls_namespace: "namespace" CLS_ID "{" _NL cls_body "}" _NL?
+
+cls_class_block: "class" CLS_ID cls_generic? cls_stereotype? "{" _NL cls_members "}" _NL?
+              | "class" CLS_ID cls_generic? cls_stereotype? _NL?
+
+cls_generic: "~" /[^~]+/ "~"
+cls_stereotype: ":::css" CLS_ID
+             | "<<" /[^>]+/ ">>"
+
+cls_members: (cls_member _NL)*
+cls_member: /[+\-#~]?[^\n{}]+/
+
+cls_member_line: CLS_ID ":" REST_OF_LINE
+
+cls_rel: CLS_ID CLS_REL_ARROW CLS_ID (":" REST_OF_LINE)?
+CLS_REL_ARROW: "<|--" | "--|>" | "<|.." | "..|>"
+            | "*--" | "--*" | "o--" | "--o"
+            | "<--" | "-->" | "<.." | "..>"
+            | "<-->" | "<..>"
+            | "--" | ".."
+
+cls_annotation_line: "<<" /[^>]+/ ">>" CLS_ID
+
+cls_note_line: "note" REST_OF_LINE
+
+cls_style: "style" CLS_ID REST_OF_LINE
+cls_css_class: "cssClass" REST_OF_LINE
+cls_link: "link" CLS_ID REST_OF_LINE
+cls_callback: "callback" CLS_ID REST_OF_LINE
+
+CLS_ID: /[a-zA-Z_~][a-zA-Z0-9_~]*/
+
+// ============================================================
+// 4. STATE DIAGRAM
+// ============================================================
+
+state_diagram: STATE_KW _NL state_body
+STATE_KW: "stateDiagram-v2" | "stateDiagram"
+
+state_body: (_NL | state_stmt)*
+state_stmt: state_composite | state_choice | state_fork | state_join | state_note
+         | state_concurrency | state_transition | state_decl
+         | state_direction | state_style | COMMENT
+
+state_composite: "state" (DQUOTED "as")? STATE_ID "{" _NL state_body "}"
+state_decl: "state" DQUOTED "as" STATE_ID
+         | "state" STATE_ID
+
+state_choice: "state" STATE_ID "<<choice>>"
+state_fork: "state" STATE_ID "<<fork>>"
+state_join: "state" STATE_ID "<<join>>"
+
+state_transition: STATE_ID "-->" STATE_ID (":" REST_OF_LINE)?
+state_note: "note" ("right of" | "left of") STATE_ID (":" REST_OF_LINE)? (_NL state_note_body "end note")?
+state_note_body: /[^e]|e[^n]|en[^d]|end[^ ]|end [^n]|end n[^o]|end no[^t]|end not[^e]/+
+
+state_concurrency: "--"
+state_direction: "direction" DIRECTION
+state_style: "classDef" STATE_ID REST_OF_LINE
+          | "class" STATE_ID REST_OF_LINE
+
+STATE_ID: "[*]" | /[a-zA-Z_][a-zA-Z0-9_]*/
+
+// ============================================================
+// 5. ER DIAGRAM
+// ============================================================
+
+er_diagram: "erDiagram" _NL er_body
+er_body: (_NL | er_stmt)*
+er_stmt: er_relationship | er_entity_block | er_entity_only | COMMENT
+
+er_relationship: ER_ID ER_REL ER_ID ":" REST_OF_LINE
+ER_REL: /\|[|o]--[o|][{|]/ | /\}[|o]--[o|][{|]/ | /\|[|o]\.\.[o|][{|]/ | /\}[|o]\.\.[o|][{|]/
+
+er_entity_block: ER_ID "{" _NL er_attrs "}"
+er_attrs: (er_attr _NL)*
+er_attr: /[a-zA-Z_][a-zA-Z0-9_]*/ REST_OF_LINE
+
+er_entity_only: ER_ID
+
+ER_ID: /[a-zA-Z_][a-zA-Z0-9_-]*/
+
+// ============================================================
+// 6. GANTT CHART
+// ============================================================
+
+gantt_diagram: "gantt" _NL gantt_body
+gantt_body: (_NL | gantt_stmt)*
+gantt_stmt: gantt_title | gantt_date_fmt | gantt_axis_fmt | gantt_excludes
+         | gantt_includes | gantt_today | gantt_section | gantt_tick
+         | gantt_task | COMMENT
+
+gantt_title: "title" REST_OF_LINE
+gantt_date_fmt: "dateFormat" REST_OF_LINE
+gantt_axis_fmt: "axisFormat" REST_OF_LINE
+gantt_excludes: "excludes" REST_OF_LINE
+gantt_includes: "includes" REST_OF_LINE
+gantt_today: "todayMarker" REST_OF_LINE
+gantt_tick: "tickInterval" REST_OF_LINE
+gantt_section: "section" REST_OF_LINE
+gantt_task: /[a-zA-Z_][^\n:]*/ ":" REST_OF_LINE
+         | DQUOTED ":" REST_OF_LINE
+
+// ============================================================
+// 7. PIE CHART
+// ============================================================
+
+pie_diagram: "pie" pie_show_data? pie_title? _NL pie_body
+pie_show_data: "showData"
+pie_title: "title" REST_OF_LINE
+
+pie_body: (_NL | pie_entry | COMMENT)*
+pie_entry: DQUOTED ":" NUMBER
+
+NUMBER: /\d+(\.\d+)?/
+
+// ============================================================
+// 8. BLOCK-BETA
+// ============================================================
+
+block_beta_diagram: "block-beta" _NL bb_body
+bb_body: (_NL | bb_stmt)*
+bb_stmt: bb_columns | bb_block | bb_node | bb_edge | bb_style | bb_class_def | bb_space | COMMENT
+
+bb_columns: "columns" /\d+|auto/
+
+bb_block: "block" bb_block_id? _NL bb_body "end"
+bb_block_id: ":" BB_ID bb_shape?
+
+bb_node: BB_ID bb_shape? bb_span?
+bb_shape: "[" bb_label "]"
+       | "([" bb_label "])"
+       | "[[" bb_label "]]"
+       | "((" bb_label "))"
+       | "(((" bb_label ")))"
+       | ">" bb_label "]"
+       | "{" bb_label "}"
+       | "{{" bb_label "}}"
+       | "(" bb_label ")"
+
+bb_label: DQUOTED | SQUOTED | /[^\])}\\\n]+/
+bb_span: ":" /\d+/
+
+bb_edge: BB_ID bb_edge_arrow BB_ID
+bb_edge_arrow: "-->" | "---" | "-.->"|  "==>"
+
+bb_style: "style" BB_ID REST_OF_LINE
+bb_class_def: "classDef" BB_ID REST_OF_LINE
+bb_space: "space" (":" /\d+/)?
+
+BB_ID: /[a-zA-Z_][a-zA-Z0-9_]*/
+
+// ============================================================
+// 9. MINDMAP
+// ============================================================
+
+mindmap_diagram: "mindmap" _NL mm_body
+mm_body: (_NL | mm_node | COMMENT)*
+mm_node: MM_INDENT? mm_node_content mm_icon?
+
+mm_node_content: "((" mm_text "))"        // cloud
+              | "(" mm_text ")"           // rounded
+              | "[" mm_text "]"           // square
+              | "{{" mm_text "}}"         // hexagon
+              | "))" mm_text "(("         // bang
+              | MM_TEXT_LINE              // plain text
+
+mm_text: /[^\])}\n(]+/
+mm_icon: "::icon(" /[^)]+/ ")"
+
+MM_INDENT: /[ \t]+/
+MM_TEXT_LINE: /[^\s\[({\n)][^\n]*/
+
+// ============================================================
+// 10. TIMELINE
+// ============================================================
+
+timeline_diagram: "timeline" _NL tl_body
+tl_body: (_NL | tl_stmt)*
+tl_stmt: tl_title | tl_section | tl_event | COMMENT
+
+tl_title: "title" REST_OF_LINE
+tl_section: "section" REST_OF_LINE
+tl_event: TL_EVENT_LINE
+
+TL_EVENT_LINE: /[^\s#%][^\n]*/
+
+// ============================================================
+// 11. GITGRAPH
+// ============================================================
+
+gitgraph_diagram: GIT_KW _NL git_body
+GIT_KW: "gitGraph" | "gitgraph"
+
+git_body: (_NL | git_stmt)*
+git_stmt: git_commit | git_branch | git_checkout | git_merge | git_cherry_pick | COMMENT
+
+git_commit: "commit" git_commit_opts*
+git_commit_opts: "id:" DQUOTED
+              | "msg:" DQUOTED
+              | "tag:" DQUOTED
+              | "type:" GIT_COMMIT_TYPE
+GIT_COMMIT_TYPE: "NORMAL" | "REVERSE" | "HIGHLIGHT"
+
+git_branch: "branch" GIT_ID git_branch_order?
+git_branch_order: "order:" /\d+/
+git_checkout: "checkout" GIT_ID
+git_merge: "merge" GIT_ID git_commit_opts*
+git_cherry_pick: "cherry-pick" git_commit_opts*
+
+GIT_ID: /[a-zA-Z_][a-zA-Z0-9_\-\/]*/
+
+// ============================================================
+// 12. JOURNEY
+// ============================================================
+
+journey_diagram: "journey" _NL jr_body
+jr_body: (_NL | jr_stmt)*
+jr_stmt: jr_title | jr_section | jr_task | COMMENT
+
+jr_title: "title" REST_OF_LINE
+jr_section: "section" REST_OF_LINE
+jr_task: JR_TASK_LINE
+
+JR_TASK_LINE: /[^\s#%][^\n]*:\s*\d[^\n]*/
+
+// ============================================================
+// SHARED TERMINALS
+// ============================================================
+
+DQUOTED: /\"[^\"]*\"/
+SQUOTED: /'[^']*'/
+REST_OF_LINE: /[^\n]+/
+COMMENT: /%%[^\n]*/
+_NL: /[\r\n]+/
+%ignore /[ \t]+/
+%ignore COMMENT

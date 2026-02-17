@@ -312,10 +312,10 @@ Reter Code - AI-powered code reasoning MCP server
     reter
 
   Add MCP to Claude Code:
-    claude mcp add reter -- reter_code --stdio
+    claude mcp add reter -e RETER_PROJECT_ROOT=/path/to/your/project -- reter_code --stdio
 
   Or without installing (uvx):
-    claude mcp add reter -- uvx --from {_UVX_FROM} --find-links {_FIND_LINKS} reter_code --stdio
+    claude mcp add reter -e RETER_PROJECT_ROOT=/path/to/your/project -- uvx --from {_UVX_FROM} --find-links {_FIND_LINKS} reter_code --stdio
 
   Config locations:
     macOS:   ~/Library/Application Support/Claude/claude_desktop_config.json

@@ -182,6 +182,30 @@ class BaseHandler(ABC):
             title: Optional display title for history (auto-extracted if omitted)
         """
         if self.context.view_push:
+            if content_type == "mermaid":
+                try:
+                    from reter_code.mermaid.validator import validate_mermaid
+                    vr = validate_mermaid(content)
+                    if not vr.valid:
+                        import logging
+                        logging.getLogger(__name__).warning(
+                            "push_view: Mermaid validation failed, not pushing: %s",
+                            "; ".join(e.message for e in vr.errors))
+                        return
+                except Exception:
+                    pass
+            elif content_type == "markdown":
+                try:
+                    from reter_code.mermaid.markdown_validator import validate_markdown
+                    vr = validate_markdown(content)
+                    if not vr.valid:
+                        import logging
+                        logging.getLogger(__name__).warning(
+                            "push_view: Markdown validation failed, not pushing: %s",
+                            "; ".join(e.message for e in vr.errors))
+                        return
+                except Exception:
+                    pass
             msg = {"type": content_type, "content": content}
             if title:
                 msg["title"] = title

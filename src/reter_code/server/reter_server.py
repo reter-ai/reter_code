@@ -688,6 +688,7 @@ class ReterServer:
         """Setup signal handlers for graceful shutdown."""
         def signal_handler(signum, frame):
             logger.info(f"Received signal {signum}, shutting down...")
+            self._shutdown_signal = True
             # Only set flag — don't call stop() from signal handler.
             # stop() closes ZMQ sockets/context which blocks if called
             # while poller.poll() is on the call stack.
@@ -695,6 +696,7 @@ class ReterServer:
             # then start()'s finally block calls stop() safely.
             self._running = False
 
+        self._shutdown_signal = False
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
 
@@ -765,9 +767,10 @@ class ReterServer:
 
     def stop(self) -> None:
         """Stop the RETER server."""
-        if not self._running:
+        if getattr(self, '_stopped', False):
             return
 
+        self._stopped = True
         self._running = False
 
         # Restore terminal settings on Unix/macOS
@@ -776,6 +779,16 @@ class ReterServer:
         # Stop console UI and restore stderr logging
         if self._console:
             self._console.stop()
+
+        # Render "stopping" frame while cleanup runs
+        _is_ctrl_c = getattr(self, '_shutdown_signal', False)
+        if _is_ctrl_c and self._console:
+            try:
+                self._console.render_goodbye_frame(phase="stopping")
+            except Exception:
+                import sys
+                sys.stdout.write("Please wait, the server is stopping...\n")
+                sys.stdout.flush()
 
         logger.info("Stopping RETER server...")
 
@@ -795,6 +808,13 @@ class ReterServer:
             self._context.term()
 
         logger.info("RETER server stopped")
+
+        # Render final "goodbye" frame after all cleanup
+        if _is_ctrl_c and self._console:
+            try:
+                self._console.render_goodbye_frame(phase="goodbye")
+            except Exception:
+                pass
 
     @property
     def query_endpoint(self) -> str:

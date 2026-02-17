@@ -350,6 +350,12 @@ class CADSLTransformer:
                 if isinstance(child, Tree) and child.data == "file_scan_spec":
                     spec.rag_params = self._transform_file_scan_spec(child)
 
+        elif node.data == "parse_file_source":
+            spec.source_type = "parse_file"
+            for child in node.children:
+                if isinstance(child, Tree) and child.data == "parse_file_spec":
+                    spec.rag_params = self._transform_parse_file_spec(child)
+
     def _transform_file_scan_spec(self, node: Tree) -> Dict[str, Any]:
         """Transform file_scan specification into parameters dict."""
         params = {}
@@ -428,6 +434,60 @@ class CADSLTransformer:
         strings = []
         for child in node.children:
             if isinstance(child, Tree) and child.data == "fs_string_list":
+                for item in child.children:
+                    if isinstance(item, Token) and item.type == "STRING":
+                        s = str(item)
+                        strings.append(s[1:-1] if s.startswith('"') or s.startswith("'") else s)
+            elif isinstance(child, Token) and child.type == "STRING":
+                s = str(child)
+                strings.append(s[1:-1] if s.startswith('"') or s.startswith("'") else s)
+        return strings
+
+    def _transform_parse_file_spec(self, node: Tree) -> Dict[str, Any]:
+        """Transform parse_file specification into parameters dict."""
+        params = {}
+
+        for child in node.children:
+            if isinstance(child, Tree):
+                data = child.data
+
+                if data == "pf_path":
+                    params["path"] = self._extract_fs_string(child)
+                elif data == "pf_path_param":
+                    params["path"] = self._extract_fs_param_ref(child)
+                elif data == "pf_format":
+                    # Extract format from pf_format_type subtree
+                    for fmt_child in child.children:
+                        if isinstance(fmt_child, Tree):
+                            params["format"] = fmt_child.data.replace("pf_", "")
+                elif data == "pf_format_param":
+                    params["format"] = self._extract_fs_param_ref(child)
+                elif data == "pf_encoding":
+                    params["encoding"] = self._extract_fs_string(child)
+                elif data == "pf_encoding_param":
+                    params["encoding"] = self._extract_fs_param_ref(child)
+                elif data == "pf_separator":
+                    params["separator"] = self._extract_fs_string(child)
+                elif data == "pf_separator_param":
+                    params["separator"] = self._extract_fs_param_ref(child)
+                elif data == "pf_sheet":
+                    params["sheet"] = self._extract_fs_string(child)
+                elif data == "pf_sheet_param":
+                    params["sheet"] = self._extract_fs_param_ref(child)
+                elif data == "pf_columns":
+                    params["columns"] = self._extract_pf_string_list(child)
+                elif data == "pf_limit":
+                    params["limit"] = self._extract_fs_int(child)
+                elif data == "pf_limit_param":
+                    params["limit"] = self._extract_fs_param_ref(child)
+
+        return params
+
+    def _extract_pf_string_list(self, node: Tree) -> List[str]:
+        """Extract list of strings from pf_columns node."""
+        strings = []
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "pf_string_list":
                 for item in child.children:
                     if isinstance(item, Token) and item.type == "STRING":
                         s = str(item)
@@ -659,6 +719,8 @@ class CADSLTransformer:
             return self._transform_fetch_content_step(node)
         elif step_type == "view":
             return self._transform_view_step(node)
+        elif step_type == "write_file":
+            return self._transform_write_file_step(node)
 
         return None
 
@@ -1851,6 +1913,49 @@ class CADSLTransformer:
                                 result["description_param"] = str(ref_node.children[0])
                             else:
                                 result["description_param"] = str(ref_node)
+
+        return result
+
+    def _transform_write_file_step(self, node: Tree) -> Dict[str, Any]:
+        """Transform write_file step: write_file { path: "out.csv", format: csv }"""
+        result = {
+            "type": "write_file",
+            "path": "",
+            "format": "json",
+            "encoding": "utf-8",
+            "separator": ",",
+            "indent": 2,
+            "overwrite": True,
+        }
+
+        for child in node.children:
+            if isinstance(child, Tree) and child.data == "write_file_spec":
+                for param in child.children:
+                    if isinstance(param, Tree):
+                        if param.data == "wf_path":
+                            result["path"] = self._extract_fs_string(param)
+                        elif param.data == "wf_path_param":
+                            result["path"] = self._extract_fs_param_ref(param)
+                        elif param.data == "wf_format":
+                            for fmt_child in param.children:
+                                if isinstance(fmt_child, Tree):
+                                    result["format"] = fmt_child.data.replace("wf_", "")
+                        elif param.data == "wf_format_param":
+                            result["format"] = self._extract_fs_param_ref(param)
+                        elif param.data == "wf_encoding":
+                            result["encoding"] = self._extract_fs_string(param)
+                        elif param.data == "wf_encoding_param":
+                            result["encoding"] = self._extract_fs_param_ref(param)
+                        elif param.data == "wf_separator":
+                            result["separator"] = self._extract_fs_string(param)
+                        elif param.data == "wf_separator_param":
+                            result["separator"] = self._extract_fs_param_ref(param)
+                        elif param.data == "wf_indent":
+                            result["indent"] = self._extract_fs_int(param)
+                        elif param.data == "wf_indent_param":
+                            result["indent"] = self._extract_fs_param_ref(param)
+                        elif param.data == "wf_overwrite":
+                            result["overwrite"] = self._extract_fs_bool(param)
 
         return result
 
@@ -4786,6 +4891,26 @@ class ViewStep:
                     content_type = "markdown"
 
             if content and content_type:
+                if content_type == "mermaid":
+                    try:
+                        from reter_code.mermaid.validator import validate_mermaid
+                        vr = validate_mermaid(content)
+                        if not vr.valid:
+                            logger.warning("ViewStep: Mermaid validation failed, not pushing: %s",
+                                           "; ".join(e.message for e in vr.errors))
+                            return pipeline_ok(data)
+                    except Exception:
+                        pass
+                elif content_type == "markdown":
+                    try:
+                        from reter_code.mermaid.markdown_validator import validate_markdown
+                        vr = validate_markdown(content)
+                        if not vr.valid:
+                            logger.warning("ViewStep: Markdown validation failed, not pushing: %s",
+                                           "; ".join(e.message for e in vr.errors))
+                            return pipeline_ok(data)
+                    except Exception:
+                        pass
                 view_push(content_type, content, title=self.description)
                 logger.debug(f"ViewStep: pushed {content_type} content ({len(str(content))} chars)")
             else:
@@ -4795,6 +4920,101 @@ class ViewStep:
             logger.debug(f"ViewStep: push failed (non-fatal): {e}")
 
         return pipeline_ok(data)
+
+
+class WriteFileStep:
+    """
+    Write pipeline results to a file. Pass-through: data flows to next step unchanged.
+
+    Syntax: write_file { path: "output.csv", format: csv }
+           write_file { }  -- auto-generates temp file in .reter_code/results/
+
+    When called without a path, generates a random filename under
+    <project_root>/.reter_code/results/ (default format: json).
+    The output file path is added to the result as _output_file.
+
+    Parameters:
+    - path: Output file path (relative to project root). Empty = auto-generate.
+    - format: csv, json, or parquet (default: json)
+    - encoding: File encoding (default: utf-8)
+    - separator: CSV separator (default: ,)
+    - indent: JSON indent (default: 2)
+    - overwrite: Whether to overwrite existing files (default: true)
+
+    ::: This is-in-layer Domain-Specific-Language-Layer.
+    ::: This is a step.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
+    """
+
+    RESULTS_DIR = ".reter_code/results"
+    FORMAT_EXT = {"csv": ".csv", "json": ".json", "parquet": ".parquet"}
+
+    def __init__(self, path: str = "", format: str = "json", encoding: str = "utf-8",
+                 separator: str = ",", indent: int = 2, overwrite: bool = True):
+        self.path = path
+        self.format = format
+        self.encoding = encoding
+        self.separator = separator
+        self.indent = indent
+        self.overwrite = overwrite
+
+    def _generate_path(self, project_root: str) -> "Path":
+        """Generate a random filename in the results directory."""
+        import uuid
+        from datetime import datetime
+        from pathlib import Path
+
+        results_dir = Path(project_root) / self.RESULTS_DIR
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        short_id = uuid.uuid4().hex[:8]
+        ext = self.FORMAT_EXT.get(self.format, ".json")
+        return results_dir / f"{ts}_{short_id}{ext}"
+
+    def execute(self, data, ctx=None):
+        """Write data to file and pass through."""
+        import pandas as pd
+        from pathlib import Path
+        from reter_code.dsl.core import pipeline_ok, pipeline_err, _get_project_root
+
+        project_root = _get_project_root(ctx)
+        auto_generated = not self.path
+
+        if auto_generated:
+            file_path = self._generate_path(project_root)
+        else:
+            file_path = Path(project_root) / self.path
+
+        if file_path.exists() and not self.overwrite:
+            return pipeline_err("write_file", f"File exists and overwrite=false: {file_path}")
+
+        try:
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Normalize input
+            rows = data.to_pylist() if hasattr(data, 'to_pylist') else data
+            if isinstance(rows, dict):
+                rows = [rows]
+
+            df = pd.DataFrame(rows)
+
+            if self.format == "csv":
+                df.to_csv(file_path, index=False, encoding=self.encoding, sep=self.separator)
+            elif self.format == "json":
+                df.to_json(file_path, orient="records", indent=self.indent, force_ascii=False)
+            elif self.format == "parquet":
+                df.to_parquet(file_path, index=False)
+            else:
+                return pipeline_err("write_file", f"Unsupported format: {self.format}")
+
+            if auto_generated:
+                # Return data wrapped with the generated file path
+                return pipeline_ok({"results": data, "_output_file": str(file_path)})
+            return pipeline_ok(data)
+        except Exception as e:
+            return pipeline_err("write_file", f"Failed to write {self.path or str(file_path)}: {e}", e)
 
 
 # ============================================================

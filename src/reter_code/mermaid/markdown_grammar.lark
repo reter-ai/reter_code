@@ -1,0 +1,49 @@
+// Markdown structure grammar (Earley, line-oriented).
+//
+// Operates on pre-processed content where fenced code blocks have been
+// replaced with ___CODEBLOCK_N___ placeholders by the Python extractor.
+// The grammar classifies block-level elements but never rejects —
+// any unrecognised line falls through to PARAGRAPH (priority 0).
+
+start: (_NL | element)*
+
+element: atx_heading
+       | thematic_break
+       | code_placeholder
+       | blockquote_line
+       | unordered_item
+       | ordered_item
+       | table_sep
+       | table_row
+       | link_def
+       | html_line
+       | paragraph_line
+
+atx_heading:      ATX_HEADING
+thematic_break:   THEMATIC_BREAK
+code_placeholder: CODE_PLACEHOLDER
+blockquote_line:  BLOCKQUOTE
+unordered_item:   UL_ITEM
+ordered_item:     OL_ITEM
+table_sep:        TABLE_SEP
+table_row:        TABLE_ROW
+link_def:         LINK_DEF
+html_line:        HTML_LINE
+paragraph_line:   PARAGRAPH
+
+// --- Terminals (highest priority matched first) ---
+
+ATX_HEADING.5:      /#{1,6}[ \t]+[^\n]*/
+THEMATIC_BREAK.5:   /[ \t]{0,3}([-]{3,}|[*]{3,}|[_]{3,})[ \t]*/
+CODE_PLACEHOLDER.5: /___CODEBLOCK_\d+___/
+BLOCKQUOTE.4:       /[ \t]{0,3}>[^\n]*/
+UL_ITEM.4:          /[ \t]*[-*+][ \t]+[^\n]*/
+OL_ITEM.4:          /[ \t]*\d+[.)]\s+[^\n]*/
+TABLE_SEP.3:        /\|?[ \t]*:?[-]{3,}:?[ \t]*(\|[ \t]*:?[-]{3,}:?[ \t]*)+\|?/
+TABLE_ROW.3:        /\|[^\n]+/
+LINK_DEF.3:         /\[[^\]]+\]:[ \t]+[^\n]+/
+HTML_LINE.2:        /<\/?[a-zA-Z][^\n]*/
+PARAGRAPH.0:        /[^\n]+/
+
+_NL: /[\r\n]+/
+%ignore /[ \t]+/

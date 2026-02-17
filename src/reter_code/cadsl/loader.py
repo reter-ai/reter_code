@@ -208,7 +208,7 @@ def build_pipeline_factory(spec: CADSLToolSpec,
     from reter_code.dsl.core import (
         Pipeline, REQLSource, ValueSource,
         RAGSearchSource, RAGDuplicatesSource, RAGClustersSource, RAGDBScanSource,
-        FileScanSource,
+        FileScanSource, ParseFileSource,
         FilterStep, SelectStep, MapStep, FlatMapStep,
         OrderByStep, LimitStep, OffsetStep,
         GroupByStep, AggregateStep, FlattenStep, UniqueStep,
@@ -273,6 +273,17 @@ def build_pipeline_factory(spec: CADSLToolSpec,
                 context_lines=params.get("context_lines", 0),
                 max_matches_per_file=params.get("max_matches_per_file"),
                 include_stats=params.get("include_stats", True),
+            )
+        elif spec.source_type == "parse_file":
+            params = _resolve_rag_params(spec.rag_params, ctx)
+            source = ParseFileSource(
+                path=params.get("path", ""),
+                format=params.get("format", "csv"),
+                encoding=params.get("encoding", "utf-8"),
+                separator=params.get("separator", ","),
+                sheet=params.get("sheet"),
+                columns=params.get("columns"),
+                limit=params.get("limit"),
             )
         else:
             raise ValueError(f"Unknown source type: {spec.source_type}")
@@ -598,6 +609,15 @@ def build_pipeline_factory(spec: CADSLToolSpec,
                     output_field=step_spec.get("output_field", "body"),
                     max_lines=max_lines,
                 )
+
+            elif step_type == "write_file":
+                from .transformer import WriteFileStep
+                params_resolved = {}
+                for k, v in step_spec.items():
+                    if k == "type":
+                        continue
+                    params_resolved[k] = _resolve_param_ref(v, ctx, v)
+                pipeline = pipeline >> WriteFileStep(**params_resolved)
 
         if emit_key:
             pipeline = pipeline.emit(emit_key)

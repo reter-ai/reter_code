@@ -69,6 +69,7 @@ reter_code = [
     "resources/**/*",
     "cadsl/tools/**/*.cadsl",
     "cadsl/*.lark",
+    "mermaid/*.lark",
     "server/view/*",
 ]
 

@@ -56,6 +56,7 @@ class CADSLToolMetadata:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "name": self.name,
+            "file_path": str(self.file_path),
             "category": self.category,
             "tool_type": self.tool_type,
             "description": self.description,
@@ -485,19 +486,19 @@ def handle_list_examples(category: Optional[str] = None) -> str:
                 continue
             files = list(subdir.glob("*.cadsl"))
             if files:
-                examples[cat_name] = [f.stem for f in files]
+                examples[cat_name] = [(f.stem, str(f)) for f in files]
 
     if not examples:
         return f"# No examples found" + (f" for category '{category}'" if category else "")
 
     result = "# Available CADSL Examples\n\n"
-    for cat, files in sorted(examples.items()):
+    for cat, cat_files in sorted(examples.items()):
         result += f"## {cat}\n"
-        for f in sorted(files):
-            result += f"- {cat}/{f}\n"
+        for f, fpath in sorted(cat_files):
+            result += f"- {cat}/{f} — `{fpath}`\n"
         result += "\n"
 
-    result += "\nUse get_example(name) with 'category/name' format (e.g., 'smells/god_class')."
+    result += "\nUse execute_cadsl with the file path to run, or get_example('category/name') to view code."
     return result
 
 
@@ -578,6 +579,7 @@ def handle_search_examples(query: str, max_results: int = 10, include_code_count
         for tool_meta, score in top_matches:
             content = tool_index.get_tool_content(tool_meta.name)
             result += f"### {tool_meta.category}/{tool_meta.name} (score: {score:.2f})\n"
+            result += f"**Path:** `{tool_meta.file_path}`\n"
             if tool_meta.description:
                 result += f"{tool_meta.description}\n"
             result += "```cadsl\n"
@@ -594,18 +596,18 @@ def handle_search_examples(query: str, max_results: int = 10, include_code_count
             cat = tool.category
             if cat not in by_category:
                 by_category[cat] = []
-            by_category[cat].append((tool.name, score, tool.description[:80] if tool.description else ""))
+            by_category[cat].append((tool.name, score, tool.description[:80] if tool.description else "", str(tool.file_path)))
 
         for cat, tools in sorted(by_category.items(), key=lambda x: -max(t[1] for t in x[1])):
             result += f"**{cat}:**\n"
-            for name, score, desc in sorted(tools, key=lambda x: -x[1]):
-                result += f"- {cat}/{name} (score: {score:.2f})"
+            for name, score, desc, fpath in sorted(tools, key=lambda x: -x[1]):
+                result += f"- `{fpath}` (score: {score:.2f})"
                 if desc:
                     result += f" - {desc}..."
                 result += "\n"
             result += "\n"
 
-        result += "Use get_example('category/name') to view full code for these examples."
+        result += "Use execute_cadsl with the file path to run any of these tools."
 
     return result
 

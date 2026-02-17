@@ -659,6 +659,70 @@ class FileScanSource(Source[List[Dict[str, Any]]]):
             return pipeline_err("file_scan", f"File scan failed: {e}", e)
 
 
+@dataclass
+class ParseFileSource(Source[List[Dict[str, Any]]]):
+    """
+    Parse an external data file (CSV, JSON, Parquet) as table rows.
+
+    ::: This is-in-layer Domain-Specific-Language-Layer.
+    ::: This is a source.
+    ::: This is-in-process Main-Process.
+    ::: This is stateless.
+    """
+    path: str = ""
+    format: str = "csv"
+    encoding: str = "utf-8"
+    separator: str = ","
+    sheet: Optional[str] = None
+    columns: Optional[List[str]] = None
+    limit: Optional[int] = None
+
+    def execute(self, ctx: Context) -> PipelineResult[List[Dict[str, Any]]]:
+        import pandas as pd
+        from pathlib import Path
+
+        project_root = _get_project_root(ctx)
+        file_path = Path(project_root) / self.path
+        if not file_path.exists():
+            return pipeline_err("parse_file", f"File not found: {file_path}")
+
+        try:
+            if self.format == "csv":
+                df = pd.read_csv(file_path, encoding=self.encoding, sep=self.separator,
+                                 usecols=self.columns, nrows=self.limit)
+            elif self.format == "json":
+                df = pd.read_json(file_path, encoding=self.encoding)
+                if self.columns:
+                    df = df[self.columns]
+                if self.limit:
+                    df = df.head(self.limit)
+            elif self.format == "parquet":
+                df = pd.read_parquet(file_path, columns=self.columns)
+                if self.limit:
+                    df = df.head(self.limit)
+            else:
+                return pipeline_err("parse_file", f"Unsupported format: {self.format}")
+
+            df = df.where(df.notna(), None)
+            results = df.to_dict(orient="records")
+            return pipeline_ok(results)
+        except Exception as e:
+            return pipeline_err("parse_file", f"Failed to parse {self.path}: {e}", e)
+
+
+def _get_project_root(ctx):
+    """Get project root from context or environment."""
+    if ctx and hasattr(ctx, 'reter') and ctx.reter:
+        root = getattr(ctx.reter, 'project_root', None)
+        if root:
+            return root
+        root = getattr(ctx.reter, 'base_directory', None)
+        if root:
+            return root
+    import os
+    return os.environ.get("RETER_PROJECT_ROOT", os.getcwd())
+
+
 # Backward compatibility alias
 RAGSource = RAGSearchSource
 

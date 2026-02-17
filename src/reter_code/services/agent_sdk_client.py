@@ -64,6 +64,24 @@ class QueryGenerationResult:
     error: Optional[str] = None
 
 
+@dataclass
+class NLQAgentResult:
+    """
+    Result of NLQ agent orchestration.
+
+    The agent answers the question directly — response contains markdown,
+    mermaid diagrams, analysis text, etc.
+
+    ::: This is-in-layer Utility-Layer.
+    ::: This is a value-object.
+    """
+    success: bool
+    response: str
+    tools_used: List[str]
+    attempts: int
+    error: Optional[str] = None
+
+
 # ============================================================
 # RESOURCE LOADING
 # ============================================================
@@ -414,6 +432,61 @@ query with_python() {{
 Your ONLY job is to generate a CADSL query. You MUST output the query in a ```cadsl code block.
 Do NOT write descriptions, summaries, or explanations - ONLY output the query.
 Do NOT answer the question yourself - generate a query that will answer it.
+"""
+
+NLQ_AGENT_SYSTEM_PROMPT_TEMPLATE = """You are a code analysis assistant. Your job is to ANSWER the user's question about their codebase.
+
+## PROJECT ROOT
+{project_root}
+
+## AVAILABLE TOOLS
+
+**Query Tools:**
+- `run_cadsl` - Execute CADSL pipelines for structured code analysis
+- `run_reql` - Execute REQL queries against the code knowledge graph
+- `run_rag_search` - Semantic search to find code by meaning
+- `run_file_scan` - Scan files with glob/content patterns
+- `run_rag_duplicates` - Find duplicate code pairs
+- `run_rag_clusters` - Find clusters of similar code
+
+**Example Tools (use to learn CADSL/REQL syntax):**
+- `search_examples` - Find similar CADSL examples by description
+- `get_example` - Get full working CADSL code (use 'category/name' format)
+- `list_examples` - Browse all examples by category
+
+**Data Chaining:**
+- `write_temp_results` - Save intermediate JSON data to a temp file. Returns a path you can use in subsequent CADSL queries with `parse_file {{ path: "<path>", format: json }}`
+
+**Verification Tools:**
+- `Read` - Read source files to verify results. Use paths relative to PROJECT ROOT.
+- `Grep` - Search codebase. ALWAYS specify a `path` parameter to limit scope.
+
+## SCHEMA INFO
+{schema_info}
+
+## REQL SYNTAX REFERENCE
+- Entity types: `?x type class`, `?x type method`, `?x type function`
+- Predicates (CNL hyphenated): `has-name`, `is-in-file`, `is-at-line`, `is-defined-in`, `inherits-from`, `calls`, `imports`
+- FILTER: `FILTER(?count > 5)`, `FILTER(REGEX(?name, "pattern", "i"))`
+- Patterns separated by dots: `?x type class . ?x has-name ?n`
+- GROUP BY / ORDER BY / LIMIT supported
+- REQL blocks do NOT support # comments
+
+## WORKFLOW
+1. Understand what the user is asking
+2. Use `run_reql`, `run_cadsl`, `run_rag_search`, or `run_file_scan` to gather data
+3. If needed, chain multiple queries: save intermediate results with `write_temp_results`, then use the path in a follow-up CADSL query
+4. Synthesize the results into a clear answer
+5. Use `Read` or `Grep` to spot-check and verify findings
+
+## OUTPUT FORMAT
+- Answer the question directly in the best format:
+  - **Numbers/counts**: State the number clearly
+  - **Lists**: Use markdown tables or bullet points
+  - **Diagrams**: Output mermaid code blocks (```mermaid)
+  - **Analysis**: Write narrative markdown with evidence
+- Always cite specific files and line numbers when relevant
+- If results are empty, explain what you searched and why nothing matched
 """
 
 CADSL_RETRY_PROMPT = """Your previous CADSL query returned {result_status}.
@@ -865,8 +938,43 @@ def _create_query_tools(reter_client=None):
             logger.debug(f"run_file_scan error: {e}", exc_info=True)
             return {"content": [{"type": "text", "text": error_msg}], "is_error": True}
 
+    @tool("write_temp_results", "Write JSON data to temp file in .reter_code/results/. Returns path for use in parse_file.", {"data": str})
+    async def write_temp_results_tool(args):
+        """Write intermediate results to a temp file for multi-step analysis."""
+        import json
+        import uuid
+        import time
+
+        data = args.get("data", "")
+        if not data.strip():
+            return {"content": [{"type": "text", "text": "Error: Empty data"}], "is_error": True}
+
+        # Validate it's valid JSON
+        try:
+            json.loads(data)
+        except json.JSONDecodeError as e:
+            return {"content": [{"type": "text", "text": f"Error: Invalid JSON: {e}"}], "is_error": True}
+
+        # Write to .reter_code/results/ directory
+        import os
+        project_root = os.environ.get("RETER_PROJECT_ROOT", os.getcwd())
+        results_dir = os.path.join(project_root, ".reter_code", "results")
+        os.makedirs(results_dir, exist_ok=True)
+
+        timestamp = int(time.time())
+        unique_id = uuid.uuid4().hex[:8]
+        filename = f"{timestamp}_{unique_id}.json"
+        filepath = os.path.join(results_dir, filename)
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(data)
+
+        logger.debug(f"write_temp_results: wrote {len(data)} bytes to {filepath}")
+        return {"content": [{"type": "text", "text": f"Data written to: {filepath}\n\nUse this path in CADSL with: parse_file {{ path: \"{filepath}\", format: json }}"}]}
+
     # Build tools list - all tools require reter_client
     tools = [get_grammar_tool, list_examples_tool, search_examples_tool, get_example_tool]
+    tools.append(write_temp_results_tool)
     if reter_client is not None:
         # All execution tools available when connected to RETER server
         tools.append(run_reql_tool)
@@ -903,7 +1011,8 @@ def _build_agent_options(system_prompt: str, max_turns: int, reter_client=None):
         "mcp__query_helpers__get_grammar",
         "mcp__query_helpers__list_examples",
         "mcp__query_helpers__search_examples",
-        "mcp__query_helpers__get_example"
+        "mcp__query_helpers__get_example",
+        "mcp__query_helpers__write_temp_results"
     ]
 
     # All execution tools available when connected to RETER server
@@ -1315,6 +1424,216 @@ async def generate_cadsl_query(
                 logger.debug("[NLQ_GEN] Client session closed successfully")
             except Exception as close_err:
                 logger.debug(f"[NLQ_GEN] Error closing client: {close_err}")
+
+
+_MERMAID_KEYWORDS = (
+    "graph ", "graph\n", "flowchart ", "flowchart\n",
+    "sequencediagram", "classdiagram", "statediagram",
+    "erdiagram", "gantt", "pie", "gitgraph",
+    "mindmap", "timeline", "block-beta",
+    "journey", "quadrantchart", "requirementdiagram",
+    "c4context", "c4container", "c4component", "c4deployment",
+    "sankey-beta", "xychart-beta",
+)
+
+
+def _validate_response_content(response_text: str) -> Optional[str]:
+    """Validate the agent's response as markdown or pure mermaid.
+
+    Returns error description string if validation fails, None if valid.
+    """
+    try:
+        stripped = response_text.strip()
+        first_line = stripped.split("\n", 1)[0].strip().lower()
+
+        # Check if response is pure mermaid (starts with a mermaid keyword)
+        is_pure_mermaid = any(first_line.startswith(kw) for kw in _MERMAID_KEYWORDS)
+
+        if is_pure_mermaid:
+            from ..mermaid.validator import validate_mermaid
+            result = validate_mermaid(stripped)
+            if result.valid:
+                return None
+            errors = []
+            for err in result.errors:
+                errors.append(f"- Mermaid ({result.diagram_type}): {err.message}")
+            return "\n".join(errors) if errors else "Unknown mermaid validation error"
+
+        # Otherwise validate as markdown (catches embedded mermaid too)
+        from ..mermaid.markdown_validator import validate_markdown
+        result = validate_markdown(response_text)
+        if result.valid:
+            return None
+
+        errors = []
+        for err in result.errors:
+            errors.append(f"- {err.message} (line {err.line})" if err.line else f"- {err.message}")
+        for mr in result.mermaid_results:
+            if not mr.valid:
+                for err in mr.errors:
+                    errors.append(f"- Mermaid ({mr.diagram_type}): {err.message}")
+        if result.warnings:
+            for w in result.warnings:
+                errors.append(f"- Warning: {w}")
+
+        return "\n".join(errors) if errors else "Unknown validation error"
+
+    except Exception as e:
+        logger.debug(f"[NLQ_VALIDATE] Validation error: {e}")
+        return None
+
+
+def _push_response_to_view(response_text: str, reter_client) -> None:
+    """Push the agent's response to RETER view server if it contains renderable content."""
+    try:
+        stripped = response_text.strip()
+        first_line = stripped.split("\n", 1)[0].strip().lower()
+
+        # Detect content type
+        is_pure_mermaid = any(first_line.startswith(kw) for kw in _MERMAID_KEYWORDS)
+
+        if is_pure_mermaid:
+            reter_client.view_push(stripped, "mermaid")
+            logger.debug("[NLQ_VIEW] Pushed pure mermaid to view")
+        else:
+            reter_client.view_push(response_text, "markdown")
+            logger.debug("[NLQ_VIEW] Pushed markdown to view")
+    except Exception as e:
+        logger.debug(f"[NLQ_VIEW] Failed to push to view: {e}")
+
+
+async def execute_nlq_agent(
+    question: str,
+    schema_info: str,
+    max_iterations: int = 10,
+    similar_tools_context: Optional[str] = None,
+    reter_client=None,
+    project_root: Optional[str] = None
+) -> NLQAgentResult:
+    """
+    Execute the NLQ agent as an orchestrator that answers the question directly.
+
+    The agent uses CADSL/REQL/RAG tools to gather data and returns a
+    synthesized answer in markdown, mermaid, or analysis text.
+
+    Args:
+        question: The natural language question to answer
+        schema_info: Schema information for the codebase
+        max_iterations: Maximum agent turns (default: 10)
+        similar_tools_context: Optional context about similar tools/examples
+        reter_client: ReterClient instance connected to RETER server
+        project_root: Project root directory for context
+    """
+    if not is_agent_sdk_available():
+        return NLQAgentResult(
+            success=False,
+            response="",
+            tools_used=[],
+            attempts=0,
+            error="Claude Agent SDK not available"
+        )
+
+    from claude_agent_sdk import ClaudeSDKClient
+
+    tools_used = []
+
+    # Build initial prompt
+    initial_prompt = f"Question: {question}"
+    if similar_tools_context:
+        initial_prompt = f"{initial_prompt}\n\n{similar_tools_context}"
+
+    # Format system prompt with project root and schema
+    if project_root is None:
+        import os
+        project_root = os.environ.get("RETER_PROJECT_ROOT", os.getcwd())
+    system_prompt = NLQ_AGENT_SYSTEM_PROMPT_TEMPLATE.format(
+        project_root=project_root,
+        schema_info=schema_info
+    )
+
+    # Build agent options — higher max_turns since agent uses many tools
+    options = _build_agent_options(system_prompt, max_iterations * 3, reter_client)
+
+    logger.debug(f"\n{'#'*70}")
+    logger.debug(f"[NLQ_AGENT] STARTING NLQ AGENT ORCHESTRATION")
+    logger.debug(f"[NLQ_AGENT] Question: {question}")
+    logger.debug(f"[NLQ_AGENT] Max iterations: {max_iterations}")
+    logger.debug(f"[NLQ_AGENT] Has similar tools context: {similar_tools_context is not None}")
+    logger.debug(f"{'#'*70}")
+
+    client = None
+    try:
+        client = ClaudeSDKClient(options=options)
+        await client.__aenter__()
+
+        # Send the question
+        await client.query(initial_prompt)
+        response_text = await _process_agent_response(client, tools_used)
+        attempts = 1
+
+        logger.debug(f"[NLQ_AGENT] Agent response ({len(response_text)} chars)")
+        logger.debug(f"[NLQ_AGENT] Tools used: {tools_used}")
+        logger.debug(f"[NLQ_AGENT] Response preview: {response_text[:500]}...")
+
+        if not response_text.strip():
+            return NLQAgentResult(
+                success=False,
+                response="",
+                tools_used=tools_used,
+                attempts=attempts,
+                error="Agent returned empty response"
+            )
+
+        # Validate mermaid/markdown in response and retry if invalid
+        max_validation_retries = 2
+        for validation_attempt in range(max_validation_retries):
+            validation_errors = _validate_response_content(response_text)
+            if not validation_errors:
+                logger.debug(f"[NLQ_AGENT] Response validation passed")
+                break
+
+            logger.debug(f"[NLQ_AGENT] Validation failed (attempt {validation_attempt + 1}/{max_validation_retries}): {validation_errors}")
+
+            # Send validation errors back to agent for retry
+            retry_prompt = (
+                f"Your response contains invalid mermaid/markdown syntax. "
+                f"Please fix the following errors and regenerate your answer:\n\n"
+                f"{validation_errors}\n\n"
+                f"Output the corrected response."
+            )
+            await client.query(retry_prompt)
+            response_text = await _process_agent_response(client, tools_used)
+            attempts += 1
+            logger.debug(f"[NLQ_AGENT] Validation retry response ({len(response_text)} chars)")
+
+        # Push validated response to RETER view
+        if reter_client is not None:
+            _push_response_to_view(response_text, reter_client)
+
+        return NLQAgentResult(
+            success=True,
+            response=response_text,
+            tools_used=tools_used,
+            attempts=attempts
+        )
+
+    except Exception as e:
+        import traceback
+        logger.debug(f"[NLQ_AGENT] EXCEPTION: {type(e).__name__}: {e}")
+        logger.debug(f"[NLQ_AGENT] Traceback:\n{traceback.format_exc()}")
+        return NLQAgentResult(
+            success=False,
+            response="",
+            tools_used=tools_used,
+            attempts=1,
+            error=str(e)
+        )
+    finally:
+        if client is not None:
+            try:
+                await client.__aexit__(None, None, None)
+            except Exception as close_err:
+                logger.debug(f"[NLQ_AGENT] Error closing client: {close_err}")
 
 
 async def retry_cadsl_query(

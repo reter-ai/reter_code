@@ -514,6 +514,45 @@ Greets a person by name.
         doc_chunks = [c for c in chunks if c.chunk_type == "document"]
         assert len(doc_chunks) <= 1
 
+    def test_tilde_fence_extraction(self, indexer, tmp_path):
+        """Test that ~~~language fences are captured by the grammar path."""
+        content = (
+            "# Tilde test\n\n"
+            "~~~python\n"
+            "def hello():\n"
+            "    return 'world'\n"
+            "~~~\n"
+        )
+        file_path = tmp_path / "tilde.md"
+        file_path.write_text(content)
+
+        chunks = indexer.parse_file(str(file_path))
+        code_blocks = [c for c in chunks if c.chunk_type == "code_block"]
+
+        assert len(code_blocks) == 1
+        assert code_blocks[0].language == "python"
+        assert "hello" in code_blocks[0].content
+
+    def test_nonword_language_tag(self, indexer, tmp_path):
+        """Test that non-word language tags like c++ are captured."""
+        content = (
+            "# Non-word lang\n\n"
+            "```c++\n"
+            "int main() {\n"
+            "    return 0;\n"
+            "}\n"
+            "```\n"
+        )
+        file_path = tmp_path / "cpp.md"
+        file_path.write_text(content)
+
+        chunks = indexer.parse_file(str(file_path))
+        code_blocks = [c for c in chunks if c.chunk_type == "code_block"]
+
+        assert len(code_blocks) == 1
+        assert code_blocks[0].language == "c++"
+        assert "main" in code_blocks[0].content
+
 
 @pytest.mark.skipif(not FAISS_AVAILABLE, reason="faiss-cpu not installed")
 class TestIntegration:

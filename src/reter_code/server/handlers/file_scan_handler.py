@@ -69,20 +69,39 @@ class FileScanHandler(BaseHandler):
             include_stats=True
         )
 
-        # Execute the scan
-        results = source.execute(self.reter)
+        # Execute the scan — returns Result[T, PipelineError]
+        from ...dsl.core import Context
+        from ...dsl.catpy import Ok, Err
+        ctx = Context(reter=self.reter)
+        result = source.execute(ctx)
 
-        # Apply limit
-        files = results.get("files", [])[:limit]
+        # Unwrap the Result monad
+        if isinstance(result, Err):
+            raise RuntimeError(f"File scan failed: {result.error}")
 
-        return {
-            "success": True,
-            "files": files,
-            "count": len(files),
-            "total_matches": results.get("total_matches", 0),
-            "stats": results.get("stats", {}),
-            "execution_time_ms": results.get("execution_time_ms", 0)
-        }
+        data = result.value
+
+        # execute returns Ok(list_of_dicts) when matches found,
+        # or Ok({"files": [], "count": 0, "debug": ...}) when empty
+        if isinstance(data, list):
+            files = data[:limit]
+            return {
+                "success": True,
+                "files": files,
+                "count": len(files),
+                "total_matches": sum(f.get("match_count", 0) for f in files),
+            }
+        else:
+            # Dict format with files key
+            files = data.get("files", [])[:limit]
+            return {
+                "success": True,
+                "files": files,
+                "count": len(files),
+                "total_matches": data.get("total_matches", 0),
+                "stats": data.get("stats", {}),
+                "debug": data.get("debug"),
+            }
 
 
 __all__ = ["FileScanHandler"]

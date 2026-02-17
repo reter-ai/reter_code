@@ -68,7 +68,7 @@ class ServerStatus:
     avg_query_time_ms: float = 0.0
 
     # Progress tracking
-    current_operation: Optional[str] = "Initializing..."  # Start with initializing
+    current_operation: Optional[str] = "Please wait, the server is loading..."  # Start with loading message
     progress_current: int = 0
     progress_total: int = 0
     current_file: Optional[str] = None  # Current file being processed
@@ -203,11 +203,88 @@ class ConsoleUI:
     def stop(self) -> None:
         """Stop live display."""
         self._running = False
+        # Wait for refresh thread to finish so it doesn't write after goodbye
+        if self._refresh_thread and self._refresh_thread.is_alive():
+            self._refresh_thread.join(timeout=1.0)
         # Clear screen on exit
         try:
             self.console.clear()
         except Exception:
             pass
+
+    def render_goodbye_frame(self, phase: str = "goodbye") -> None:
+        """Render a full-screen shutdown frame.
+
+        Args:
+            phase: "stopping" for in-progress, "goodbye" for final frame
+        """
+        import io
+        import os
+        import sys
+
+        try:
+            term_size = os.get_terminal_size()
+            width = term_size.columns
+            height = term_size.lines
+        except OSError:
+            width = 120
+            height = 30
+
+        # Build session stats
+        uptime = time.time() - self.status.started_at
+        uptime_str = self._format_duration(uptime)
+        stats = self.server.stats
+
+        # Stats table
+        stats_table = Table(show_header=False, box=None, padding=(0, 2))
+        stats_table.add_column("Label", style="dim", min_width=12)
+        stats_table.add_column("Value", style="bold")
+        stats_table.add_row("Uptime", uptime_str)
+        stats_table.add_row("Sources", str(self.status.total_sources))
+        stats_table.add_row("Facts", f"{self.status.total_wmes:,}")
+        stats_table.add_row("Vectors", f"{self.status.total_vectors:,}")
+        stats_table.add_row("Queries", str(stats.get("requests_handled", 0)))
+        stats_table.add_row("Errors", str(stats.get("errors", 0)))
+        stats_table.add_row("Avg Time", f"{stats.get('avg_request_time_ms', 0):.1f}ms")
+
+        # Title and footer vary by phase
+        title = Text()
+        if phase == "stopping":
+            title.append("RETER Server ", style="bold blue")
+            title.append("shutting down...", style="bold yellow")
+            footer_text = Text("Please wait, the server is stopping...", style="bold yellow", justify="center")
+        else:
+            title.append("RETER Server ", style="bold blue")
+            title.append("stopped", style="bold red")
+            footer_text = Text("Goodbye!", style="bold green", justify="center")
+
+        # Build layout
+        layout = Layout()
+        layout.split_column(
+            Layout(name="header", size=3),
+            Layout(name="body"),
+            Layout(name="footer", size=3),
+        )
+
+        layout["header"].update(Panel(title, style="blue"))
+        layout["body"].update(Panel(
+            stats_table,
+            title="Session Summary",
+            title_align="left",
+            style="dim",
+        ))
+        layout["footer"].update(Panel(footer_text, style="dim"))
+
+        # Render to string and write
+        render_console = Console(
+            width=width, height=height - 1,
+            force_terminal=True, file=io.StringIO()
+        )
+        render_console.print(layout, height=height - 1, end="")
+        output = render_console.file.getvalue()
+
+        sys.stdout.write("\033[H" + output + "\033[J")
+        sys.stdout.flush()
 
     def _build_layout(self) -> Layout:
         """Build console layout with panels."""
@@ -399,7 +476,7 @@ class ConsoleUI:
             content.append("[C]", style="bold")
             content.append("opy to clipboard", style="dim")
         else:
-            content.append("Starting up...", style="bold yellow")
+            content.append("Please wait, the server is loading...", style="bold yellow")
 
         return Panel(content, title="Progress", border_style="yellow")
 
@@ -878,11 +955,12 @@ class ConsoleUI:
     def _get_mcp_command(project_root: str) -> str:
         """Build the claude mcp add command with project root."""
         import shutil
+        env_flag = f" -e RETER_PROJECT_ROOT={project_root}" if project_root else ""
         if shutil.which("reter_code"):
-            return "claude mcp add reter -- reter_code --stdio"
+            return f"claude mcp add reter{env_flag} -- reter_code --stdio"
         _UVX_FROM = "git+https://github.com/reter-ai/reter_code"
         _FIND_LINKS = "https://raw.githubusercontent.com/reter-ai/reter/main/reter_core/index.html"
-        return f"claude mcp add reter -- uvx --from {_UVX_FROM} --find-links {_FIND_LINKS} reter_code --stdio"
+        return f"claude mcp add reter{env_flag} -- uvx --from {_UVX_FROM} --find-links {_FIND_LINKS} reter_code --stdio"
 
     def log_query(
         self,
@@ -1213,6 +1291,9 @@ class NoOpConsoleUI:
         pass
 
     def scroll_log(self, delta: int) -> None:
+        pass
+
+    def render_goodbye_frame(self) -> None:
         pass
 
     def scroll_log_home(self) -> None:

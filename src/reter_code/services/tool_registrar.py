@@ -21,6 +21,7 @@ from .agent_sdk_client import (
     is_agent_sdk_available,
     generate_cadsl_query,
     retry_cadsl_query,
+    execute_nlq_agent,
 )
 from ..server.reter_client import ReterClient
 
@@ -390,10 +391,41 @@ class ToolRegistrar:
                 else:
                     actual_type = "markdown"
 
+            # Validate mermaid syntax before pushing
+            validation_info = None
+            if actual_type == "mermaid":
+                try:
+                    from reter_code.mermaid.validator import validate_mermaid
+                    vr = validate_mermaid(actual_content)
+                    validation_info = vr.to_dict()
+                    if not vr.valid:
+                        return {
+                            "success": False,
+                            "error": "Mermaid syntax validation failed",
+                            "validation": validation_info,
+                        }
+                except Exception:
+                    pass
+            elif actual_type == "markdown":
+                try:
+                    from reter_code.mermaid.markdown_validator import validate_markdown
+                    vr = validate_markdown(actual_content)
+                    validation_info = vr.to_dict()
+                    if not vr.valid:
+                        return {
+                            "success": False,
+                            "error": "Markdown validation failed (embedded mermaid errors)",
+                            "validation": validation_info,
+                        }
+                except Exception:
+                    pass
+
             try:
                 result = registrar.reter_client.view_push(actual_content, actual_type)
                 if source_file:
                     result["source_file"] = source_file
+                if validation_info:
+                    result["validation"] = validation_info
                 # Include the view URL from discovery if available
                 try:
                     discovery = registrar.reter_client.config.discover_server()
@@ -528,9 +560,9 @@ class ToolRegistrar:
         max_retries: int,
         similar_tools: Optional[list] = None
     ) -> Dict[str, Any]:
-        """Execute a CADSL query using Agent SDK for generation."""
+        """Execute a natural language query using the NLQ agent orchestrator."""
         nlq_logger.debug(f"\n{'#'*70}")
-        nlq_logger.debug(f"[NLQ_EXEC] STARTING CADSL EXECUTION")
+        nlq_logger.debug(f"[NLQ_EXEC] STARTING NLQ AGENT EXECUTION")
         nlq_logger.debug(f"[NLQ_EXEC] Question: {question}")
         nlq_logger.debug(f"[NLQ_EXEC] Max retries: {max_retries}")
         nlq_logger.debug(f"[NLQ_EXEC] Similar tools count: {len(similar_tools) if similar_tools else 0}")
@@ -542,9 +574,7 @@ class ToolRegistrar:
             nlq_logger.debug("[NLQ_EXEC] ERROR: Claude Agent SDK not available")
             return {
                 "success": False,
-                "results": [],
-                "count": 0,
-                "query_type": "cadsl",
+                "response": "",
                 "error": "Claude Agent SDK not available"
             }
 
@@ -553,54 +583,30 @@ class ToolRegistrar:
         if similar_tools_context:
             nlq_logger.debug(f"[NLQ_EXEC] Built similar tools context ({len(similar_tools_context)} chars)")
 
-        execution_state = {"attempts": 0, "tools_used": []}
-        max_empty_retries = 2
-
         try:
             # Get schema info from server (entity types and predicates)
             nlq_logger.debug("[NLQ_EXEC] Querying instance schema...")
             schema_info = self._query_instance_schema()
             nlq_logger.debug(f"[NLQ_EXEC] Schema info ({len(schema_info)} chars): {schema_info[:200]}...")
 
-            nlq_logger.debug("[NLQ_EXEC] Calling generate_cadsl_query...")
-            result = await generate_cadsl_query(
+            nlq_logger.debug("[NLQ_EXEC] Calling execute_nlq_agent...")
+            result = await execute_nlq_agent(
                 question=question,
                 schema_info=schema_info,
-                max_iterations=max_retries,
+                max_iterations=max_retries * 2,
                 similar_tools_context=similar_tools_context,
                 reter_client=self.reter_client,
                 project_root=None
             )
-            nlq_logger.debug(f"[NLQ_EXEC] generate_cadsl_query returned: success={result.success}, attempts={result.attempts}")
+            nlq_logger.debug(f"[NLQ_EXEC] execute_nlq_agent returned: success={result.success}, attempts={result.attempts}")
 
-            if not result.success:
-                nlq_logger.debug(f"[NLQ_EXEC] Query generation FAILED: {result.error}")
-                return {
-                    "success": False,
-                    "results": [],
-                    "count": 0,
-                    "cadsl_query": result.query,
-                    "query_type": "cadsl",
-                    "attempts": result.attempts,
-                    "tools_used": result.tools_used,
-                    "error": result.error or "Query generation failed"
-                }
-
-            generated_query = result.query
-            nlq_logger.debug(f"[NLQ_EXEC] GENERATED CADSL QUERY ({len(generated_query)} chars):\n{generated_query}")
-
-            execution_state["attempt_delta"] = result.attempts
-            execution_state["tools_delta"] = result.tools_used
-
-            nlq_logger.debug("[NLQ_EXEC] Executing generated CADSL query...")
-            exec_result = self._execute_single_cadsl_pipeline(generated_query, execution_state)
-            nlq_logger.debug(f"[NLQ_EXEC] Execution result: success={exec_result.get('success')}, count={exec_result.get('count')}")
-
-            nlq_logger.debug("[NLQ_EXEC] Checking for empty results and retry logic...")
-            return await self._retry_cadsl_on_empty(
-                question, generated_query, exec_result,
-                execution_state, max_empty_retries
-            )
+            return {
+                "success": result.success,
+                "response": result.response,
+                "tools_used": result.tools_used,
+                "attempts": result.attempts,
+                "error": result.error,
+            }
 
         except Exception as e:
             import traceback
@@ -608,11 +614,7 @@ class ToolRegistrar:
             nlq_logger.debug(f"[NLQ_EXEC] Traceback:\n{traceback.format_exc()}")
             return {
                 "success": False,
-                "results": [],
-                "count": 0,
-                "query_type": "cadsl",
-                "attempts": execution_state["attempts"],
-                "tools_used": execution_state["tools_used"],
+                "response": "",
                 "error": str(e)
             }
 
@@ -767,15 +769,15 @@ class ToolRegistrar:
                 handler.flush()
 
             try:
-                nlq_logger.debug("[NLQ_TOOL] Step 2: Starting _execute_cadsl_query...")
+                nlq_logger.debug("[NLQ_TOOL] Step 2: Starting NLQ agent execution...")
                 for handler in nlq_logger.handlers:
                     handler.flush()
                 async with asyncio.timeout(timeout):
                     result = await registrar._execute_cadsl_query(
                         question, max_retries, similar_tools=similar_tools
                     )
-                    nlq_logger.debug(f"[NLQ_TOOL] _execute_cadsl_query completed")
-                    nlq_logger.debug(f"[NLQ_TOOL] Result: success={result.get('success')}, count={result.get('count')}")
+                    nlq_logger.debug(f"[NLQ_TOOL] NLQ agent completed")
+                    nlq_logger.debug(f"[NLQ_TOOL] Result: success={result.get('success')}")
                     if result.get('error'):
                         nlq_logger.debug(f"[NLQ_TOOL] Error: {result.get('error')}")
 
@@ -837,14 +839,22 @@ class ToolRegistrar:
                 script_stripped.startswith('//')
             )
 
-            if not is_inline_cadsl and (script_stripped.endswith('.cadsl') or os.path.sep in script_stripped):
+            if not is_inline_cadsl and (script_stripped.endswith('.cadsl') or os.path.sep in script_stripped or '/' in script_stripped):
                 path = Path(script_stripped)
                 if path.exists() and path.is_file():
                     source_file = str(path)
                     with open(path, 'r', encoding='utf-8') as f:
                         cadsl_content = f.read()
                 elif not path.exists():
-                    return {"success": False, "error": f"CADSL file not found: {script}"}
+                    # Try category/name format (e.g., "security/auth_handler_complexity")
+                    cadsl_tools_dir = Path(__file__).parent.parent / "cadsl" / "tools"
+                    cadsl_tool_path = cadsl_tools_dir / f"{script_stripped}.cadsl" if not script_stripped.endswith('.cadsl') else cadsl_tools_dir / script_stripped
+                    if cadsl_tool_path.exists() and cadsl_tool_path.is_file():
+                        source_file = str(cadsl_tool_path)
+                        with open(cadsl_tool_path, 'r', encoding='utf-8') as f:
+                            cadsl_content = f.read()
+                    else:
+                        return {"success": False, "error": f"CADSL file not found: {script}"}
 
             try:
                 result = registrar.reter_client.execute_cadsl(cadsl_content, params, timeout_ms)

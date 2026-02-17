@@ -58,6 +58,7 @@ source: reql_source
       | value_source
       | merge_source
       | file_scan_source
+      | parse_file_source
 
 reql_source: "reql" REQL_BLOCK
 
@@ -71,7 +72,7 @@ source_list: source_item ("," source_item)*
 // Examples:
 //   reql { ... }
 //   reql { ... } | select { ... } | map { ... }
-source_item: (reql_source | rag_source | value_source) source_steps?
+source_item: (reql_source | rag_source | value_source | parse_file_source) source_steps?
 
 // Pipeline steps to apply to a source before merging
 source_steps: ("|" step)+
@@ -136,6 +137,32 @@ file_scan_param: "glob" ":" STRING                    -> fs_glob
 
 fs_string_list: "[" (STRING ("," STRING)*)? "]"
 
+// Parse external data file (CSV, JSON, Parquet) as table rows
+// parse_file { path: "data/input.csv", format: csv }
+parse_file_source: "parse_file" "{" parse_file_spec "}"
+
+parse_file_spec: parse_file_param ("," parse_file_param)*
+
+parse_file_param: "path" ":" STRING              -> pf_path
+                | "path" ":" param_ref           -> pf_path_param
+                | "format" ":" pf_format_type    -> pf_format
+                | "format" ":" param_ref         -> pf_format_param
+                | "encoding" ":" STRING          -> pf_encoding
+                | "encoding" ":" param_ref       -> pf_encoding_param
+                | "separator" ":" STRING         -> pf_separator
+                | "separator" ":" param_ref      -> pf_separator_param
+                | "sheet" ":" STRING             -> pf_sheet
+                | "sheet" ":" param_ref          -> pf_sheet_param
+                | "columns" ":" pf_string_list   -> pf_columns
+                | "limit" ":" INT                -> pf_limit
+                | "limit" ":" param_ref          -> pf_limit_param
+
+pf_format_type: "csv"     -> pf_csv
+              | "json"    -> pf_json
+              | "parquet" -> pf_parquet
+
+pf_string_list: "[" (STRING ("," STRING)*)? "]"
+
 // ============================================================
 // PIPELINE STEPS
 // ============================================================
@@ -178,6 +205,7 @@ step: filter_step
     | create_task_step
     | fetch_content_step
     | view_step
+    | write_file_step
 
 filter_step: "filter" "{" condition "}"
 
@@ -672,6 +700,33 @@ view_param: "skip" ":" bool_val           -> view_skip
 view_content_type: "mermaid"   -> view_mermaid
                  | "markdown"  -> view_markdown
                  | "html"      -> view_html
+
+// ============================================================
+// WRITE FILE (Export pipeline results)
+// ============================================================
+
+// Write pipeline results to file (pass-through step)
+// | write_file { path: "output.csv", format: csv }
+// | write_file { }   -- auto-generates temp file in .reter_code/results/
+write_file_step: "write_file" "{" write_file_spec? "}"
+
+write_file_spec: write_file_param ("," write_file_param)*
+
+write_file_param: "path" ":" STRING              -> wf_path
+                | "path" ":" param_ref           -> wf_path_param
+                | "format" ":" wf_format_type    -> wf_format
+                | "format" ":" param_ref         -> wf_format_param
+                | "encoding" ":" STRING          -> wf_encoding
+                | "encoding" ":" param_ref       -> wf_encoding_param
+                | "separator" ":" STRING         -> wf_separator
+                | "separator" ":" param_ref      -> wf_separator_param
+                | "indent" ":" INT               -> wf_indent
+                | "indent" ":" param_ref         -> wf_indent_param
+                | "overwrite" ":" bool_val       -> wf_overwrite
+
+wf_format_type: "csv"     -> wf_csv
+              | "json"    -> wf_json
+              | "parquet" -> wf_parquet
 
 // ============================================================
 // GROUP BY
