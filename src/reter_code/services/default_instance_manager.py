@@ -972,43 +972,50 @@ class DefaultInstanceManager:
                         logger.info(f"[default]   {error_msg}")
                     errors.append(error_msg)
 
-            # Process additions
-            # Debug: Log JS/TS files in to_add
-            js_ts_in_to_add = [f for f in changes.to_add if any(f.rel_path.endswith(ext) for ext in self.JAVASCRIPT_EXTENSIONS)]
-            if js_ts_in_to_add:
-                logger.debug(f"[default] Found {len(js_ts_in_to_add)} JS/TS files in to_add: {[f.rel_path for f in js_ts_in_to_add[:5]]}")
+            # Process additions — parallel batch loading in chunks for progress
+            if changes.to_add:
+                js_ts_in_to_add = [f for f in changes.to_add if any(f.rel_path.endswith(ext) for ext in self.JAVASCRIPT_EXTENSIONS)]
+                if js_ts_in_to_add:
+                    logger.debug(f"[default] Found {len(js_ts_in_to_add)} JS/TS files in to_add: {[f.rel_path for f in js_ts_in_to_add[:5]]}")
 
-            for file_info in changes.to_add:
-                current_file_idx += 1
-                is_js_ts = any(file_info.rel_path.endswith(ext) for ext in self.JAVASCRIPT_EXTENSIONS)
-                if is_js_ts:
-                    logger.debug(f"[default] Processing JS/TS file from to_add: {file_info.rel_path}")
+                # Load all additions in one parallel batch (progress via C++ callback)
+                failed_files: set = set()
+                all_file_list = [
+                    (fi.abs_path, fi.rel_path, fi.md5) for fi in changes.to_add
+                ]
 
                 if self._progress_callback is None:
-                    logger.info(f"[default] Adding new file: {file_info.rel_path}")
-                else:
-                    self._progress_callback.update_file_progress(current_file_idx, total_files, file_info.rel_path)
-                try:
-                    self._load_code_file(reter, file_info.abs_path, file_info.rel_path)
-                    added_count += 1
+                    logger.info(f"[default] Adding {len(changes.to_add)} files (parallel)...")
 
-                    # Update state
-                    source_id = f"{file_info.md5}|{file_info.rel_path}"
-                    file_info.in_reter = True
-                    file_info.reter_source_id = source_id
-                    if self._source_state:
-                        self._source_state.set_file(file_info)
-                        if is_js_ts:
-                            logger.debug(f"[default] Saved JS/TS file to state: {file_info.rel_path}")
-                    track_changed_source(file_info.rel_path, source_id)
+                batch_loaded, batch_errors = self._load_files_batch(reter, all_file_list)
+                added_count += batch_loaded
+                errors.extend(batch_errors)
+                current_file_idx += len(changes.to_add)
 
-                except Exception as e:
-                    error_msg = f"Error loading {file_info.rel_path}: {type(e).__name__}: {e}"
-                    if self._progress_callback is None:
-                        logger.info(f"[default]   {error_msg}")
-                    if is_js_ts:
-                        logger.debug(f"[default] ERROR loading JS/TS file {file_info.rel_path}: {error_msg}")
-                    errors.append(error_msg)
+                if batch_errors and self._progress_callback is None:
+                    for err in batch_errors:
+                        logger.info(f"[default]   {err}")
+
+                # Track failed files from errors
+                for err in batch_errors:
+                    if err.startswith("Error loading ") or err.startswith("Error parsing ") or err.startswith("Error reading "):
+                        parts = err.split(": ", 1)
+                        if parts:
+                            path_part = parts[0].split(" ", 2)[-1]
+                            if " (" in path_part:
+                                path_part = path_part.split(" (")[0]
+                            failed_files.add(path_part)
+
+                # Update state for successfully loaded files
+                for file_info in changes.to_add:
+                    in_file = file_info.rel_path.replace('\\', '/')
+                    if in_file not in failed_files and file_info.rel_path not in failed_files:
+                        source_id = f"{file_info.md5}|{file_info.rel_path}"
+                        file_info.in_reter = True
+                        file_info.reter_source_id = source_id
+                        if self._source_state:
+                            self._source_state.set_file(file_info)
+                        track_changed_source(file_info.rel_path, source_id)
 
             # End file loading progress
             if self._progress_callback is not None and total_files > 0:
@@ -1491,6 +1498,111 @@ class DefaultInstanceManager:
         else:
             raise ValueError(f"Unsupported file type: {rel_path}")
 
+    # Extension-to-language mapping for the unified parser API
+    _EXT_TO_LANG = None  # Lazily initialized
+
+    @classmethod
+    def _get_ext_to_lang(cls) -> Dict[str, str]:
+        """Get mapping from file extension to language name."""
+        if cls._EXT_TO_LANG is None:
+            mapping: Dict[str, str] = {}
+            for ext_set, lang in [
+                (cls.PYTHON_EXTENSIONS, "python"),
+                (cls.JAVASCRIPT_EXTENSIONS, "javascript"),
+                (cls.HTML_EXTENSIONS, "html"),
+                (cls.CSHARP_EXTENSIONS, "csharp"),
+                (cls.C_EXTENSIONS, "c"),
+                (cls.CPP_EXTENSIONS, "cpp"),
+                (cls.JAVA_EXTENSIONS, "java"),
+                (cls.GO_EXTENSIONS, "go"),
+                (cls.RUST_EXTENSIONS, "rust"),
+                (cls.ERLANG_EXTENSIONS, "erlang"),
+                (cls.PHP_EXTENSIONS, "php"),
+                (cls.OBJC_EXTENSIONS, "objc"),
+                (cls.SWIFT_EXTENSIONS, "swift"),
+                (cls.VB6_EXTENSIONS, "vb6"),
+                (cls.SCALA_EXTENSIONS, "scala"),
+                (cls.HASKELL_EXTENSIONS, "haskell"),
+                (cls.KOTLIN_EXTENSIONS, "kotlin"),
+                (cls.R_EXTENSIONS, "r"),
+                (cls.RUBY_EXTENSIONS, "ruby"),
+                (cls.DART_EXTENSIONS, "dart"),
+                (cls.DELPHI_EXTENSIONS, "delphi"),
+                (cls.ADA_EXTENSIONS, "ada"),
+                (cls.LUA_EXTENSIONS, "lua"),
+                (cls.XAML_EXTENSIONS, "xaml"),
+                (cls.BASH_EXTENSIONS, "bash"),
+                (cls.EVAL_EXTENSIONS, "eval"),
+            ]:
+                for ext in ext_set:
+                    mapping[ext] = lang
+            cls._EXT_TO_LANG = mapping
+        return cls._EXT_TO_LANG
+
+    def _lang_for_ext(self, rel_path: str) -> Optional[str]:
+        """Get language name for a file based on its extension."""
+        ext = Path(rel_path).suffix.lower()
+        return self._get_ext_to_lang().get(ext)
+
+    def _load_files_batch(
+        self,
+        reter: ReterWrapper,
+        files: List[Tuple[str, str, str]],
+    ) -> Tuple[int, List[str]]:
+        """
+        Load files using parallel parsing if available, falling back to sequential.
+
+        Args:
+            reter: ReterWrapper instance
+            files: List of (abs_path, rel_path, md5_hash) tuples
+
+        Returns:
+            Tuple of (files_loaded, error_messages)
+        """
+        try:
+            from reter import owl_rete_cpp
+            if not hasattr(owl_rete_cpp, 'parse_files_parallel'):
+                raise AttributeError("parse_files_parallel not available")
+
+            # Scan for Python package roots
+            package_roots = ReterWrapper.scan_package_roots(str(self._project_root))
+
+            # Build file tuples for C++: (filepath, language, in_file, module_name, source_id)
+            file_tuples = []
+            base = str(self._project_root)
+            for abs_path, rel_path, md5_hash in files:
+                lang = self._lang_for_ext(rel_path)
+                if lang is None:
+                    continue
+                in_file = rel_path.replace('\\', '/')
+                source_id = f"{md5_hash}|{in_file}"
+                module_name = ""
+                if lang == "python":
+                    module_name = ReterWrapper._path_to_module_name(in_file, package_roots)
+                file_tuples.append((abs_path, lang, in_file, module_name, source_id))
+
+            if not file_tuples:
+                return 0, []
+
+            result = owl_rete_cpp.parse_files_parallel(
+                reter.reasoner.network, file_tuples, num_threads=0)
+
+            errors = result.get("errors", [])
+            loaded = result.get("files_parsed", 0) - len(errors)
+            return max(loaded, 0), errors
+
+        except (AttributeError, ImportError):
+            # Fallback: sequential loading
+            loaded = 0
+            errors = []
+            for abs_path, rel_path, md5_hash in files:
+                try:
+                    self._load_code_file(reter, abs_path, rel_path)
+                    loaded += 1
+                except Exception as e:
+                    errors.append(f"Error loading {rel_path}: {type(e).__name__}: {e}")
+            return loaded, errors
+
     def _finalize_entity_accumulation_with_progress(
         self,
         reter: ReterWrapper,
@@ -1633,65 +1745,55 @@ class DefaultInstanceManager:
             reter.begin_entity_accumulation()
 
         try:
-            # Count files to process for progress reporting
+            # Phase 1: Classify files into new, modified, unchanged
             files_to_process = list(current_files.items())
-            total_files = len(files_to_process)
-            processed_files = 0
+            new_files = []       # (abs_path, rel_path, md5_hash)
+            modified_files = []  # (abs_path, rel_path, md5_hash, old_source_id)
 
-            # Start file loading progress if callback is provided
-            if self._progress_callback:
-                self._progress_callback.start_file_loading(total_files)
-
-            # Find new and modified files
             for rel_path, (abs_path, current_md5) in files_to_process:
-                processed_files += 1
-
-                # Update progress callback
-                if self._progress_callback:
-                    self._progress_callback.update_file_progress(processed_files, total_files, rel_path)
-
                 if rel_path not in existing_sources:
-                    # New file - load it using the appropriate loader
-                    logger.debug(f"[default] NEW file (not in existing): {rel_path}")
-                    if self._progress_callback is None:
-                        logger.info(f"[default] Adding new file: {rel_path}")
-                    try:
-                        self._load_code_file(reter, abs_path, rel_path)
-                        added_count += 1
-                        if self._progress_callback is None:
-                            logger.info(f"[default]   Added {rel_path}")
-                        # Track for RAG: construct source_id from md5 and rel_path
-                        new_source_id = f"{current_md5}|{rel_path}"
-                        track_changed_source(rel_path, new_source_id)
-                    except Exception as e:
-                        # Log error but continue with other files (don't re-raise)
-                        error_msg = f"Error loading {rel_path}: {type(e).__name__}: {e}"
-                        if self._progress_callback is None:
-                            logger.info(f"[default]   {error_msg}")
-                        errors.append(error_msg)
+                    new_files.append((abs_path, rel_path, current_md5))
                 else:
                     old_md5, old_source_id = existing_sources[rel_path]
                     if old_md5 != current_md5:
-                        # Modified file - forget and reload
-                        logger.debug(f"[default] MD5 MISMATCH: {rel_path} old={old_md5[:8]}... new={current_md5[:8]}...")
-                        if self._progress_callback is None:
-                            logger.info(f"[default] Reloading modified file: {rel_path}")
-                        try:
-                            reter.forget_source(old_source_id)
-                            self._load_code_file(reter, abs_path, rel_path)
-                            modified_count += 1
-                            if self._progress_callback is None:
-                                logger.info(f"[default]   Reloaded {rel_path}")
-                            # Track for RAG: old source deleted, new source added
-                            track_deleted_source(rel_path, old_source_id)
-                            new_source_id = f"{current_md5}|{rel_path}"
-                            track_changed_source(rel_path, new_source_id)
-                        except Exception as e:
-                            # Log error but continue with other files (don't re-raise)
-                            error_msg = f"Error reloading {rel_path}: {type(e).__name__}: {e}"
-                            if self._progress_callback is None:
-                                logger.info(f"[default]   {error_msg}")
-                            errors.append(error_msg)
+                        modified_files.append((abs_path, rel_path, current_md5, old_source_id))
+
+            # Phase 2: Forget old sources for modified files (must be sequential)
+            for abs_path, rel_path, current_md5, old_source_id in modified_files:
+                try:
+                    reter.forget_source(old_source_id)
+                    track_deleted_source(rel_path, old_source_id)
+                except Exception as e:
+                    error_msg = f"Error forgetting {rel_path}: {type(e).__name__}: {e}"
+                    if self._progress_callback is None:
+                        logger.info(f"[default]   {error_msg}")
+                    errors.append(error_msg)
+
+            # Phase 3: Batch load all new + modified files (parallel parsing)
+            all_to_load = []
+            for abs_path, rel_path, md5_hash in new_files:
+                all_to_load.append((abs_path, rel_path, md5_hash))
+            for abs_path, rel_path, md5_hash, _ in modified_files:
+                all_to_load.append((abs_path, rel_path, md5_hash))
+
+            total_to_load = len(all_to_load)
+            if self._progress_callback:
+                self._progress_callback.start_file_loading(total_to_load)
+
+            if all_to_load:
+                if self._progress_callback is None:
+                    logger.info(f"[default] Loading {total_to_load} files (parallel)...")
+
+                batch_loaded, batch_errors = self._load_files_batch(reter, all_to_load)
+                errors.extend(batch_errors)
+
+                # Track for RAG
+                for abs_path, rel_path, md5_hash in all_to_load:
+                    new_source_id = f"{md5_hash}|{rel_path}"
+                    track_changed_source(rel_path, new_source_id)
+
+                added_count = len(new_files)
+                modified_count = len(modified_files)
 
             # End file loading progress
             if self._progress_callback:
@@ -1807,19 +1909,31 @@ class DefaultInstanceManager:
         # and defined in .cpp - both would otherwise create duplicate entities
         fresh_reter.begin_entity_accumulation()
 
-        # Load all current files
+        # Load all files in one parallel batch (maximizes thread utilization)
         loaded = 0
         errors = []
         try:
-            for rel_path, (abs_path, _) in current_files.items():
-                try:
-                    self._load_code_file(fresh_reter, abs_path, rel_path)
-                    loaded += 1
-                except Exception as e:
-                    error_msg = f"Error loading {rel_path}: {type(e).__name__}: {e}"
-                    if self._progress_callback is None:
-                        logger.info(f"[default]   {error_msg}")
-                    errors.append(error_msg)
+            file_list = [
+                (abs_path, rel_path, md5_hash)
+                for rel_path, (abs_path, md5_hash) in current_files.items()
+            ]
+            total_files = len(file_list)
+            if self._progress_callback:
+                self._progress_callback.start_file_loading(total_files)
+            else:
+                logger.info(f"[default] Loading {total_files} files (parallel)...")
+
+            batch_loaded, batch_errors = self._load_files_batch(fresh_reter, file_list)
+            loaded += batch_loaded
+            errors.extend(batch_errors)
+
+            if self._progress_callback:
+                self._progress_callback.update_file_progress(total_files, total_files, "done")
+                self._progress_callback.end_file_loading()
+
+            if errors and self._progress_callback is None:
+                for err in errors:
+                    logger.info(f"[default]   {err}")
         finally:
             # Finalize accumulated entities - creates merged facts
             self._finalize_entity_accumulation_with_progress(fresh_reter)
