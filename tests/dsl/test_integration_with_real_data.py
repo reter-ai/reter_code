@@ -546,7 +546,7 @@ class TestSmellDetectorProcessingFunctions:
             ?e type oo:Class .
             ?e name ?name .
             ?e inFile ?file .
-            ?e concept ?concept .
+            ?e type ?concept .
         }
         """
         result = real_reter.reql(query)

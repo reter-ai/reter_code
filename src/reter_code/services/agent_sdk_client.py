@@ -251,10 +251,9 @@ REQL_SYSTEM_PROMPT_TEMPLATE = """You are a REQL query generator. Generate valid 
 - "services/handlers" -> FILTER(REGEX(?name, "Service|Handler|Controller|API|Manager", "i"))
 - "interactions/calls" -> use `maybeCalls` or `imports` predicates
 
-## TYPE vs CONCEPT
-- `?x type class` - Filter with subsumption (matches class, class, etc.)
-- `?x type ?t` - Returns ALL types (asserted + inferred) - MULTIPLE rows per entity
-- `?x concept ?t` - Returns ONLY asserted type - ONE row (e.g., "method")
+## TYPE PREDICATE
+- `?x type class` - Filter entities by type
+- `?x type ?t` - Matches instance_of facts and returns the entity's type
 
 ## UNION RULES (CRITICAL)
 ALL UNION arms MUST bind the EXACT SAME variables!

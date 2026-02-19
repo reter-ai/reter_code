@@ -448,12 +448,9 @@ def handle_get_reql_grammar() -> str:
 - FILTER requires parentheses: `FILTER(?count > 5)`
 - Patterns separated by dots: `?x type class . ?x has-name ?n`
 
-## Type vs Concept:
-- `?x type class` - Filter with subsumption (matches class, class, etc.)
-- `?x type ?t` - Returns ALL types (asserted + inferred) - MULTIPLE rows per entity
-- `?x concept ?t` - Returns ONLY asserted type - ONE row per entity
-- Use `concept` when you need the concrete type string (e.g., "method")
-- CRITICAL: When using `concept` with FILTER in UNION queries, include the variable in SELECT!
+## Type Predicate:
+- `?x type class` - Filter entities by type
+- `?x type ?t` - Matches instance_of facts and returns the entity's type
 """
 
 
@@ -959,11 +956,9 @@ COMMON MISTAKE - NEVER do this in REQL blocks:
   WRONG: `?m1 module .`           <- missing `type` predicate!
   RIGHT: `?m1 type module .`      <- always include `type`
 
-TYPE vs CONCEPT:
-- `?x type method` - Filter with subsumption (matches method, etc.)
-- `?x type ?t` - Returns ALL types (asserted + inferred) - MULTIPLE rows per entity
-- `?x concept ?t` - Returns ONLY asserted type - ONE row per entity (e.g., "method")
-- CRITICAL: When using `concept` with FILTER in UNION queries, include the variable in SELECT!
+TYPE PREDICATE:
+- `?x type method` - Filter entities by type
+- `?x type ?t` - Matches instance_of facts and returns the entity's type
 
 FILE_SCAN SOURCE (grep-like file search):
 Use `file_scan` for file-level analysis, text search, and stats from loaded sources.

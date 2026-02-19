@@ -383,10 +383,10 @@ result = reasoner.reql("""
 
 **Debug**:
 ```python
-# List all concepts
-result = reasoner.reql("SELECT DISTINCT ?concept WHERE { ?x concept ?concept }")
-concepts = result.column('?concept').to_pylist()
-print("Available concepts:", concepts)
+# List all types
+result = reasoner.reql("SELECT DISTINCT ?type WHERE { ?x type ?type }")
+types = result.column('?type').to_pylist()
+print("Available types:", types)
 
 # List all predicates for a specific entity
 result = reasoner.reql("""

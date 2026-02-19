@@ -193,7 +193,7 @@ class TestReql:
 
     def test_reql_basic_query(self, wrapper):
         """Test executing a basic REQL query."""
-        result = wrapper.reql("SELECT ?x WHERE { ?x concept \"py:Class\" }")
+        result = wrapper.reql("SELECT ?x WHERE { ?x type \"py:Class\" }")
 
         assert result is not None
 

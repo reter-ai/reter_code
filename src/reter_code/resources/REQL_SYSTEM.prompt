@@ -22,9 +22,9 @@ Basic pattern: `subject predicate object`
 - Literals: `'string'`, `"string"`, `42`, `3.14`, `true`, `false`
 - Keyword `a` is shorthand for `type`
 
-### Type vs Concept (IMPORTANT)
+### Type Predicate
 
-There are TWO ways to work with entity types:
+The `type` predicate is used to work with entity types:
 
 1. **`type` predicate with concrete type** - Filter entities:
    - `?x type class` - Matches all classes
@@ -32,11 +32,7 @@ There are TWO ways to work with entity types:
    - Use for filtering entities by type in WHERE clauses
 
 2. **`type` predicate with variable** - Returns the type:
-   - `?x type ?t` - Binds the entity's type to ?t
-
-3. **`concept` attribute** - Returns ONLY the asserted (stored) type:
-   - `?x concept ?t` - Returns ONE row per entity with the actual stored type
-   - Use when you need the concrete type string
+   - `?x type ?t` - Matches instance_of facts and returns the entity's type
 
 ### Pattern Separators
 - Use `.` (dot) between triple patterns

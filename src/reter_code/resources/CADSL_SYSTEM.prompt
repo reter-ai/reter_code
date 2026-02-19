@@ -226,44 +226,20 @@ query find_similar_implementations() {
 - `batch_size`: Rows per batch for performance (default: 50)
 - `entity_types`: Filter by type, e.g., `["method", "function"]`
 
-## Type vs Concept in REQL Blocks (IMPORTANT)
+## Type Predicate in REQL Blocks
 
-When writing REQL inside CADSL, understand the difference:
+When writing REQL inside CADSL:
 
-1. **`type` with concrete type** - Filter with ontology subsumption:
-   - `?x type class` - Matches class, class, etc. (subsumption!)
-   - `?x type method` - Matches only Python methods
+1. **`type` with concrete type** - Filter entities by type:
+   - `?x type class` - Matches all classes
+   - `?x type method` - Matches all methods
 
-2. **`type` with variable** - Returns ALL types (asserted + inferred):
-   - `?x type ?t` - Returns MULTIPLE rows per entity
-   - Includes inferred types: method → method, function, etc.
-
-3. **`concept` attribute** - Returns ONLY the asserted (stored) type:
-   - `?x concept ?t` - Returns ONE row with the actual stored type
-   - Example: Returns "method" only (not method, etc.)
+2. **`type` with variable** - Returns the entity's type:
+   - `?x type ?t` - Matches instance_of facts and returns the entity's type
 
 **When to use:**
 - Filter by type: `?x type method`
-- Get concrete type string: `?x concept ?t`
-- See type hierarchy: `?x type ?t`
-
-**CRITICAL**: When using `concept` with FILTER in UNION queries with patterns outside
-the UNION blocks, you MUST include the variable in SELECT:
-```
-# WRONG
-SELECT ?caller ?callee WHERE {
-    { ?caller calls ?callee } UNION { ?caller maybe-calls ?callee }
-    ?caller concept ?caller_type .
-    FILTER(CONTAINS(?caller_type, "Method"))
-}
-
-# CORRECT
-SELECT ?caller ?callee ?caller_type WHERE {
-    { ?caller calls ?callee } UNION { ?caller maybe-calls ?callee }
-    ?caller concept ?caller_type .
-    FILTER(CONTAINS(?caller_type, "Method"))
-}
-```
+- Get entity type string: `?x type ?t`
 
 ## REQL Built-in Functions (for use in reql { } blocks)
 
@@ -306,7 +282,7 @@ IMPORTANT:
 6. Always include | emit { results } or | emit { findings } at the end
 7. Use parameters with {param_name} syntax for user-provided values
 8. Inside REQL blocks, do NOT use comments - REQL does not support `#` or `//` comments
-9. When using `concept` with FILTER in UNION queries, include the concept variable in SELECT
+9. When using `type` with a variable and FILTER in UNION queries, include the type variable in SELECT
 10. **Map expression template syntax**: In `map { }` steps, use template syntax `"{variable}"` for string interpolation. NEVER use Python-style concatenation like `"prefix" + variable`. Example:
    - CORRECT: `| map { label: "{class_name}.{method_name}" }`
    - WRONG: `| map { label: class_name + "." + method_name }`

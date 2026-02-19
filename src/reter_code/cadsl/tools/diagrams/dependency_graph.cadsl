@@ -20,7 +20,7 @@ diagram dependency_graph() {
             ?child is-in-file ?child_file .
             ?child implements ?parent_name .
             ?parent has-name ?parent_name .
-            ?parent concept ?parent_type .
+            ?parent type ?parent_type .
             FILTER(?parent_type = "class" || ?parent_type = "interface" || ?parent_type = "trait")
             ?parent is-in-file ?parent_file .
             FILTER(?child_file != ?parent_file)
