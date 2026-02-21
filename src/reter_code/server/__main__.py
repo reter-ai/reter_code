@@ -9,6 +9,8 @@ Run with: python -m reter_code.server [options]
 
 import os
 import sys
+import faulthandler
+faulthandler.enable()
 
 def _early_setup():
     """Set up environment BEFORE importing reter modules."""

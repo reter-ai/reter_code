@@ -364,18 +364,47 @@ class SourceStateManager:
         Returns:
             SyncChanges with files to add, modify, or delete
         """
+        import os
         start = time.time()
         changes = SyncChanges()
         seen_files: Set[str] = set()
 
-        # Scan filesystem
+        # Build extension set for O(1) lookup
+        ext_set = self.ALL_CODE_EXTENSIONS
+        js_ts_exts = {'.js', '.ts', '.jsx', '.tsx', '.mjs'}
+
+        # Single os.walk instead of N separate rglob calls
         js_ts_excluded_count = 0
         js_ts_found_count = 0
-        for ext in self.ALL_CODE_EXTENSIONS:
-            pattern = f"**/*{ext}"
-            for file_path in self._project_root.glob(pattern):
-                rel_path = str(file_path.relative_to(self._project_root)).replace('\\', '/')
-                is_js_ts = ext in ('.js', '.ts', '.jsx', '.tsx', '.mjs')
+        root_str = str(self._project_root)
+        for dirpath, dirnames, filenames in os.walk(root_str):
+            # Compute relative dir path for fast exclusion of entire directories
+            rel_dir = os.path.relpath(dirpath, root_str).replace('\\', '/')
+            if rel_dir == '.':
+                rel_dir = ''
+
+            # Prune excluded directories in-place (prevents os.walk from descending)
+            dirnames[:] = [
+                d for d in dirnames
+                if d not in {
+                    'node_modules', '__pycache__', '.git', '.venv', 'venv',
+                    '.tox', '.pytest_cache', '.mypy_cache', 'dist', 'eggs',
+                    'CMakeFiles', '.hg', '.svn',
+                }
+                and not d.startswith('cmake-build-')
+            ]
+
+            for fname in filenames:
+                # Fast extension check
+                dot_pos = fname.rfind('.')
+                if dot_pos < 0:
+                    continue
+                ext = fname[dot_pos:]
+                if ext not in ext_set:
+                    continue
+
+                rel_path = f"{rel_dir}/{fname}" if rel_dir else fname
+                is_js_ts = ext in js_ts_exts
 
                 # Check include patterns first (if set, file MUST match at least one)
                 if include_patterns:
@@ -390,13 +419,13 @@ class SourceStateManager:
                         continue
 
                 # Skip excluded files
-                if is_excluded_func(file_path.relative_to(self._project_root)):
+                if is_excluded_func(Path(rel_path)):
                     if is_js_ts:
                         js_ts_excluded_count += 1
                     continue
 
-                # Skip common excluded directories
-                if self._is_common_excluded(rel_path):
+                # Skip build directories
+                if '/bin/' in rel_path or '/obj/' in rel_path or '/build/' in rel_path:
                     if is_js_ts:
                         js_ts_excluded_count += 1
                     continue
@@ -407,6 +436,7 @@ class SourceStateManager:
                 seen_files.add(rel_path)
 
                 # Quick check using mtime-first strategy
+                file_path = Path(dirpath) / fname
                 status, new_info = self.quick_check_file(file_path)
 
                 if status == "new":

@@ -660,6 +660,10 @@ class ReterServer:
         poller = zmq.Poller()
         poller.register(self._query_socket, zmq.POLLIN)
 
+        import time as _time
+        _last_stats_refresh = _time.monotonic()
+        _STATS_REFRESH_INTERVAL = 5.0  # seconds
+
         while self._running:
             try:
                 # Poll with timeout for graceful shutdown
@@ -673,6 +677,12 @@ class ReterServer:
                 # Handle keyboard input (all platforms)
                 if self._console:
                     self._handle_keyboard()
+
+                # Periodic stats refresh
+                now = _time.monotonic()
+                if now - _last_stats_refresh >= _STATS_REFRESH_INTERVAL:
+                    _last_stats_refresh = now
+                    self._update_console_stats()
 
             except zmq.ZMQError as e:
                 if e.errno == zmq.ETERM:
@@ -721,13 +731,16 @@ class ReterServer:
         if check_reter_core_integrity(snapshots_dir):
             print("\n[!] reter_core binary has changed since last snapshot.")
             print("    Stale snapshots, deltas, and RAG index must be purged for a fresh init.")
-            answer = input("    Purge and continue? [y/N] ").strip().lower()
-            if answer in ("y", "yes"):
-                purge_stale_state(snapshots_dir)
-                logger.warning("reter_core binary changed — purged stale state, performing fresh init")
+            # Auto-purge if not in a TTY (no interactive input available)
+            if sys.stdin.isatty():
+                answer = input("    Purge and continue? [y/N] ").strip().lower()
+                if answer not in ("y", "yes"):
+                    print("    Exiting.")
+                    sys.exit(0)
             else:
-                print("    Exiting.")
-                sys.exit(0)
+                print("    Auto-purging (non-interactive mode).")
+            purge_stale_state(snapshots_dir)
+            logger.warning("reter_core binary changed — purged stale state, performing fresh init")
 
     def start(self) -> None:
         """Start the RETER server."""
@@ -843,6 +856,8 @@ class ReterServer:
 
 def main():
     """Main entry point for RETER server."""
+    import sys
+    print("[DEBUG] Server starting...", file=sys.stderr, flush=True)
     import argparse
     import os
 
@@ -902,6 +917,7 @@ def main():
         config.console_enabled = False
 
     # Start server
+    print(f"[DEBUG] Starting server, console_enabled={config.console_enabled}", file=sys.stderr, flush=True)
     server = ReterServer(config)
     server.start()
 

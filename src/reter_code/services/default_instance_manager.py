@@ -23,6 +23,7 @@ RAG Integration:
 """
 
 import os
+import sys
 import hashlib
 import threading
 from pathlib import Path
@@ -622,6 +623,7 @@ class DefaultInstanceManager:
 
             else:
                 # Full scan (initial load or no pending changes tracked)
+                print(f"[DEBUG] Starting full scan...", file=sys.stderr, flush=True)
                 if self._progress_callback is None:
                     logger.info("[default] Quick scanning with mtime-first check...")
                 else:
@@ -635,6 +637,7 @@ class DefaultInstanceManager:
                 )
 
                 total_changes = len(changes.to_add) + len(changes.to_modify) + len(changes.to_delete)
+                print(f"[DEBUG] Scan done: +{len(changes.to_add)} ~{len(changes.to_modify)} -{len(changes.to_delete)} in {time.time()-start:.2f}s", file=sys.stderr, flush=True)
                 if self._progress_callback is None:
                     logger.info(f"[default] Quick scan found +{len(changes.to_add)} ~{len(changes.to_modify)} -{len(changes.to_delete)} in {time.time()-start:.2f}s")
                 else:
@@ -649,7 +652,9 @@ class DefaultInstanceManager:
             self._dirty = False
 
             # Apply changes using the optimized method
+            print(f"[DEBUG] Applying sync changes...", file=sys.stderr, flush=True)
             changes_made = self._apply_sync_changes(reter, changes, rag_changed_files)
+            print(f"[DEBUG] Sync changes applied, changes_made={changes_made}", file=sys.stderr, flush=True)
         else:
             # Fallback to old method if no state manager
             if self._progress_callback is None:
@@ -1173,44 +1178,50 @@ class DefaultInstanceManager:
 
     def _scan_directory(self, scan_dir: Path, files: Dict[str, Tuple[str, str]], include_pattern: Optional[str]) -> None:
         """
-        Scan a directory for Python, JavaScript, HTML, C#, and C++ files and add to files dict.
+        Scan a directory for supported code files and add to files dict.
+
+        Uses single os.walk instead of per-extension rglob for performance.
 
         Args:
             scan_dir: Directory to scan
             files: Dict to populate with results
             include_pattern: Optional pattern to filter files (if None, include all)
         """
-        # Scan for all supported file types
-        for ext in self.ALL_CODE_EXTENSIONS:
-            pattern = f"*{ext}"
-            for code_file in scan_dir.rglob(pattern):
+        ext_set = self.ALL_CODE_EXTENSIONS
+        root_str = str(self._project_root)
+
+        for dirpath, dirnames, filenames in os.walk(str(scan_dir)):
+            # Prune excluded directories in-place
+            dirnames[:] = [
+                d for d in dirnames
+                if d not in {
+                    'node_modules', '__pycache__', '.git', '.venv', 'venv',
+                    '.tox', '.pytest_cache', '.mypy_cache', 'dist', 'eggs',
+                    'CMakeFiles', '.hg', '.svn', 'bin', 'obj',
+                }
+                and not d.startswith('cmake-build-')
+                and d != 'build'
+            ]
+
+            for fname in filenames:
+                dot_pos = fname.rfind('.')
+                if dot_pos < 0:
+                    continue
+                ext = fname[dot_pos:]
+                if ext not in ext_set:
+                    continue
+
+                code_file = Path(dirpath) / fname
                 rel_path = code_file.relative_to(self._project_root)
                 rel_path_str = str(rel_path).replace('\\', '/')
 
-                # Skip if already processed (from another include pattern)
                 if rel_path_str in files:
                     continue
 
-                # If include pattern specified, verify file matches
                 if include_pattern and not self._matches_pattern(rel_path_str, include_pattern):
                     continue
 
-                # Skip excluded files
                 if self._is_excluded(rel_path):
-                    continue
-
-                # Skip node_modules for JavaScript
-                if "node_modules" in rel_path_str:
-                    continue
-
-                # Skip bin/obj directories for C#
-                if "/bin/" in rel_path_str or "/obj/" in rel_path_str or rel_path_str.startswith("bin/") or rel_path_str.startswith("obj/"):
-                    continue
-
-                # Skip build directories for C++ (CMakeFiles, build, cmake-build-*, etc.)
-                if "/CMakeFiles/" in rel_path_str or "/build/" in rel_path_str or "cmake-build-" in rel_path_str:
-                    continue
-                if rel_path_str.startswith("CMakeFiles/") or rel_path_str.startswith("build/"):
                     continue
 
                 # Read file and compute MD5
@@ -1552,6 +1563,9 @@ class DefaultInstanceManager:
         """
         Load files using parallel parsing if available, falling back to sequential.
 
+        Polls C++ atomic progress counters to update the progress callback during
+        parsing (phase 1) and fact injection (phase 2).
+
         Args:
             reter: ReterWrapper instance
             files: List of (abs_path, rel_path, md5_hash) tuples
@@ -1584,12 +1598,59 @@ class DefaultInstanceManager:
             if not file_tuples:
                 return 0, []
 
-            result = owl_rete_cpp.parse_files_parallel(
-                reter.reasoner.network, file_tuples, num_threads=0)
+            # Debug: log language distribution
+            from collections import Counter
+            lang_counts = Counter(lang for _, lang, _, _, _ in file_tuples)
+            print(f"[DEBUG] _load_files_batch: {len(file_tuples)} files, langs: {dict(lang_counts)}", file=sys.stderr, flush=True)
 
-            errors = result.get("errors", [])
-            loaded = result.get("files_parsed", 0) - len(errors)
-            return max(loaded, 0), errors
+            network = reter.reasoner.network
+
+            # Disable faulthandler — it crashes when inspecting non-Python
+            # worker threads created by parse_files_parallel
+            import faulthandler, threading
+            _fh_was_enabled = faulthandler.is_enabled()
+            if _fh_was_enabled:
+                faulthandler.disable()
+
+            # Progress polling thread
+            _stop_progress = threading.Event()
+
+            def _poll_progress():
+                while not _stop_progress.wait(0.25):
+                    try:
+                        phase, current, total = network.get_parallel_progress()
+                        if total > 0 and self._progress_callback:
+                            label = "parsing" if phase == 1 else "injecting" if phase == 2 else "loading"
+                            self._progress_callback.update_file_progress(current, total, label)
+                    except Exception:
+                        pass
+
+            if self._progress_callback:
+                _pt = threading.Thread(target=_poll_progress, daemon=True)
+                _pt.start()
+
+            # Keep entity accumulation ON — phase 2 buffers facts to accumulator.
+            # Phase 3 finalizes: merges entities + parallel add_fact via tbb::parallel_for.
+            # (rete_wme_mutex_ makes add_fact thread-safe; Steps 1-3 remain parallel.)
+            result = owl_rete_cpp.parse_files_parallel(network, file_tuples, 0)
+
+            _stop_progress.set()
+
+            if _fh_was_enabled:
+                faulthandler.enable()
+
+            total_loaded = result["files_parsed"]
+            all_errors = list(result["errors"])
+
+            print(
+                f"[parallel] {total_loaded}/{len(file_tuples)} files, "
+                f"{result['total_facts']} facts, "
+                f"{result['threads_used']}T, "
+                f"parse={result['read_parse_ms']:.0f}ms "
+                f"inject={result['inject_ms']:.0f}ms",
+                file=sys.stderr, flush=True,
+            )
+            return total_loaded, all_errors
 
         except (AttributeError, ImportError):
             # Fallback: sequential loading
@@ -1610,6 +1671,9 @@ class DefaultInstanceManager:
     ) -> int:
         """
         Finalize entity accumulation with progress reporting.
+
+        Uses batched C++ calls that release the GIL between batches,
+        allowing progress callbacks to update the UI.
 
         Args:
             reter: ReterWrapper instance with active entity accumulation
