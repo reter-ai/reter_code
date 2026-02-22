@@ -4356,7 +4356,7 @@ class CreateTaskStep:
         self.source_tool = source_tool
 
     def execute(self, data, ctx=None):
-        """Execute task creation."""
+        """Execute task creation. Returns Claude Code-compatible task data."""
         from reter_code.dsl.core import pipeline_ok, pipeline_err
         import logging
         import re
@@ -4391,134 +4391,47 @@ class CreateTaskStep:
                             f"Available fields: {list(data[0].keys())}"
                         )
 
-            # Get session store from context or default instance
-            store = None
-            session_id = None
-            if ctx and hasattr(ctx, 'get'):
-                store = ctx.get("session_store")
-                session_id = ctx.get("session_id")
-
-            if store is None:
-                try:
-                    from reter_code.tools.unified.store import UnifiedStore
-                    store = UnifiedStore()
-                except Exception as e:
-                    logger.debug(f"Could not get unified store: {e}")
-
-            if session_id is None:
-                # Get or create session by instance name
-                if store:
-                    try:
-                        session_id = store.get_or_create_session("default")
-                    except Exception as e:
-                        logger.debug(f"Could not get session: {e}")
-
-            # Create batch item if group_id specified
-            batch_item_id = None
-            if self.group_id and store and session_id and not self.dry_run:
-                try:
-                    batch_item_id = f"BATCH-{self.group_id}"
-                    existing = store.get_item(batch_item_id)
-                    if not existing:
-                        store.add_item(
-                            session_id=session_id,
-                            item_type="milestone",
-                            item_id=batch_item_id,
-                            content=f"Task batch: {self.group_id}",
-                            description=f"Batch of tasks created with group_id={self.group_id}",
-                            status="pending",
-                            source_tool=self.source_tool or "create_task",
-                        )
-                except Exception as e:
-                    logger.debug(f"Could not create batch item: {e}")
-
-            # Create tasks
             tasks_created = []
             filtered_out = 0
             filter_reasons = {}
 
-            for batch_start in range(0, len(data), self.batch_size):
-                batch_end = min(batch_start + self.batch_size, len(data))
-                batch = data[batch_start:batch_end]
+            for row in data:
+                # Apply filter predicates
+                filter_result = self._apply_filter_predicates(row)
+                if filter_result:
+                    filtered_out += 1
+                    filter_reasons[filter_result] = filter_reasons.get(filter_result, 0) + 1
+                    continue
 
-                for row in batch:
-                    # Apply filter predicates
-                    filter_result = self._apply_filter_predicates(row)
-                    if filter_result:
-                        filtered_out += 1
-                        filter_reasons[filter_result] = filter_reasons.get(filter_result, 0) + 1
-                        continue
+                task_data = self._create_task_data(row)
+                tasks_created.append(task_data)
 
-                    task_data = self._create_task_data(row)
+            # Check for file-based output mode
+            output_dir = None
+            if ctx and hasattr(ctx, 'params') and ctx.params:
+                output_dir = ctx.params.get("output_dir")
 
-                    if self.dry_run:
-                        tasks_created.append(task_data)
-                    else:
-                        # Actually create the task
-                        if store and session_id:
-                            try:
-                                # Build metadata
-                                metadata = task_data.get("metadata", {})
-                                metadata["source_row"] = task_data.get("source_row", {})
-                                if task_data.get("prompt"):
-                                    metadata["prompt"] = task_data["prompt"]
-
-                                # Use add_item with content as the task name
-                                # and additional fields as kwargs
-                                task_id = store.add_item(
-                                    session_id=session_id,
-                                    item_type="task",
-                                    content=task_data["name"],
-                                    description=task_data.get("description", ""),
-                                    category=task_data["category"],
-                                    priority=task_data["priority"],
-                                    status="pending",
-                                    source_tool=self.source_tool,
-                                    metadata=metadata,
-                                )
-                                task_data["id"] = task_id
-                                task_data["created"] = True
-
-                                # Add affects relation if specified
-                                if task_data.get("affects"):
-                                    store.add_relation(
-                                        source_id=task_id,
-                                        target_id=task_data["affects"],
-                                        target_type="file",
-                                        relation_type="affects"
-                                    )
-
-                                # Add group relation if batch exists
-                                if batch_item_id:
-                                    store.add_relation(
-                                        source_id=task_id,
-                                        target_id=batch_item_id,
-                                        target_type="item",
-                                        relation_type="traces"
-                                    )
-                            except Exception as e:
-                                logger.warning(f"Failed to create task: {e}")
-                                task_data["error"] = str(e)
-                                task_data["created"] = False
-                        else:
-                            task_data["created"] = False
-                            task_data["error"] = "No active session"
-
-                        tasks_created.append(task_data)
-
-            result = {
-                "tasks_created": sum(1 for t in tasks_created if t.get("created", False) or self.dry_run),
-                "tasks_failed": sum(1 for t in tasks_created if t.get("error")),
-                "filtered_out": filtered_out,
-                "filter_reasons": filter_reasons,
-                "dry_run": self.dry_run,
-                "tasks": tasks_created,
-            }
-
-            if batch_item_id:
-                result["batch_id"] = batch_item_id
-
-            return pipeline_ok(result)
+            if output_dir and not self.dry_run:
+                from pathlib import Path
+                from reter_code.dsl.core import _get_project_root
+                project_root = _get_project_root(ctx)
+                resolved_dir = str(Path(project_root) / ".reter_code" / output_dir)
+                written_files = self._write_task_files(tasks_created, resolved_dir)
+                return pipeline_ok({
+                    "tasks_created": len(tasks_created),
+                    "filtered_out": filtered_out,
+                    "filter_reasons": filter_reasons,
+                    "output_dir": resolved_dir,
+                    "task_files": written_files,
+                })
+            else:
+                return pipeline_ok({
+                    "tasks_created": len(tasks_created),
+                    "filtered_out": filtered_out,
+                    "filter_reasons": filter_reasons,
+                    "tasks": tasks_created,
+                    "_claude_code_hint": "Create these as Claude Code tasks using TaskCreate for each item in 'tasks'"
+                })
 
         except Exception as e:
             logger.error(f"Create task step failed: {e}", exc_info=True)
@@ -4590,6 +4503,112 @@ class CreateTaskStep:
                         return "skip_single_file"
 
         return None
+
+    @staticmethod
+    def _sanitize_filename(name):
+        """Convert task name to filesystem-safe string."""
+        import re as _re
+        # Strip markdown formatting
+        s = _re.sub(r'[*_`#\[\]]', '', name)
+        # Replace unsafe chars with underscore
+        s = _re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', s)
+        # Collapse whitespace and dashes to single underscore
+        s = _re.sub(r'[\s\-]+', '_', s)
+        # Collapse runs of underscores
+        s = _re.sub(r'_+', '_', s)
+        # Strip leading/trailing underscores
+        s = s.strip('_')
+        # Truncate to 80 chars
+        if len(s) > 80:
+            s = s[:80].rstrip('_')
+        return s
+
+    def _render_task_file(self, task):
+        """Render a task dict as a self-contained markdown file."""
+        import json
+
+        lines = []
+
+        # Title
+        lines.append(f"# {task['name']}")
+        lines.append("")
+
+        # Metadata bar
+        meta_parts = [f"Category: {task.get('category', 'annotation')}",
+                      f"Priority: {task.get('priority', 'medium')}"]
+        if task.get('metadata', {}).get('source_tool'):
+            meta_parts.append(f"Source: {task['metadata']['source_tool']}")
+        elif self.source_tool:
+            meta_parts.append(f"Source: {self.source_tool}")
+        if task.get('affects'):
+            meta_parts.append(f"Affects: {task['affects']}")
+        lines.append(f"> {' | '.join(meta_parts)}")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+
+        # Detection & Review
+        lines.append("## Detection & Review")
+        lines.append("")
+        if task.get('description'):
+            # Unescape literal \n and \" from CADSL templates
+            desc = task['description'].replace('\\n', '\n').replace('\\"', '"')
+            lines.append(desc)
+            lines.append("")
+
+        # Prompt section (separate if present)
+        if task.get('prompt'):
+            lines.append("## Task Instructions")
+            lines.append("")
+            prompt = task['prompt'].replace('\\n', '\n').replace('\\"', '"')
+            lines.append(prompt)
+            lines.append("")
+
+        lines.append("---")
+        lines.append("")
+
+        # Lifecycle
+        lines.append("## Lifecycle")
+        lines.append("")
+        lines.append("**If FALSE POSITIVE:** Delete this file.")
+        lines.append("")
+        lines.append("**If TRUE POSITIVE:** Rewrite this file with your implementation plan (what to change, files affected, risk).")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+
+        # Metadata JSON block
+        meta_block = {}
+        if task.get('metadata'):
+            meta_block['metadata'] = task['metadata']
+        if task.get('source_row'):
+            meta_block['source_row'] = task['source_row']
+        if meta_block:
+            lines.append("## Metadata")
+            lines.append("```json")
+            lines.append(json.dumps(meta_block, indent=2, default=str))
+            lines.append("```")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    def _write_task_files(self, tasks, output_dir):
+        """Write each task as a self-contained .md file. Returns list of written paths."""
+        from pathlib import Path
+
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+
+        written = []
+        for i, task in enumerate(tasks, 1):
+            sanitized = self._sanitize_filename(task.get('name', f'task_{i}'))
+            filename = f"{i:03d}_{sanitized}.md"
+            filepath = out / filename
+            content = self._render_task_file(task)
+            filepath.write_text(content, encoding='utf-8')
+            written.append(str(filepath))
+
+        return written
 
     def _create_task_data(self, row):
         """Create task data from a row using templates."""

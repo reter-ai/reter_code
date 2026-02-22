@@ -45,9 +45,6 @@ class InspectionHandler(BaseHandler):
             METHOD_RECOMMENDER: self._handle_recommender,
         }
 
-    def can_handle(self, method: str) -> bool:
-        """Check if this handler can process the method."""
-        return method in self._methods
 
     def _ensure_synced(self) -> None:
         """Ensure default instance is synced with file changes before query."""

@@ -406,14 +406,12 @@ class ComponentReadiness:
     ::: This is a value-object.
 
     Components initialize sequentially:
-    1. sql_ready - SQLite/UnifiedStore initialized
-    2. reter_ready - Default RETER instance with Python files loaded
-    3. embedding_ready - SentenceTransformers model loaded
-    4. rag_code_ready - RAG Python code entities indexed
-    5. rag_docs_ready - RAG Markdown documents indexed
+    1. reter_ready - Default RETER instance with Python files loaded
+    2. embedding_ready - SentenceTransformers model loaded
+    3. rag_code_ready - RAG Python code entities indexed
+    4. rag_docs_ready - RAG Markdown documents indexed
 
     Tools check appropriate flags before executing:
-    - session, items, project → require_sql()
     - code_inspection, reql, natural_language_query → require_default_instance()
     - semantic_search (code) → require_rag_code_index()
     - semantic_search (docs) → require_rag_document_index()

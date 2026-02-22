@@ -92,10 +92,9 @@ class BaseHandler(ABC):
         """Register method handlers. Override in subclass."""
         pass
 
-    @abstractmethod
     def can_handle(self, method: str) -> bool:
         """Check if this handler can process the given method."""
-        pass
+        return method in self._methods
 
     def handle(self, message: ReterMessage) -> ReterMessage:
         """Process a request message and return response.

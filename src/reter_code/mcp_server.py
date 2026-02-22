@@ -189,36 +189,41 @@ class ReterCodeServer:
             instructions="""Reter Code is an AI-powered code reasoning MCP server that maintains an indexed knowledge graph of the codebase.
 
 CRITICAL RULES:
-1. Call `session(action="context")` at the START of every conversation to restore state.
-2. When the knowledge base has sources loaded (check `system(action="status")` → `total_sources > 0`), ALWAYS use RETER tools INSTEAD OF bash/grep/glob/read for code understanding tasks. RETER already has the codebase indexed — do not re-read files manually.
+1. When the knowledge base has sources loaded (check `system(action="status")` → `total_sources > 0`), ALWAYS use RETER tools INSTEAD OF bash/grep/glob/read for code understanding tasks. RETER already has the codebase indexed — do not re-read files manually.
+2. Use Claude Code native TaskCreate/TaskList for task management.
 
 When the user asks about code, use these tools FIRST:
 - `code_inspection` - Explore structure: list_modules, list_classes, describe_class, get_architecture, find_usages, analyze_dependencies, predict_impact
-- `natural_language_query` - Ask any question about code in plain English (translates to CADSL automatically)
+- `prepare_nlq_context` - Prepare context for complex code questions (returns prompt for Task subagent)
 - `semantic_search` - Find code by meaning, not just keywords
 - `reql` - Direct queries against the knowledge graph
 - `diagram` - Visualize: class_hierarchy, sequence, dependencies, call_graph, coupling
 - `recommender` - Code quality: refactoring smells, test coverage gaps
 
+For complex questions requiring multi-step analysis:
+1. Call `prepare_nlq_context(question="...")` to get a formatted prompt with schema + examples
+2. Spawn a Task subagent (general-purpose) with the returned prompt
+3. The subagent will use reql, execute_cadsl, semantic_search, cadsl_examples, Read, Grep
+4. The subagent should push results to view using `view`
+
+For generating CADSL queries:
+1. Call `prepare_cadsl_context(question="...")` to get a formatted prompt
+2. Spawn a Task subagent with the returned prompt
+3. The subagent outputs a ```cadsl code block
+4. Execute the generated query with `execute_cadsl`
+
 For reasoning and planning, use:
-- `thinking` - Record reasoning steps with design doc sections (context, goals, design, alternatives, risks, implementation, tasks)
-- `session` - Manage sessions (start, context, end)
+- `thinking` - RETER knowledge operations (assert, query, python_file, forget_source)
+
+CADSL `create_task` step results should be created as Claude Code tasks using TaskCreate.
 
 Intent → tool mapping:
 - "What's in the codebase?" → `code_inspection(action="get_architecture")` or `code_inspection(action="list_modules")`
-- "Find X" / "Where is X?" → `semantic_search(query="X")` or `natural_language_query(question="...")`
+- "Find X" / "Where is X?" → `semantic_search(query="X")` or use prepare_nlq_context + Task subagent
 - "How does X work?" → `code_inspection(action="describe_class", target="X")` + `diagram(diagram_type="sequence", target="X")`
 - "What depends on X?" → `code_inspection(action="analyze_dependencies")` or `code_inspection(action="predict_impact", target="X")`
 - "Show me the class hierarchy" → `diagram(diagram_type="class_hierarchy")`
-- "What should I refactor?" → `recommender(recommender_type="refactoring")`
-
-Design doc workflow:
-1. thinking(section="context") - Document problem/background
-2. thinking(section="goals") - Define objectives
-3. thinking(section="design") - Propose solution
-4. thinking(section="tasks", operations={task:{...}}) - Create work items
-
-Always use the `thinking` tool when analyzing problems or making decisions.""",
+- "What should I refactor?" → `recommender(recommender_type="refactoring")`""",
             website_url="https://reter.ai",
             sampling_handler=anthropic_sampling_handler,
             sampling_handler_behavior="fallback"

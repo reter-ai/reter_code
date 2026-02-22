@@ -37,9 +37,6 @@ class KnowledgeHandler(BaseHandler):
             METHOD_VALIDATE_CNL: self._handle_validate_cnl,
         }
 
-    def can_handle(self, method: str) -> bool:
-        """Check if this handler can process the method."""
-        return method in self._methods
 
     def _handle_add_knowledge(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Add knowledge from source.

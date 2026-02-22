@@ -45,7 +45,6 @@ from .protocol import (
     METHOD_FILE_SCAN,
     METHOD_SESSION,
     METHOD_THINKING,
-    METHOD_ITEMS,
     METHOD_SIMILAR_CADSL_TOOLS,
     METHOD_CADSL_EXAMPLES,
     METHOD_VIEW_PUSH,
@@ -723,21 +722,6 @@ class ReterClient:
             Thought creation result
         """
         return self._send_request(METHOD_THINKING, kwargs)
-
-    def items(self, action: str = "list", **kwargs) -> Dict[str, Any]:
-        """Item operations.
-
-        Args:
-            action: Item action (list, get, update, delete)
-            **kwargs: Action parameters
-
-        Returns:
-            Item operation result
-        """
-        return self._send_request(METHOD_ITEMS, {
-            "action": action,
-            **kwargs
-        })
 
     # =========================================================================
     # CADSL Tool Operations

@@ -14,13 +14,12 @@ import json
 import logging
 import os
 import re
-import sqlite3
 import subprocess
 import sys
 import threading
 import time as _time
 from pathlib import Path
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 from aiohttp import web, WSMsgType
 
@@ -40,8 +39,11 @@ class ViewServer:
     to connected browsers via WebSocket.
     """
 
+    _MAX_HISTORY = 200
+
     def __init__(self, host: str = "127.0.0.1", port: int = 0,
-                 db_path: Optional[str] = None):
+                 history_dir: Optional[str] = None,
+                 diagrams_dir: Optional[str] = None):
         self._host = host
         self._port = port  # 0 = OS picks free port
         self._actual_port: int = 0
@@ -52,28 +54,20 @@ class ViewServer:
         self._clients: Set[web.WebSocketResponse] = set()
         self._last_message: Optional[Dict[str, Any]] = None
 
-        # SQLite persistence + diagrams directory
-        self._db: Optional[sqlite3.Connection] = None
+        # File-based history + diagrams directory
+        self._history_dir: Optional[Path] = None
+        self._history_index: List[Dict[str, Any]] = []  # metadata only
+        self._next_id: int = 1
         self._diagrams_dir: Optional[Path] = None
-        if db_path:
-            self._diagrams_dir = Path(db_path).parent / "diagrams"
+
+        if diagrams_dir:
+            self._diagrams_dir = Path(diagrams_dir)
             self._diagrams_dir.mkdir(parents=True, exist_ok=True)
-            self._db = sqlite3.connect(db_path, check_same_thread=False)
-            self._db.execute("PRAGMA journal_mode=WAL")
-            self._db.execute("""
-                CREATE TABLE IF NOT EXISTS view_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp REAL NOT NULL,
-                    content_type TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    content TEXT NOT NULL
-                )
-            """)
-            self._db.execute("""
-                CREATE INDEX IF NOT EXISTS idx_vh_timestamp
-                ON view_history(timestamp DESC)
-            """)
-            self._db.commit()
+
+        if history_dir:
+            self._history_dir = Path(history_dir)
+            self._history_dir.mkdir(parents=True, exist_ok=True)
+            self._load_history_index()
 
     @property
     def port(self) -> int:
@@ -121,15 +115,14 @@ class ViewServer:
         self._clients.add(ws)
         logger.debug("ViewServer: WS client connected (%d total)", len(self._clients))
         try:
-            # Send cached content immediately (fall back to DB on server restart)
-            if self._last_message is None and self._db:
-                row = self._db.execute(
-                    "SELECT id, content_type, content "
-                    "FROM view_history ORDER BY timestamp DESC LIMIT 1"
-                ).fetchone()
-                if row:
+            # Send cached content immediately (fall back to disk on server restart)
+            if self._last_message is None and self._history_index:
+                last = self._history_index[-1]
+                data = self._read_history_file(last["id"])
+                if data:
                     self._last_message = {
-                        "id": row[0], "type": row[1], "content": row[2],
+                        "id": data["id"], "type": data["content_type"],
+                        "content": data["content"],
                     }
             if self._last_message is not None:
                 await ws.send_str(json.dumps(self._last_message))
@@ -156,65 +149,102 @@ class ViewServer:
         # html or fallback
         return content.strip()[:80] or "Untitled"
 
+    def _history_file_path(self, item_id: int) -> Path:
+        """Return the path for a history JSON file by ID."""
+        return self._history_dir / f"{item_id:05d}.json"
+
+    def _load_history_index(self) -> None:
+        """Scan history directory and build in-memory index on startup."""
+        self._history_index = []
+        self._next_id = 1
+        if not self._history_dir or not self._history_dir.is_dir():
+            return
+        files = sorted(self._history_dir.glob("*.json"))
+        for f in files:
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                self._history_index.append({
+                    "id": data["id"],
+                    "timestamp": data["timestamp"],
+                    "content_type": data["content_type"],
+                    "title": data["title"],
+                })
+                if data["id"] >= self._next_id:
+                    self._next_id = data["id"] + 1
+            except (json.JSONDecodeError, KeyError, OSError) as e:
+                logger.warning("ViewServer: skipping corrupt history file %s: %s", f, e)
+
+    def _read_history_file(self, item_id: int) -> Optional[Dict[str, Any]]:
+        """Read a single history JSON file by ID."""
+        if not self._history_dir:
+            return None
+        path = self._history_file_path(item_id)
+        if not path.is_file():
+            return None
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("ViewServer: failed to read history file %s: %s", path, e)
+            return None
+
     def _save_history(self, message: Dict[str, Any]) -> Optional[int]:
-        """Insert into view_history and return the new row id."""
-        if not self._db:
+        """Write a history JSON file and return the new ID."""
+        if not self._history_dir:
             return None
         content_type = message.get("type", "html")
         content = message.get("content", "")
         title = message.get("title") or self._extract_title(content_type, content)
-        cur = self._db.execute(
-            "INSERT INTO view_history (timestamp, content_type, title, content) "
-            "VALUES (?, ?, ?, ?)",
-            (_time.time(), content_type, title, content),
-        )
-        self._db.commit()
-        return cur.lastrowid
+        item_id = self._next_id
+        self._next_id += 1
+        record = {
+            "id": item_id,
+            "timestamp": _time.time(),
+            "content_type": content_type,
+            "title": title,
+            "content": content,
+        }
+        path = self._history_file_path(item_id)
+        path.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+        self._history_index.append({
+            "id": item_id,
+            "timestamp": record["timestamp"],
+            "content_type": content_type,
+            "title": title,
+        })
+        # Prune oldest entries beyond limit
+        while len(self._history_index) > self._MAX_HISTORY:
+            oldest = self._history_index.pop(0)
+            old_path = self._history_file_path(oldest["id"])
+            try:
+                old_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        return item_id
 
     async def _handle_history_list(self, request: web.Request) -> web.Response:
         """GET /api/history — list recent history items (no content)."""
-        if not self._db:
-            return web.json_response([])
-        rows = self._db.execute(
-            "SELECT id, timestamp, content_type, title "
-            "FROM view_history ORDER BY timestamp DESC LIMIT 200"
-        ).fetchall()
-        items = [
-            {"id": r[0], "timestamp": r[1], "content_type": r[2], "title": r[3]}
-            for r in rows
-        ]
+        # Return index in reverse chronological order (newest first)
+        items = list(reversed(self._history_index))
         return web.json_response(items)
 
     async def _handle_history_item(self, request: web.Request) -> web.Response:
         """GET /api/history/{id} — return full content for one item."""
-        if not self._db:
-            return web.json_response({"error": "no database"}, status=500)
         item_id = int(request.match_info["id"])
-        row = self._db.execute(
-            "SELECT id, timestamp, content_type, title, content "
-            "FROM view_history WHERE id = ?",
-            (item_id,),
-        ).fetchone()
-        if not row:
+        data = self._read_history_file(item_id)
+        if not data:
             return web.json_response({"error": "not found"}, status=404)
-        return web.json_response({
-            "id": row[0], "timestamp": row[1], "content_type": row[2],
-            "title": row[3], "content": row[4],
-        })
+        return web.json_response(data)
 
     async def _handle_history_save(self, request: web.Request) -> web.Response:
         """POST /api/history/{id}/save — save content to diagrams folder."""
-        if not self._db or not self._diagrams_dir:
-            return web.json_response({"error": "no database"}, status=500)
+        if not self._diagrams_dir:
+            return web.json_response({"error": "no diagrams directory"}, status=500)
         item_id = int(request.match_info["id"])
-        row = self._db.execute(
-            "SELECT content_type, title, content FROM view_history WHERE id = ?",
-            (item_id,),
-        ).fetchone()
-        if not row:
+        data = self._read_history_file(item_id)
+        if not data:
             return web.json_response({"error": "not found"}, status=404)
 
-        content_type, title, content = row
+        content_type, title, content = data["content_type"], data["title"], data["content"]
         # Sanitize title for filename
         safe = re.sub(r'[^\w\s-]', '', title).strip()[:60]
         safe = re.sub(r'\s+', '_', safe) or f"view_{item_id}"
@@ -339,7 +369,4 @@ class ViewServer:
         if self._thread:
             self._thread.join(timeout=5)
             self._thread = None
-        if self._db:
-            self._db.close()
-            self._db = None
         logger.info("ViewServer stopped")

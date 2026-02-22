@@ -34,9 +34,6 @@ class SystemHandler(BaseHandler):
             "facts": self._handle_facts,
         }
 
-    def can_handle(self, method: str) -> bool:
-        """Check if this handler can process the method."""
-        return method in self._methods
 
     def _handle_system(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Dispatch system action.

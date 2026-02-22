@@ -28,9 +28,6 @@ class FileScanHandler(BaseHandler):
             METHOD_FILE_SCAN: self._handle_file_scan,
         }
 
-    def can_handle(self, method: str) -> bool:
-        """Check if this handler can process the method."""
-        return method in self._methods
 
     def _handle_file_scan(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Scan RETER-tracked files with patterns.

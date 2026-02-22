@@ -39,6 +39,8 @@ from .catpy import (
 import pyarrow as pa
 import pyarrow.compute as pc
 
+from ..services.utils import matches_pattern
+
 
 # =============================================================================
 # Arrow Utilities
@@ -492,18 +494,11 @@ class FileScanSource(Source[List[Dict[str, Any]]]):
     def execute(self, ctx: Context) -> PipelineResult[List[Dict[str, Any]]]:
         """Scan RETER sources for matching files."""
         import re
-        import fnmatch
-        from pathlib import Path, PurePosixPath
+        from pathlib import Path
         from datetime import datetime
 
-        def matches_glob(path: str, pattern: str) -> bool:
-            """Match path against glob pattern, supporting ** for recursive matching."""
-            # PurePosixPath.match() properly handles ** patterns
-            # For patterns without **, use fnmatch for performance
-            if '**' in pattern:
-                return PurePosixPath(path).match(pattern)
-            else:
-                return fnmatch.fnmatch(path, pattern)
+        # Use shared utility from services.utils
+        matches_glob = matches_pattern
 
         try:
             # Get RETER instance

@@ -4,7 +4,7 @@ Shared resource loading utilities.
 Consolidates duplicate _load_resource implementations from:
 - hybrid_query_engine.py
 - nlq_constants.py
-- agent_sdk_client.py
+- nlq_prompts.py
 """
 
 from pathlib import Path

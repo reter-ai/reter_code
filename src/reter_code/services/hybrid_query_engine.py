@@ -23,12 +23,6 @@ import numpy as np
 from ..logging_config import configure_logger_for_nlq_debug
 
 logger = configure_logger_for_nlq_debug(__name__)
-from .agent_sdk_client import (
-    is_agent_sdk_available,
-    generate_reql_query,
-    generate_cadsl_query,
-    classify_query as classify_query_sdk,
-)
 
 
 # ============================================================
@@ -793,41 +787,20 @@ async def classify_query_with_llm(question: str, ctx) -> QueryClassification:
     if keyword_classification:
         return keyword_classification
 
-    # Case-based reasoning: find similar CADSL tools FIRST
+    # Case-based reasoning: find similar CADSL tools
     similar_tools = find_similar_cadsl_tools(question, max_results=5)
     if similar_tools:
         tool_names = [t.name for t in similar_tools]
         logger.debug(f"CASE-BASED REASONING: Found similar tools: {tool_names}")
 
-    # Use Agent SDK for classification
-    if not is_agent_sdk_available():
-        logger.debug("Agent SDK not available, defaulting to REQL")
-        return QueryClassification(
-            query_type=QueryType.REQL,
-            confidence=0.5,
-            reasoning="Agent SDK not available, defaulting to REQL",
-            similar_tools=similar_tools,
-        )
-
-    try:
-        logger.debug("Using Agent SDK for classification")
-        result = await classify_query_sdk(question)
-        query_type = QueryType(result.get("type", "reql"))
-        return QueryClassification(
-            query_type=query_type,
-            confidence=float(result.get("confidence", 0.8)),
-            reasoning=result.get("reasoning", "Agent SDK classification"),
-            suggested_cadsl_tool=result.get("suggested_tool"),
-            similar_tools=similar_tools,
-        )
-    except Exception as e:
-        logger.debug(f"Agent SDK classification failed: {e}, defaulting to REQL")
-        return QueryClassification(
-            query_type=QueryType.REQL,
-            confidence=0.5,
-            reasoning=f"Fallback to REQL (classification error: {e})",
-            similar_tools=similar_tools,
-        )
+    # Default to REQL for structural queries
+    # (Classification is now handled by Claude Code parent agent)
+    return QueryClassification(
+        query_type=QueryType.REQL,
+        confidence=0.5,
+        reasoning="Default to REQL (classification delegated to parent agent)",
+        similar_tools=similar_tools,
+    )
 
 
 # ============================================================
@@ -1037,69 +1010,6 @@ def build_similar_tools_section(similar_tools: List[SimilarTool]) -> str:
     sections.append("For REQL queries, extract the reql {{ ... }} block and simplify as needed.\n")
 
     return "\n".join(sections)
-
-
-async def generate_query_with_tools(
-    question: str,
-    query_type: QueryType,
-    ctx,  # Kept for backwards compatibility but not used
-    max_iterations: int = 5,
-    similar_tools: Optional[List[SimilarTool]] = None,
-    reter_client=None,
-    schema_info: str = "",
-    project_root: Optional[str] = None
-) -> str:
-    """
-    Generate a query using Agent SDK with case-based reasoning.
-
-    Args:
-        question: Natural language question
-        query_type: REQL or CADSL
-        ctx: Unused (kept for backwards compatibility)
-        max_iterations: Maximum iterations for Agent SDK
-        similar_tools: Similar CADSL tools from case-based reasoning
-        reter_client: ReterClient instance connected to RETER server
-        schema_info: Schema information for REQL queries
-        project_root: Project root path for file verification tools
-
-    Returns:
-        Generated query string
-    """
-    if not is_agent_sdk_available():
-        raise RuntimeError("Claude Agent SDK not available. Install with: pip install claude-agent-sdk")
-
-    # Build similar tools context
-    similar_tools_context = None
-    if similar_tools:
-        similar_tools_context = build_similar_tools_section(similar_tools)
-        logger.debug(f"Including {len(similar_tools)} similar tools as templates")
-
-    logger.debug(f"Using Agent SDK for {query_type.value} generation")
-
-    if query_type == QueryType.REQL:
-        result = await generate_reql_query(
-            question=question,
-            schema_info=schema_info,
-            reter_client=reter_client,
-            max_iterations=max_iterations,
-            similar_tools_context=similar_tools_context,
-            project_root=project_root
-        )
-    else:  # CADSL
-        result = await generate_cadsl_query(
-            question=question,
-            schema_info=schema_info,
-            max_iterations=max_iterations,
-            similar_tools_context=similar_tools_context,
-            reter_client=reter_client,
-            project_root=project_root
-        )
-
-    if result.success and result.query:
-        logger.debug(f"Agent SDK generated query: {result.query[:200]}...")
-        return result.query
-    else:
-        raise RuntimeError(f"Query generation failed: {result.error}")
 
 
 def extract_query_from_response(response_text: str, query_type: QueryType) -> str:

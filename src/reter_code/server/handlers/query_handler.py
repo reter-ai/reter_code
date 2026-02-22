@@ -48,9 +48,6 @@ class QueryHandler(BaseHandler):
             METHOD_CADSL_EXAMPLES: self._handle_cadsl_examples,
         }
 
-    def can_handle(self, method: str) -> bool:
-        """Check if this handler can process the method."""
-        return method in self._methods
 
     def _ensure_synced(self) -> None:
         """Ensure default instance is synced with file changes before query.
@@ -330,48 +327,13 @@ class QueryHandler(BaseHandler):
     def _handle_generate_cadsl(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Generate CADSL from natural language.
 
-        Params:
-            question: Natural language question
-            max_retries: Maximum retry attempts
-            timeout: Timeout in seconds
-
-        Returns:
-            Dictionary with generated CADSL query
+        This endpoint is deprecated. Use the prepare_cadsl_context MCP tool
+        with a Claude Code Task subagent instead.
         """
-        question = params.get("question", "")
-        max_retries = params.get("max_retries", 5)
-        timeout = params.get("timeout", 300)
-
-        if not question:
-            raise ValueError("Question is required")
-
-        # Use the agent SDK client for CADSL generation
-        try:
-            from ...services.agent_sdk_client import generate_cadsl_query
-            import asyncio
-
-            # Run the async function
-            loop = asyncio.get_event_loop()
-            result = loop.run_until_complete(
-                generate_cadsl_query(
-                    question=question,
-                    reter_client=None,  # Use in-process RETER
-                    max_retries=max_retries,
-                    timeout=timeout
-                )
-            )
-            return result
-
-        except ImportError:
-            return {
-                "success": False,
-                "error": "Agent SDK not available for CADSL generation"
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "error": str(e)
-            }
+        return {
+            "success": False,
+            "error": "generate_cadsl is deprecated. Use prepare_cadsl_context MCP tool instead."
+        }
 
     def _serialize_table(self, table) -> Dict[str, Any]:
         """Convert PyArrow table to serializable dictionary.

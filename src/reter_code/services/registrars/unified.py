@@ -1,11 +1,10 @@
 """
 Unified Tools Registrar
 
-Registers the 4 unified MCP tools:
-- thinking: Main thinking tool with operations
-- session: Session lifecycle (start, context, end, clear)
-- items: Query and manage items
-- diagram: Generate diagrams
+Registers the unified MCP tools:
+- thinking: RETER knowledge operations (assert, query, python_file, forget_source)
+- session: Session lifecycle (returns tool guide)
+- diagram: Generate UML/code diagrams
 
 All operations go through ReterClient via ZeroMQ (remote-only mode).
 """
@@ -45,8 +44,6 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
             self._register_thinking_tool(app)
         if self._should_register("session"):
             self._register_session_tool(app)
-        if self._should_register("items"):
-            self._register_items_tool(app)
         if self._should_register("diagram"):
             self._register_diagram_tool(app)
 
@@ -75,9 +72,6 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
             **See: guide://logical-thinking/usage for complete documentation**
 
             Creates a thought (optionally in a design doc section) and executes operations:
-            - Create items: task (with category), milestone
-            - Create relations: traces, implements, depends_on, affects
-            - Update items: update_item, update_task, complete_task
             - RETER: assert, query, python_file, forget_source
 
             Args:
@@ -95,13 +89,13 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
                 operations: Dict of operations to execute (see examples)
 
             Operations examples:
-                {"task": {"name": "Implement X", "category": "feature", "priority": "high"}}
-                {"milestone": {"name": "MVP Release", "date": "2024-03-01"}}
-                {"traces": ["TASK-001"], "affects": ["module.py"]}
-                {"complete_task": "TASK-001"}
+                {"assert": "Every cat is a mammal."}
+                {"query": "SELECT ?c WHERE { ?c type class } LIMIT 5"}
+                {"python_file": "path/to/file.py"}
+                {"forget_source": "path/to/file.py"}
 
             Returns:
-                thought_id, thought_number, items_created, relations_created, session_status
+                thought_number, total_thoughts, next_thought_needed, reter_operations
             """
             if registrar.reter_client is None:
                 return {
@@ -148,12 +142,10 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
             **See: guide://reter/session-context for complete documentation**
 
             Actions:
-            - start: Begin new session (params: goal, project_start, project_end)
-            - context: **CRITICAL** Restore full context after compactification
-            - end: Archive session (preserves data)
-            - clear: Reset session (deletes all data)
-
-            IMPORTANT: Call action="context" at session start and after compactification!
+            - start: Begin new session
+            - context: Returns available tools guide
+            - end: End session
+            - clear: Reset session
 
             Args:
                 action: start, context, end, clear
@@ -162,10 +154,8 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
                 project_end: Project end date ISO format (for start action)
 
             Returns:
-                For start: {session_id, goal, status, created_at}
-                For context: {session, design_doc, tasks, project_health, milestones, suggestions, mcp_guide}
-                For end: {session_id, status, summary}
-                For clear: {success, items_deleted}
+                For context: {tools guide with available RETER tools}
+                For start/end/clear: {success: True, action: "..."}
             """
             if registrar.reter_client is None:
                 return {
@@ -182,148 +172,6 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
                 if project_end is not None:
                     kwargs["project_end"] = project_end
                 return registrar.reter_client.session(**kwargs)
-            except Exception as e:
-                return {
-                    "success": False,
-                    "error": str(e),
-                }
-
-    def _register_items_tool(self, app: FastMCP) -> None:
-        """Register items query and management tool."""
-        registrar = self
-
-        @app.tool()
-        @truncate_mcp_response
-        def items(
-            action: str = "list",
-            item_id: Optional[str] = None,
-            updates: Optional[Dict[str, Any]] = None,
-            item_type: Optional[str] = None,
-            status: Optional[str] = None,
-            priority: Optional[str] = None,
-            phase: Optional[str] = None,
-            category: Optional[str] = None,
-            source_tool: Optional[str] = None,
-            traces_to: Optional[str] = None,
-            traced_by: Optional[str] = None,
-            depends_on: Optional[str] = None,
-            blocks: Optional[str] = None,
-            affects: Optional[str] = None,
-            start_after: Optional[str] = None,
-            end_before: Optional[str] = None,
-            include_relations: bool = False,
-            limit: int = 100,
-            offset: int = 0,
-            classification: Optional[str] = None,
-            notes: Optional[str] = None,
-            verified_by: Optional[str] = None,
-            update_status: bool = False,
-            create_followup: bool = False,
-            followup_name: Optional[str] = None,
-            followup_description: Optional[str] = None,
-            followup_prompt: Optional[str] = None,
-            followup_category: Optional[str] = None,
-            followup_priority: Optional[str] = None,
-            complete_original: bool = False
-        ) -> Dict[str, Any]:
-            """
-            Query and manage items (thoughts, tasks, milestones).
-
-            Actions:
-            - list: Query items with filters
-            - get: Get single item by ID
-            - delete: Delete item and relations
-            - update: Update item fields
-            - clear: Delete multiple items matching filters
-            - classify: Classify task as TP or FP (requires item_id and classification)
-            - verify: Mark task as verified (requires item_id)
-
-            Args:
-                action: list, get, delete, update, clear, classify, verify
-                item_id: Item ID (required for get/delete/update/classify/verify)
-                updates: Fields to update (for update action)
-                item_type: Filter by type (thought, requirement, task, etc.)
-                status: Filter by status (pending, in_progress, completed, etc.)
-                priority: Filter by priority (critical, high, medium, low)
-                phase: Filter by project phase
-                category: Filter by category
-                source_tool: Filter by source tool
-                traces_to: Items that trace to this ID
-                traced_by: Items traced by this ID
-                depends_on: Items depending on this ID
-                blocks: Items blocked by this ID
-                affects: Items affecting this file/entity
-                start_after: Tasks starting after this date
-                end_before: Tasks ending before this date
-                include_relations: Include related items in response
-                limit: Maximum items to return
-                offset: Pagination offset
-                classification: Classification for classify action or list filter. Valid values:
-                    TP-EXTRACT, TP-PARAMETERIZE, PARTIAL-TP,
-                    FP-INTERFACE, FP-LAYERS, FP-STRUCTURAL, FP-TRIVIAL
-                    For list: use "TP" or "FP" prefix to match all TP-* or FP-* classifications
-                notes: Optional notes for classification
-                verified_by: Who verified (for verify action, default: "user")
-                update_status: Update status to "verified" (for verify action)
-                create_followup: For TP classifications, create a follow-up implementation task
-                followup_name: Custom name for follow-up task (auto-generated if not provided)
-                followup_description: Description for follow-up task
-                followup_prompt: Custom prompt for Claude Code (auto-generated based on classification)
-                followup_category: Category for follow-up task (default: "refactor")
-                followup_priority: Priority for follow-up task (default: same as original)
-                complete_original: Mark original task as completed when creating follow-up
-
-            Returns:
-                For list: {items: [...], count, has_more}
-                For get: {item: {...}, relations: {...}}
-                For delete: {success, deleted_relations}
-                For update: {item: {...}}
-                For clear: {success, items_deleted, relations_deleted}
-                For classify: {success, item: {...}, followup_task?: {...}}
-                For verify: {success, item: {...}}
-            """
-            if registrar.reter_client is None:
-                return {
-                    "success": False,
-                    "error": "RETER server not connected",
-                }
-
-            try:
-                kwargs = {
-                    "action": action,
-                    "item_id": item_id,
-                    "updates": updates,
-                    "item_type": item_type,
-                    "status": status,
-                    "priority": priority,
-                    "phase": phase,
-                    "category": category,
-                    "source_tool": source_tool,
-                    "traces_to": traces_to,
-                    "traced_by": traced_by,
-                    "depends_on": depends_on,
-                    "blocks": blocks,
-                    "affects": affects,
-                    "start_after": start_after,
-                    "end_before": end_before,
-                    "include_relations": include_relations,
-                    "limit": limit,
-                    "offset": offset,
-                    "classification": classification,
-                    "notes": notes,
-                    "verified_by": verified_by,
-                    "update_status": update_status,
-                    "create_followup": create_followup,
-                    "followup_name": followup_name,
-                    "followup_description": followup_description,
-                    "followup_prompt": followup_prompt,
-                    "followup_category": followup_category,
-                    "followup_priority": followup_priority,
-                    "complete_original": complete_original,
-                }
-                # Remove None values
-                kwargs = {k: v for k, v in kwargs.items() if v is not None}
-                return registrar.reter_client.items(**kwargs)
             except Exception as e:
                 return {
                     "success": False,
@@ -356,12 +204,6 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
 
             Diagram types:
 
-            **Session/Project Diagrams:**
-            - gantt: Gantt chart for tasks and milestones
-            - thought_chain: Reasoning chain with branches
-            - design_doc: Design doc structure with sections
-            - traceability: Task traceability matrix
-
             **UML/Code Diagrams:**
             - class_hierarchy: Class inheritance hierarchy
             - class_diagram: Class diagram with methods/attributes
@@ -374,8 +216,8 @@ class UnifiedToolsRegistrar(ToolRegistrarBase):
                 diagram_type: One of the diagram types above
                 format: mermaid, markdown, json (default: mermaid)
                 root_id: Root item ID for tree diagrams
-                start_date: Start date filter for gantt
-                end_date: End date filter for gantt
+                start_date: Start date filter
+                end_date: End date filter
                 target: Target entity (class, function, module) for UML diagrams
                 classes: List of class names for class/sequence/coupling diagrams
                 include_methods: Include methods in class diagrams (default: True)

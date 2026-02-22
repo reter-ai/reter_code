@@ -292,13 +292,13 @@ class ReterServer:
         """Initialize HTTP + WebSocket view server."""
         try:
             project_root = os.environ.get("RETER_PROJECT_ROOT", os.getcwd())
-            db_dir = os.path.join(project_root, ".reter_code")
-            os.makedirs(db_dir, exist_ok=True)
-            db_path = os.path.join(db_dir, ".unified.sqlite")
+            reter_dir = os.path.join(project_root, ".reter_code")
+            os.makedirs(reter_dir, exist_ok=True)
             self._view_server = ViewServer(
                 host=self.config.host,
                 port=self.config.view_port,
-                db_path=db_path,
+                history_dir=os.path.join(reter_dir, "view_history"),
+                diagrams_dir=os.path.join(reter_dir, "diagrams"),
             )
             self._view_server.start()
             logger.info(f"ViewServer started at {self._view_server.url}")

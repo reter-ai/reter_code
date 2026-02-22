@@ -36,9 +36,6 @@ class RAGHandler(BaseHandler):
             "rag_status": self._handle_status,
         }
 
-    def can_handle(self, method: str) -> bool:
-        """Check if this handler can process the method."""
-        return method in self._methods
 
     def _handle_semantic_search(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Execute semantic search over code and docs.
